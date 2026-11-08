@@ -138,11 +138,11 @@ export const protocol = {
   },
 
   registerFileProtocol() {
-    throw new NotImplementedError('protocol.registerFileProtocol', 'reading files needs Node `fs`; use protocol.handle() with a Response')
+    throw new NotImplementedError('protocol.registerFileProtocol', { reason: 'unsupported', hint: 'Reading files needs Node `fs`; use protocol.handle() and return a Response.' })
   },
 
   registerStreamProtocol() {
-    throw new NotImplementedError('protocol.registerStreamProtocol', 'use protocol.handle() with a Response')
+    throw new NotImplementedError('protocol.registerStreamProtocol', { reason: 'unsupported', hint: 'Use protocol.handle() and return a Response.' })
   },
 
   unregisterProtocol(scheme) {
@@ -154,19 +154,19 @@ export const protocol = {
   },
 
   interceptFileProtocol() {
-    throw new NotImplementedError('protocol.interceptFileProtocol')
+    throw new NotImplementedError('protocol.interceptFileProtocol', { reason: 'unsupported', hint: 'Tauri cannot intercept built-in schemes.' })
   },
   interceptStringProtocol() {
-    throw new NotImplementedError('protocol.interceptStringProtocol')
+    throw new NotImplementedError('protocol.interceptStringProtocol', { reason: 'unsupported', hint: 'Tauri cannot intercept built-in schemes.' })
   },
   interceptBufferProtocol() {
-    throw new NotImplementedError('protocol.interceptBufferProtocol')
+    throw new NotImplementedError('protocol.interceptBufferProtocol', { reason: 'unsupported', hint: 'Tauri cannot intercept built-in schemes.' })
   },
   interceptHttpProtocol() {
-    throw new NotImplementedError('protocol.interceptHttpProtocol')
+    throw new NotImplementedError('protocol.interceptHttpProtocol', { reason: 'unsupported', hint: 'Tauri cannot intercept built-in schemes.' })
   },
   interceptStreamProtocol() {
-    throw new NotImplementedError('protocol.interceptStreamProtocol')
+    throw new NotImplementedError('protocol.interceptStreamProtocol', { reason: 'unsupported', hint: 'Tauri cannot intercept built-in schemes.' })
   },
   uninterceptProtocol() {
     return false

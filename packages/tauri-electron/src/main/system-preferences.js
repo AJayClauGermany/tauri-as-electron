@@ -139,7 +139,7 @@ class SystemPreferences extends EventEmitter {
     return false
   }
   promptTouchID() {
-    return Promise.reject(new NotImplementedError('systemPreferences.promptTouchID'))
+    return Promise.reject(new NotImplementedError('systemPreferences.promptTouchID', { reason: 'unimplemented', hint: 'Needs a Rust command (LocalAuthentication on macOS).' }))
   }
   isAeroGlassEnabled() {
     return true

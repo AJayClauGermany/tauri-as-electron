@@ -386,7 +386,7 @@ class App extends EventEmitter {
   }
 
   getApplicationInfoForProtocol() {
-    return Promise.reject(new NotImplementedError('app.getApplicationInfoForProtocol'))
+    return Promise.reject(new NotImplementedError('app.getApplicationInfoForProtocol', { reason: 'unimplemented', hint: 'Needs a Rust command that queries the OS.' }))
   }
 
   getJumpListSettings() {
@@ -504,11 +504,11 @@ class App extends EventEmitter {
   setJumpList() {}
 
   getFileIcon() {
-    return Promise.reject(new NotImplementedError('app.getFileIcon'))
+    return Promise.reject(new NotImplementedError('app.getFileIcon', { reason: 'unimplemented', hint: 'Needs a Rust command that asks the OS for the icon.' }))
   }
 
   importCertificate() {
-    throw new NotImplementedError('app.importCertificate')
+    throw new NotImplementedError('app.importCertificate', { reason: 'unsupported', hint: 'The webview uses the OS certificate store.' })
   }
 }
 

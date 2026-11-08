@@ -95,7 +95,7 @@ export const dialog = {
   },
 
   showCertificateTrustDialog() {
-    return Promise.reject(new NotImplementedError('dialog.showCertificateTrustDialog'))
+    return Promise.reject(new NotImplementedError('dialog.showCertificateTrustDialog', { reason: 'unsupported' }))
   },
 
   /** Returns the selected paths, or undefined when canceled. */
@@ -123,10 +123,11 @@ function syncDialog(kind, body, api) {
   try {
     response = syncRequest(`dialog/${kind}`, JSON.stringify(body))
   } catch {
-    throw new NotImplementedError(`dialog.${api}`, 'register tauri-plugin-electron, or use the async version')
+    throw new NotImplementedError(`dialog.${api}`, { reason: 'plugin', hint: 'Register tauri-plugin-electron, or use the async version.' })
   }
   if (response.status !== 200) {
-    if (response.status === 0 || response.status === 404) throw new NotImplementedError(`dialog.${api}`, 'register tauri-plugin-electron, or use the async version')
+    if (response.status === 0 || response.status === 404) throw new NotImplementedError(`dialog.${api}`, { reason: 'plugin', hint: 'Register tauri-plugin-electron, or use the async version.' })
+    if (response.status === 501) throw new NotImplementedError(`dialog.${api}`, { reason: 'feature', hint: 'Enable the `dialog` feature of tauri-plugin-electron.' })
     throw new Error(`dialog.${api} failed: ${response.text}`)
   }
   return JSON.parse(response.text)

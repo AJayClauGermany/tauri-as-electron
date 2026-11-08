@@ -119,14 +119,14 @@ export class NativeImage {
   }
 
   toJPEG(quality = 90) {
-    if (!this._rgba) throw new NotImplementedError('nativeImage#toJPEG', 'only for images created from a bitmap')
+    if (!this._rgba) throw new NotImplementedError('nativeImage#toJPEG', { reason: 'unimplemented', hint: 'Only images created from a bitmap can be encoded.' })
     const canvas = canvasFor(this._rgba, this._pixelSize.width, this._pixelSize.height)
     return canvas ? dataUrlBytes(canvas.toDataURL('image/jpeg', quality / 100)) : null
   }
 
   /** BGRA pixels, like Electron (only for images created from a bitmap). */
   toBitmap() {
-    if (!this._rgba) throw new NotImplementedError('nativeImage#toBitmap', 'only for images created from a bitmap')
+    if (!this._rgba) throw new NotImplementedError('nativeImage#toBitmap', { reason: 'unimplemented', hint: 'Only images created from a bitmap can be decoded.' })
     return new Uint8Array(swapRedBlue(this._rgba).buffer)
   }
 
@@ -166,11 +166,11 @@ export class NativeImage {
   addRepresentation() {}
 
   resize() {
-    throw new NotImplementedError('nativeImage#resize')
+    throw new NotImplementedError('nativeImage#resize', { reason: 'unimplemented', hint: 'Could be done with an OffscreenCanvas.' })
   }
 
   crop() {
-    throw new NotImplementedError('nativeImage#crop')
+    throw new NotImplementedError('nativeImage#crop', { reason: 'unimplemented', hint: 'Could be done with an OffscreenCanvas.' })
   }
 }
 
@@ -208,7 +208,7 @@ export const nativeImage = {
     return new NativeImage({ bytes, mime: match[1] ?? 'image/png' })
   },
   createFromNamedImage: () => new NativeImage(),
-  createThumbnailFromPath: () => Promise.reject(new NotImplementedError('nativeImage.createThumbnailFromPath')),
+  createThumbnailFromPath: () => Promise.reject(new NotImplementedError('nativeImage.createThumbnailFromPath', { reason: 'unimplemented' })),
 }
 
 /** Accept whatever Electron accepts for an icon (path or NativeImage) and return bytes. */

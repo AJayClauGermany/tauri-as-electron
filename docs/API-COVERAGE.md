@@ -1,8 +1,16 @@
 # API coverage
 
 Legend: ✅ implemented · 🟡 partial / behaves differently · ⚪ accepted as a
-no-op (so boilerplate keeps running) · ❌ not implemented (throws
-`NotImplementedError`, or warns once for `on`/`once`).
+no-op (so boilerplate keeps running; warns once) · ❌ not implemented yet,
+but Tauri could support it (throws `NotImplementedError` with
+`reason: 'unimplemented'`, or warns once for `on`/`once`) · 🚫 not possible
+on Tauri and not planned (`reason: 'unsupported'`: Node.js built-ins,
+Chromium-only features, Electron's view hierarchy).
+
+Every `NotImplementedError` carries a `reason` (`unimplemented`,
+`unsupported`, `feature`, `plugin`, `permission`) and a hint; see
+[Reading errors](MIGRATING.md#6-reading-errors) for what each one asks you
+to do.
 
 The Tauri building block is in brackets. **Cached** means a synchronous
 Electron getter is served from state that tauri-electron keeps up to date,
@@ -68,8 +76,9 @@ for more):
 | `getAppMetrics`, `getGPUFeatureStatus`, `getGPUInfo` | 🟡 | One process entry with the real pid; placeholder values. |
 | `resolveProxy` | 🟡 | Always `DIRECT`. |
 | `disableHardwareAcceleration`, `setAppUserModelId`, `setAboutPanelOptions`, `setProxy`, recent documents, jump lists, user activities, `isInApplicationsFolder` (`false`) | ⚪ | |
-| `certificate-error`, `login`, `render-process-gone`, `child-process-gone`, … | ❌ | Never emitted. |
-| `getFileIcon`, `importCertificate`, `getApplicationInfoForProtocol` | ❌ | |
+| `certificate-error`, `login`, `render-process-gone`, `child-process-gone`, … | 🚫 | Never emitted: Chromium process and network events. |
+| `getFileIcon`, `getApplicationInfoForProtocol` | ❌ | Need a Rust command. |
+| `importCertificate` | 🚫 | The webview uses the OS certificate store. |
 
 ### `BrowserWindow` [`WebviewWindow`]
 
@@ -89,9 +98,10 @@ for more):
 | `getParentWindow`, `getChildWindows` | ✅ | `setParentWindow` only affects windows created later. |
 | `-webkit-app-region: drag / no-drag` | ✅ | Implemented by the renderer bootstrap (inline styles, `<style>` and same-origin style sheets). Double-click toggles maximize. |
 | `setMovable`, `setOpacity`, `setAspectRatio`, `blur`, menu-bar visibility, `setTitleBarOverlay`, `setWindowButtonPosition/Visibility`, `setTouchBar`, tabs, `setVibrancy`, thumbar buttons, `setRepresentedFilename`, `setDocumentEdited` | ⚪ | State is cached; no native effect. |
-| `getNativeWindowHandle`, `capturePage`, `getMediaSourceId` | ❌ | |
+| `getNativeWindowHandle`, `capturePage`, `getMediaSourceId` | 🚫 | Handles exist only in Rust; no page capture or screen capture in Tauri. |
 | `BaseWindow` | 🟡 | Alias of `BrowserWindow`. |
-| `BrowserView`, `WebContentsView`, `View`, `ImageView` | ❌ | |
+| `BrowserView`, `View`, `ImageView` | 🚫 | A Tauri window holds one webview. |
+| `WebContentsView` | ❌ | Tauri's multi-webview windows (unstable) could back it. |
 
 ### `webContents`
 
@@ -119,7 +129,8 @@ for more):
 | `session` | 🟡 | See `session`. |
 | `setUserAgent`, `getUserAgent`, `setAudioMuted`, `setBackgroundThrottling`, `setWebRTCIPHandlingPolicy`, … | 🟡 | User agent applies to windows created afterwards. |
 | `webContents.getAllWebContents`, `getFocusedWebContents`, `fromId`, `fromFrame` | ✅ | |
-| `capturePage`, `printToPDF`, `savePage`, `downloadURL`, `debugger`, frame subscriptions | ❌ | |
+| `capturePage`, `printToPDF`, `savePage`, `debugger`, frame subscriptions | 🚫 | Chromium-only. `print()` opens the system dialog, which can save a PDF. |
+| `downloadURL` | ❌ | `net.fetch()` + `@tauri-apps/plugin-fs` meanwhile. |
 
 ### IPC
 
@@ -142,16 +153,17 @@ for more):
 | `dialog.showMessageBox` | 🟡 | Up to 3 buttons (Tauri limit). `checkboxLabel`, `defaultId`, `cancelId` ignored. |
 | `dialog.showErrorBox` | ✅ | |
 | `dialog.showOpenDialogSync`, `showSaveDialogSync`, `showMessageBoxSync` | ✅ | [native + `plugin-dialog`] Blocking dialogs through the synchronous bridge. |
-| `dialog.showCertificateTrustDialog` | ❌ | |
+| `dialog.showCertificateTrustDialog` | 🚫 | |
 | `shell.openExternal`, `openPath`, `showItemInFolder` | ✅ | [`plugin-opener`] |
 | `shell.trashItem` | ✅ | [native, `trash` crate] |
 | `shell.beep` | 🟡 | Short WebAudio tone. |
-| `shell.*ShortcutLink` | ❌ | |
+| `shell.*ShortcutLink` | ❌ | Windows `.lnk` files need a Rust command. |
 | `clipboard.readText`, `writeText`, `write([ClipboardItem])`, `read`, `has`, `clear`, `ClipboardItem` | ✅ | [`plugin-clipboard-manager`] Async, matching Electron 45+. `read()` returns text only. |
 | `clipboard.readImage` | 🟡 | Async (Promise of `NativeImage`). |
 | `clipboard.writeHTML`, `writeImage`, `write({ text, html, image })` | ✅ | Pre-45 API, kept for older apps. |
 | `clipboard.writeBuffer/readBuffer`, `readFindText/writeFindText` | 🟡 | Kept in memory inside the app, not on the OS clipboard. |
-| `clipboard.readHTML/readRTF/writeRTF/*Bookmark`, `selection` | ❌ | |
+| `clipboard.readHTML` | ❌ | `plugin-clipboard-manager` reads text and images only. |
+| `clipboard.readRTF/writeRTF/*Bookmark`, `selection` | 🚫 | |
 | `Menu.buildFromTemplate`, `setApplicationMenu`, `getApplicationMenu`, `popup({ callback })`, `append`, `insert`, `getMenuItemById`, `menu-will-show/close` | ✅ | [`@tauri-apps/api/menu`] Built lazily. |
 | `MenuItem` (`normal`, `separator`, `submenu`, `checkbox`, `radio`, `click`, `accelerator`, `enabled`, `visible`, `checked`, `label`, `id`) | ✅ | `enabled`/`checked`/`label` changes update the native item. |
 | Menu `role`s | 🟡 | Native on all platforms: `cut`, `copy`, `paste`, `selectAll`, `about`. Native on macOS, emulated elsewhere: `undo`, `redo`, `minimize`, `close`, `quit`. Emulated: `reload`, `forceReload`, `toggleDevTools`, `zoomIn/Out`, `resetZoom`, `togglefullscreen`, `zoom`, `delete`. Submenu roles `appMenu`, `fileMenu`, `editMenu`, `viewMenu`, `windowMenu` expand to defaults. |
@@ -161,10 +173,10 @@ for more):
 | `nativeTheme` | ✅ | `shouldUseDarkColors`, `themeSource`, `updated`. |
 | `screen` | 🟡 | Cached `getPrimaryDisplay`, `getAllDisplays`, `getDisplayNearestPoint`, `getDisplayMatching`; `display-added/removed/metrics-changed` by polling every 2 s while listened to; `getCursorScreenPoint` returns a Promise. |
 | `globalShortcut` | ✅ | [`plugin-global-shortcut`] `register` returns `true` optimistically; failures are logged and unregister the key. |
-| `nativeImage` | 🟡 | `createFromPath` (fetched from the app; `public/x.png` → `/x.png`), `createFromDataURL`, `createFromBuffer`, `createFromBitmap`, `createEmpty`, `toDataURL`, `toPNG`, `toJPEG`/`toBitmap` (bitmaps only), `getSize`/`getAspectRatio` (PNG, JPEG, GIF, BMP headers), `isEmpty`. No `resize`/`crop`. |
-| `net.fetch`, `net.request` (`ClientRequest` / `IncomingMessage`), `net.isOnline`, `net.online` | ✅ | [`plugin-http`] Not subject to CORS, like Electron's main process. `data:`/`blob:` use the webview's `fetch`. `resolveHost` ❌. |
-| `protocol.handle`, `unhandle`, `isProtocolHandled`, `registerSchemesAsPrivileged`, `register{String,Buffer,Http}Protocol` | 🟡 | [native] Each scheme must also be declared in Rust: `tauri_plugin_electron::Builder::new().protocol("app")`. Handlers receive a `Request` and return a `Response`. Privileges are recorded only. `registerFileProtocol`, `registerStreamProtocol`, `intercept*` ❌. |
-| `session.defaultSession`, `fromPartition`, `fromPath` | 🟡 | `getUserAgent`/`setUserAgent` (new windows), spell-checker settings (stored), `resolveProxy` (`DIRECT`), `clearStorageData`/`clearData` (Tauri `clearAllBrowsingData`, whole store), permission/certificate handlers (stored), `webRequest` listeners (stored, **not applied**), `fetch`. In-memory partitions → incognito webviews; `persist:` partitions get their own store on macOS 14+ only. `cookies.get/set/remove`, downloads, extensions ❌. |
+| `nativeImage` | 🟡 | `createFromPath` (fetched from the app; `public/x.png` → `/x.png`), `createFromDataURL`, `createFromBuffer`, `createFromBitmap`, `createEmpty`, `toDataURL`, `toPNG`, `toJPEG`/`toBitmap` (bitmaps only), `getSize`/`getAspectRatio` (PNG, JPEG, GIF, BMP headers), `isEmpty`. `resize`/`crop`/`createThumbnailFromPath` ❌. |
+| `net.fetch`, `net.request` (`ClientRequest` / `IncomingMessage`), `net.isOnline`, `net.online` | ✅ | [`plugin-http`] Not subject to CORS, like Electron's main process. `data:`/`blob:` use the webview's `fetch`. `resolveHost` ❌ (needs a Rust command). |
+| `protocol.handle`, `unhandle`, `isProtocolHandled`, `registerSchemesAsPrivileged`, `register{String,Buffer,Http}Protocol` | 🟡 | [native] Each scheme must also be declared in Rust: `tauri_plugin_electron::Builder::new().protocol("app")`. Handlers receive a `Request` and return a `Response`. Privileges are recorded only. `registerFileProtocol`, `registerStreamProtocol`, `intercept*` 🚫 (no `fs`, and Tauri cannot intercept built-in schemes; use `handle()`). |
+| `session.defaultSession`, `fromPartition`, `fromPath` | 🟡 | `getUserAgent`/`setUserAgent` (new windows), spell-checker settings (stored), `resolveProxy` (`DIRECT`), `clearStorageData`/`clearData` (Tauri `clearAllBrowsingData`, whole store), permission/certificate handlers (stored), `webRequest` listeners (stored, **not applied**), `fetch`. In-memory partitions → incognito webviews; `persist:` partitions get their own store on macOS 14+ only. `cookies.get/set/remove`, downloads ❌ (Tauri has cookie APIs in Rust; not exposed yet). Extensions, `netLog`, `getBlobData` 🚫. |
 | `autoUpdater` | 🟡 | [`plugin-updater`] `checkForUpdates` emits `checking-for-update`, `update-available` / `update-not-available`, downloads, then `update-downloaded`; `quitAndInstall` installs and relaunches. The feed comes from `plugins.updater` in `tauri.conf.json` (`setFeedURL` only records it), and the `updater` feature of `tauri-plugin-electron` must be enabled. |
 | `powerMonitor` | 🟡 | `getSystemIdleState` → `'unknown'`, `getSystemIdleTime` → `0`, `getCurrentThermalState` → `'unknown'`, `isOnBatteryPower`/`on-ac`/`on-battery` from `navigator.getBattery()` where available, `resume` detected heuristically from timer drift. No `suspend`, `lock-screen`, `unlock-screen`. |
 | `powerSaveBlocker` | 🟡 | IDs as in Electron; holds a Screen Wake Lock in a visible window where the webview supports it. |
@@ -176,11 +188,16 @@ for more):
 | `webFrame` | 🟡 | Zoom, `insertCSS`, `executeJavaScript`. |
 | `webUtils.getPathForFile` | ✅ | Files dropped on a window come from Tauri's native drop event and are re-dispatched as HTML5 drag events; their `File` objects have names and paths but no contents. |
 | `TouchBar` | ⚪ | Constructible, ignored. |
-| `utilityProcess`, `desktopCapturer`, `contentTracing`, `inAppPurchase`, `netLog`, `pushNotifications`, `sharedTexture`, `ShareMenu`, `IpcMainServiceWorker` | ❌ | Present so imports resolve. `utilityProcess` → a Node sidecar via `plugin-shell` is the closest equivalent. |
+| `utilityProcess`, `desktopCapturer`, `contentTracing`, `inAppPurchase`, `netLog`, `pushNotifications`, `sharedTexture`, `IpcMainServiceWorker` | 🚫 | Present so imports resolve; every member throws with `reason: 'unsupported'` and a hint. `utilityProcess` → a Node sidecar via `plugin-shell` is the closest equivalent. |
+| `ShareMenu` | ❌ | macOS share sheet; needs a Rust command. |
 
-## Node.js built-ins
+## CommonJS and Node.js built-ins
 
-The main process runs in a webview, so `fs`, `child_process`, `os`,
-`crypto` (Node flavour) and friends are not available. Only `path` is
-shimmed. Use Tauri plugins (`plugin-fs`, `plugin-shell`, `plugin-http`,
-`plugin-store`) or Rust commands instead.
+| | | |
+| --- | --- | --- |
+| `require('electron')`, `require('electron/main')`, … | ✅ | A global `require()` is installed in the main page and every renderer page by the Vite plugin (`tauri-electron/require`). In production builds Vite turns `require()` into imports anyway. |
+| `require('path')`, `require('node:path')`, `require('process')`, `require('events')`, `require('url')` (and the `import` forms) | ✅ | Aliased to tauri-electron's shims: POSIX `path`, the `process` shim, the `EventEmitter` tauri-electron's own objects use (`events.once` too), and `url.fileURLToPath` / `pathToFileURL` / `parse` / `format` on top of `URL`. |
+| `fileURLToPath(import.meta.url)`, `import.meta.dirname`, `__dirname` | ✅ | Rewritten at build time to the source file's project-relative path, so `path.join(__dirname, 'index.html')` names the page rather than the bundled chunk. |
+| `module.exports`, `exports` | ⚪ | Exist so a main script that exports something does not throw; nothing reads them. |
+| `require('fs')`, `import fs from 'fs'`, `child_process`, `os`, `crypto`, `http`, `util`, `stream`, … | 🚫 | The main process runs in a webview. The import does not fail the build; using the module throws `NotImplementedError` (`reason: 'unsupported'`) naming the replacement: `@tauri-apps/plugin-fs`, `plugin-shell`, `plugin-http`, Web Crypto, or a Rust command. The error names the member (`fs.readFileSync is not supported on Tauri …`). |
+| Native Node modules, `asar` | 🚫 | |
