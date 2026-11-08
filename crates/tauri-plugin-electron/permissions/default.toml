@@ -1,0 +1,13 @@
+"$schema" = "schemas/schema.json"
+
+[default]
+description = "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows."
+permissions = [
+  "allow-process-info",
+  "allow-set-window-config",
+  "allow-open-devtools",
+  "allow-close-devtools",
+  "allow-is-devtools-open",
+  "allow-trash-item",
+  "allow-bridge-respond",
+]

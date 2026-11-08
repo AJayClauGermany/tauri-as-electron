@@ -15,8 +15,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # tray-icon: Electron's Tray. image-png/image-ico: icons passed as bytes (nativeImage, Tray, setIcon).
 tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
+# Native half of tauri-electron (sendSync, process.argv/env, devtools, trashItem, protocol.handle, ...).
+# When you copy this project out of the tauri-as-electron repository, replace `path` with
+# `git = "https://github.com/AJayClauGermany/tauri-as-electron"`.
+tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron" }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-http = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-os = "2"
@@ -24,3 +30,8 @@ tauri-plugin-process = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-global-shortcut = "2"
+# app.setLoginItemSettings / getLoginItemSettings
+tauri-plugin-autostart = "2"
+# app.requestSingleInstanceLock + 'second-instance'. Remove it (and its line in lib.rs)
+# if your app allows several instances, which is Electron's default.
+tauri-plugin-single-instance = "2"

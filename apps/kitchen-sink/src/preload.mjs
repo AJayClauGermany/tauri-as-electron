@@ -1,6 +1,12 @@
 // Preload: the only bridge between the pages and the main process.
 // (.mjs so that real Electron loads it as an ES module with sandbox: false.)
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+
+// The main process hands us a MessagePort: echo every message with a '!'.
+ipcRenderer.on('kitchen:port-echo', (event) => {
+  const [port] = event.ports
+  port.onmessage = (message) => port.postMessage(`${message.data}!`)
+})
 
 contextBridge.exposeInMainWorld('kitchen', {
   // Main-process checks
@@ -13,6 +19,21 @@ contextBridge.exposeInMainWorld('kitchen', {
   send: (channel, ...args) => ipcRenderer.send(channel, ...args),
   once: (channel, callback) => ipcRenderer.once(channel, (_event, ...args) => callback(...args)),
   sendSync: (channel, ...args) => ipcRenderer.sendSync(channel, ...args),
+
+  // Renderer → main MessagePort round trip (ipcRenderer.postMessage with a transfer list)
+  portRoundTrip: (value) => new Promise((resolve, reject) => {
+    const { port1, port2 } = new MessageChannel()
+    const timer = setTimeout(() => reject(new Error('no answer on the port')), 5000)
+    port1.onmessage = (event) => {
+      clearTimeout(timer)
+      resolve(event.data)
+      port1.close()
+    }
+    ipcRenderer.postMessage('kitchen:port', { hello: true }, [port2])
+    port1.postMessage(value)
+  }),
+  argv: process.argv,
+  pathForFile: (file) => webUtils.getPathForFile(file),
 
   // Child window
   onChildPing: (callback) => ipcRenderer.on('kitchen:child-ping', (_event, value) => callback(value)),

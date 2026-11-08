@@ -1,32 +1,43 @@
 //! The Rust side is intentionally boilerplate: it registers the official
-//! plugins that tauri-electron builds the Electron API on. Your app logic
-//! lives in JavaScript (src/main.js), like in an Electron app.
+//! plugins that tauri-electron builds the Electron API on, plus
+//! tauri-plugin-electron for the few things they do not cover. Your app
+//! logic lives in JavaScript (src/main.js), like in an Electron app.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        // Must be registered first. Electron's app.requestSingleInstanceLock()
+        // + 'second-instance' (a second launch exits and notifies this one).
+        builder = builder.plugin(tauri_plugin_single_instance::init(
+            tauri_plugin_electron::on_second_instance,
+        ));
+    }
+
+    builder = builder
+        // Add `.protocol("app")` for every scheme your main process passes to
+        // protocol.handle(); Tauri needs to know them when the app is built.
+        .plugin(tauri_plugin_electron::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_deep_link::init());
 
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        builder = builder
+            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+            .plugin(tauri_plugin_autostart::Builder::new().build());
     }
 
     builder
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|_app, _event| {
-            // Electron's `app.on('activate')`: macOS dock icon clicked.
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = _event {
-                use tauri::Emitter;
-                let _ = _app.emit_to("electron-main", "tauri-electron:activate", has_visible_windows);
-            }
-        });
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }

@@ -14,7 +14,14 @@ export class EventEmitter {
     return list
   }
 
+  /** Node's 'newListener' event, plus a hook subclasses use to learn what is listened to. */
+  _added(name, listener) {
+    if (name !== 'newListener' && this._events.has('newListener')) this.emit('newListener', name, listener)
+    this._newListener?.(name)
+  }
+
   on(name, listener) {
+    this._added(name, listener)
     this._list(name).push({ listener, once: false })
     return this
   }
@@ -24,16 +31,19 @@ export class EventEmitter {
   }
 
   prependListener(name, listener) {
+    this._added(name, listener)
     this._list(name).unshift({ listener, once: false })
     return this
   }
 
   once(name, listener) {
+    this._added(name, listener)
     this._list(name).push({ listener, once: true })
     return this
   }
 
   prependOnceListener(name, listener) {
+    this._added(name, listener)
     this._list(name).unshift({ listener, once: true })
     return this
   }

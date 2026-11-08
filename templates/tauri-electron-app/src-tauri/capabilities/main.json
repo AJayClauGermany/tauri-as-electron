@@ -1,27 +1,34 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "electron-main",
-  "description": "The hidden window running Electron main-process code. Like Electron's main process it may use every API tauri-electron implements.",
-  "windows": ["electron-main"],
+  "description": "The hidden window running Electron main-process code. Like Electron's main process it may use every API tauri-electron implements, including unrestricted network access (net, autoUpdater) and tauri-plugin-electron.",
+  "windows": [
+    "electron-main"
+  ],
   "permissions": [
     "core:default",
+    "electron:default",
     "core:app:allow-app-show",
     "core:app:allow-app-hide",
     "core:app:allow-set-app-theme",
     "core:app:allow-set-dock-visibility",
     "core:webview:allow-create-webview-window",
     "core:webview:allow-set-webview-zoom",
+    "core:webview:allow-clear-all-browsing-data",
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-set-focus",
     "core:window:allow-set-focusable",
+    "core:window:allow-set-enabled",
+    "core:window:allow-is-enabled",
     "core:window:allow-minimize",
     "core:window:allow-unminimize",
     "core:window:allow-maximize",
     "core:window:allow-unmaximize",
     "core:window:allow-set-fullscreen",
+    "core:window:allow-set-simple-fullscreen",
     "core:window:allow-set-title",
     "core:window:allow-set-size",
     "core:window:allow-set-min-size",
@@ -42,12 +49,14 @@
     "core:window:allow-set-progress-bar",
     "core:window:allow-request-user-attention",
     "core:window:allow-set-icon",
+    "core:window:allow-set-overlay-icon",
     "core:window:allow-set-badge-count",
     "core:window:allow-cursor-position",
     "os:default",
     "process:default",
     "dialog:default",
     "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-read-image",
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-write-html",
     "clipboard-manager:allow-write-image",
@@ -56,11 +65,31 @@
     "opener:default",
     {
       "identifier": "opener:allow-open-path",
-      "allow": [{ "path": "**" }]
+      "allow": [
+        {
+          "path": "**"
+        }
+      ]
     },
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
-    "global-shortcut:allow-is-registered"
+    "global-shortcut:allow-is-registered",
+    "deep-link:default",
+    "deep-link:allow-register",
+    "deep-link:allow-unregister",
+    "deep-link:allow-is-registered",
+    "autostart:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        {
+          "url": "https://**"
+        },
+        {
+          "url": "http://**"
+        }
+      ]
+    }
   ]
 }

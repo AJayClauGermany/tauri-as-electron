@@ -51,3 +51,19 @@ td.detail {
 body.hide-pass tr[data-status='pass'] {
   display: none;
 }
+
+/* Frameless child window demo */
+.titlebar {
+  -webkit-app-region: drag;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  margin: -8px -8px 12px;
+  background: #2d2d2d;
+  color: #fff;
+  user-select: none;
+}
+.titlebar button {
+  -webkit-app-region: no-drag;
+}

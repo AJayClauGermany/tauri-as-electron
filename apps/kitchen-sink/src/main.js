@@ -1,6 +1,6 @@
 // Kitchen sink main process. Plain Electron code: it runs unchanged on
 // Electron (`npm run start:electron`) and on Tauri via tauri-electron.
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, protocol } from 'electron'
 import path from 'node:path'
 import { checks, applicationMenu } from './checks.js'
 
@@ -47,7 +47,16 @@ async function postSmoke(body) {
   }
 }
 
+// Custom schemes must be declared before 'ready' (Electron); see the
+// protocol.handle checks. On Tauri, src-tauri/src/lib.rs declares it too.
+protocol.registerSchemesAsPrivileged([{ scheme: 'kitchen', privileges: { standard: true, supportFetchAPI: true } }])
+
 // --- IPC endpoints used by the renderer-side checks ---------------------------------
+ipcMain.on('kitchen:port', (event) => {
+  const [port] = event.ports
+  port.on('message', ({ data }) => port.postMessage({ doubled: data * 2 }))
+  port.start()
+})
 ipcMain.handle('kitchen:echo', (_event, ...args) => args)
 ipcMain.handle('kitchen:throw', () => {
   throw new Error('boom')

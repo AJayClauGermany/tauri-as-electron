@@ -1,12 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "electron-renderer",
-  "description": "Every BrowserWindow. Mirrors a context-isolated Electron renderer: it can only exchange IPC messages with the main window (plus webFrame zoom). Add permissions here if your renderers call other APIs directly.",
-  "windows": ["*"],
+  "description": "Every BrowserWindow. Mirrors a context-isolated, sandboxed Electron renderer: it can only exchange IPC messages with the main window, plus webFrame zoom and closing its own window (window.close()) and dragging it from `-webkit-app-region: drag` areas. ipcRenderer.sendSync and window configuration go through tauri-plugin-electron's URI scheme, which needs no permission. Add permissions here if your renderers call other APIs directly.",
+  "windows": [
+    "*"
+  ],
   "permissions": [
     "core:event:default",
     "core:window:default",
     "core:webview:default",
-    "core:webview:allow-set-webview-zoom"
+    "core:webview:allow-set-webview-zoom",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
   ]
 }

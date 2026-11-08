@@ -1,0 +1,26 @@
+[package]
+name = "tauri-plugin-electron"
+version = "0.1.0"
+description = "Native half of tauri-electron: the pieces of Electron's API that Tauri's JavaScript API and official plugins do not cover."
+edition = "2021"
+license = "0BSD"
+links = "tauri-plugin-electron"
+
+[features]
+default = []
+# Allow webContents.openDevTools() in release builds (Tauri's `devtools`
+# feature; uses private APIs on macOS, so not App Store compatible).
+devtools = ["tauri/devtools"]
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+tauri = { version = "2" }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+trash = "5"

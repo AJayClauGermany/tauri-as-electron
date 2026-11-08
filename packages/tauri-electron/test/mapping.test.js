@@ -46,3 +46,13 @@ describe('loadFile URL mapping', () => {
     expect(fileToUrl('file:///index.html', { search: 'x=1' })).toBe('index.html?x=1')
   })
 })
+
+describe('window.open features', async () => {
+  const { parseWindowFeatures } = await import('../src/main/browser-window.js')
+  it('maps the features Electron understands', () => {
+    expect(parseWindowFeatures('width=400,height=300,left=10,top=20,resizable=no,show=yes')).toEqual({
+      width: 400, height: 300, x: 10, y: 20, resizable: false, show: true,
+    })
+    expect(parseWindowFeatures('')).toEqual({})
+  })
+})

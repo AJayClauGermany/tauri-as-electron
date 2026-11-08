@@ -12,6 +12,8 @@
  *    `win.loadFile(path.join(__dirname, 'index.html'))` keeps working,
  *  - injects the renderer bootstrap and your preload script at the top of
  *    every HTML page except the main-process page (`electron-main.html`),
+ *  - makes `process.env` read the real environment (the main process gets it
+ *    from tauri-plugin-electron) instead of Vite's empty object,
  *  - adds every root-level *.html file to the build inputs,
  *  - in dev, forwards the hidden main window's console to the terminal (the
  *    window has no visible devtools; Electron devs expect main logs there).
@@ -84,6 +86,9 @@ export default function tauriElectron(options = {}) {
 
       const config = {
         resolve: { alias },
+        // Vite replaces a bare `process.env` with `{}`; Electron code expects
+        // the real environment (filled in by tauri-electron's process shim).
+        define: userConfig.define?.['process.env'] ? {} : { 'process.env': '(globalThis.process?.env ?? {})' },
         clearScreen: false,
         envPrefix: ['VITE_', 'TAURI_ENV_'],
         server: { watch: { ignored: ['**/src-tauri/**'] } },

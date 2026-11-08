@@ -1,6 +1,11 @@
-/** dialog, implemented with @tauri-apps/plugin-dialog. */
+/**
+ * dialog, implemented with @tauri-apps/plugin-dialog. The *Sync variants
+ * use tauri-plugin-electron's synchronous bridge, which shows the same
+ * plugin-dialog dialogs with its blocking Rust API.
+ */
 import { open, save, message } from '@tauri-apps/plugin-dialog'
 import { NotImplementedError, report } from '../internal/runtime.js'
+import { syncRequest } from '../internal/native.js'
 
 /** Electron allows an optional BrowserWindow as the first argument. */
 function splitArgs(windowOrOptions, maybeOptions) {
@@ -79,9 +84,10 @@ export const dialog = {
   },
 
   async showMessageBox(windowOrOptions, maybeOptions) {
-    const { text, buttons, options } = toMessageOptions(splitArgs(windowOrOptions, maybeOptions))
+    const electronOptions = splitArgs(windowOrOptions, maybeOptions)
+    const { text, buttons, options } = toMessageOptions(electronOptions)
     const result = await message(text, options)
-    return { response: messageResultToIndex(result, buttons), checkboxChecked: false }
+    return { response: messageResultToIndex(result, buttons), checkboxChecked: Boolean(electronOptions.checkboxChecked) }
   },
 
   showErrorBox(title, content) {
@@ -92,15 +98,36 @@ export const dialog = {
     return Promise.reject(new NotImplementedError('dialog.showCertificateTrustDialog'))
   },
 
-  showOpenDialogSync() {
-    throw new NotImplementedError('dialog.showOpenDialogSync', 'Tauri dialogs are async; use `await dialog.showOpenDialog()`')
+  /** Returns the selected paths, or undefined when canceled. */
+  showOpenDialogSync(windowOrOptions, maybeOptions) {
+    const paths = syncDialog('open', toOpenOptions(splitArgs(windowOrOptions, maybeOptions)), 'showOpenDialogSync')
+    return paths?.length ? paths : undefined
   },
 
-  showSaveDialogSync() {
-    throw new NotImplementedError('dialog.showSaveDialogSync', 'Tauri dialogs are async; use `await dialog.showSaveDialog()`')
+  /** Returns the chosen path, or '' when canceled. */
+  showSaveDialogSync(windowOrOptions, maybeOptions) {
+    return syncDialog('save', toSaveOptions(splitArgs(windowOrOptions, maybeOptions)), 'showSaveDialogSync') ?? ''
   },
 
-  showMessageBoxSync() {
-    throw new NotImplementedError('dialog.showMessageBoxSync', 'Tauri dialogs are async; use `await dialog.showMessageBox()`')
+  /** Returns the index of the clicked button. */
+  showMessageBoxSync(windowOrOptions, maybeOptions) {
+    const { text, buttons, options } = toMessageOptions(splitArgs(windowOrOptions, maybeOptions))
+    const result = syncDialog('message', { title: options.title, message: text, kind: options.kind, buttons }, 'showMessageBoxSync')
+    return messageResultToIndex(result, buttons)
   },
+}
+
+/** Blocking dialog through tauri-plugin-electron's synchronous bridge. */
+function syncDialog(kind, body, api) {
+  let response
+  try {
+    response = syncRequest(`dialog/${kind}`, JSON.stringify(body))
+  } catch {
+    throw new NotImplementedError(`dialog.${api}`, 'register tauri-plugin-electron, or use the async version')
+  }
+  if (response.status !== 200) {
+    if (response.status === 0 || response.status === 404) throw new NotImplementedError(`dialog.${api}`, 'register tauri-plugin-electron, or use the async version')
+    throw new Error(`dialog.${api} failed: ${response.text}`)
+  }
+  return JSON.parse(response.text)
 }

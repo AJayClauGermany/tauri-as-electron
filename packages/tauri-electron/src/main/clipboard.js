@@ -7,9 +7,24 @@
  * written against earlier Electron versions. Reads can only be async on
  * Tauri, so `await clipboard.readText()` is the portable spelling.
  */
-import { readText, writeText, writeHtml, writeImage, clear } from '@tauri-apps/plugin-clipboard-manager'
+import { readText, writeText, writeHtml, writeImage, readImage, clear } from '@tauri-apps/plugin-clipboard-manager'
 import { NotImplementedError, report } from '../internal/runtime.js'
-import { resolveImage } from './native-image.js'
+import { resolveImage, nativeImage } from './native-image.js'
+
+// Custom formats (writeBuffer) and the macOS find pasteboard have no Tauri
+// API; they are kept in memory, so they only round-trip within this app run.
+const buffers = new Map()
+let findText = ''
+
+async function readClipboardImage() {
+  try {
+    const image = await readImage()
+    const [rgba, size] = await Promise.all([image.rgba(), image.size()])
+    return nativeImage.createFromBitmap(rgba, { width: size.width, height: size.height, format: 'rgba' })
+  } catch {
+    return nativeImage.createEmpty()
+  }
+}
 
 /** Electron's ClipboardItem (modelled on the W3C class). */
 export class ClipboardItem {
@@ -78,8 +93,32 @@ export const clipboard = {
   },
 
   async has(mimetype) {
+    if (buffers.has(mimetype)) return true
+    if (mimetype === 'image/png' || mimetype === 'image') return !(await readClipboardImage()).isEmpty()
     if (mimetype !== 'text/plain' && mimetype !== 'text') return false
     return (await clipboard.readText()) !== ''
+  },
+
+  /** Async (Tauri reads the clipboard asynchronously): `await clipboard.readImage()`. */
+  readImage() {
+    return readClipboardImage()
+  },
+
+  /** In-memory only: custom formats do not reach the OS clipboard. */
+  writeBuffer(format, buffer) {
+    buffers.set(String(format), new Uint8Array(buffer))
+  },
+
+  readBuffer(format) {
+    return buffers.get(String(format)) ?? new Uint8Array(0)
+  },
+
+  readFindText() {
+    return findText
+  },
+
+  writeFindText(text) {
+    findText = String(text)
   },
 
   clear() {
@@ -97,13 +136,10 @@ export const clipboard = {
     return resolveImage(image).then((bytes) => bytes && writeImage(bytes))
   },
   availableFormats() {
-    return ['text/plain']
+    return ['text/plain', ...buffers.keys()]
   },
   readHTML() {
     throw new NotImplementedError('clipboard.readHTML')
-  },
-  readImage() {
-    throw new NotImplementedError('clipboard.readImage')
   },
   readRTF() {
     throw new NotImplementedError('clipboard.readRTF')
@@ -117,8 +153,4 @@ export const clipboard = {
   writeBookmark() {
     throw new NotImplementedError('clipboard.writeBookmark')
   },
-  readFindText() {
-    return ''
-  },
-  writeFindText() {},
 }

@@ -31,3 +31,10 @@ npm run build   # tauri build
   call Tauri APIs directly.
 - `src-tauri/capabilities/main.json`: what the main process may do. Remove
   plugins you don't use (and their entries in `Cargo.toml` / `lib.rs`).
+- `src-tauri/src/lib.rs`: declare every scheme your main process passes to
+  `protocol.handle()` with `.protocol("app")`; remove
+  `tauri-plugin-single-instance` if several instances may run at once
+  (Electron's default); register `tauri-plugin-updater` to use `autoUpdater`.
+- `src-tauri/Cargo.toml`: `tauri-plugin-electron` points at this repository
+  with a relative `path`. In a copy outside the repository, use
+  `git = "https://github.com/AJayClauGermany/tauri-as-electron"`.

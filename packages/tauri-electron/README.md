@@ -21,6 +21,7 @@ The plugin:
   `import.meta.filename` to project-relative paths;
 - injects the renderer bootstrap and your preload at the top of every page
   except `electron-main.html`;
+- makes `process.env` read the real environment instead of Vite's `{}`;
 - adds every root-level `*.html` to the build inputs;
 - in dev, prints the hidden main window's console in the terminal.
 
@@ -28,7 +29,8 @@ Options: `preload` (string or array), `mainHtml` (default
 `electron-main.html`), `aliasPath` (default `true`), `forwardMainConsole`
 (default `true`).
 
-The Tauri side needs the plugins registered in `lib.rs`, the
+The Tauri side needs the plugins registered in `lib.rs` (including
+[`tauri-plugin-electron`](../../crates/tauri-plugin-electron)), the
 `electron-main` hidden window in `tauri.conf.json`, and the two capability
 files — see [the template](../../templates/tauri-electron-app/src-tauri).
 
@@ -36,9 +38,11 @@ files — see [the template](../../templates/tauri-electron-app/src-tauri).
 
 ```
 src/index.js            all exports (main + renderer, like Electron)
-src/main/               app, BrowserWindow/webContents, ipcMain, dialog, Menu, Tray, ...
-src/renderer/           ipcRenderer, contextBridge, webFrame, bootstrap (page lifecycle)
-src/internal/           event emitter, runtime detection, accelerator conversion
+src/main/               app, BrowserWindow/webContents, ipcMain, MessageChannelMain, dialog, Menu,
+                        Tray, net, session, protocol, autoUpdater, powerMonitor, ...
+src/renderer/           ipcRenderer, contextBridge, webFrame, webUtils, bootstrap (page-side behaviour)
+src/internal/           event emitter, runtime detection, accelerators, IPC serialization,
+                        tauri-plugin-electron bindings (native.js)
 src/path.js             node:path (POSIX) for the browser
 src/process.js          process.platform & friends
 vite.js                 the Vite plugin
