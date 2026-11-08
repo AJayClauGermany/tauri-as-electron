@@ -110,6 +110,39 @@ const coreChecks = [
   { id: 'process.platform', run: () => { assert(['darwin', 'win32', 'linux'].includes(process.platform), 'known platform'); return process.platform } },
   { id: 'process.arch', run: () => process.arch },
   { id: 'process.versions', run: () => JSON.stringify(process.versions).slice(0, 120) },
+  // CommonJS Electron code: tauri-electron provides require() for electron, path and process.
+  // (This file is an ES module, so on Electron itself `require` is not defined.)
+  { id: "require('electron') / require('node:path')", run: () => {
+    if (typeof require !== 'function') return isElectron ? 'n/a: ESM main process on Electron' : 'no require()'
+    assert(require('electron').app === app, "require('electron').app is app")
+    assert(require('node:path').join === path.join, "require('node:path') is the path module")
+    assert(require('process').platform === process.platform, "require('process')")
+    assert(typeof require('events').EventEmitter === 'function', "require('events')")
+    assert(require('url').fileURLToPath('file:///a/b%20c') === '/a/b c', "require('url')")
+    return 'same modules as import'
+  } },
+  { id: "require('fs') explains itself", run: () => {
+    if (typeof require !== 'function') return isElectron ? 'n/a: ESM main process on Electron' : 'no require()'
+    try {
+      // The module loads; its members throw when called (the same in dev and
+      // in production builds, which turn require() into imports).
+      const fs = require('fs')
+      fs.readFileSync('/nowhere')
+    } catch (error) {
+      if (isElectron) return `n/a: Node is available on Electron (${error.code})`
+      assert(error.name === 'NotImplementedError' && error.reason === 'unsupported', `${error.name} ${error.reason}`)
+      assert(/plugin-fs/.test(error.message), error.message)
+      return error.message
+    }
+    throw new Error('did not throw')
+  } },
+  { id: 'NotImplementedError carries a reason', run: async () => {
+    const error = await desktopCapturer.getSources({ types: ['screen'] }).then(() => null, (e) => e)
+    if (!error) return isElectron ? 'n/a: implemented on Electron' : 'desktopCapturer worked?'
+    assert(error.name === 'NotImplementedError', error.name)
+    assert(['unimplemented', 'unsupported', 'feature', 'plugin', 'permission'].includes(error.reason), `reason ${error.reason}`)
+    return `${error.reason}: ${error.message}`
+  } },
 
   // --- BrowserWindow / webContents ----------------------------------------------
   { id: 'BrowserWindow + loadFile + did-finish-load', run: () => withChildWindow((win) => win.webContents.getURL()) },
