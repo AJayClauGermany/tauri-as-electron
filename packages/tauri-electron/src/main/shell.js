@@ -47,17 +47,17 @@ export const shell = {
     try {
       await native('trash_item', { path: String(path) })
     } catch (error) {
-      if (isMissingPluginError(error)) throw new NotImplementedError('shell.trashItem', 'register tauri-plugin-electron')
+      if (isMissingPluginError(error)) throw new NotImplementedError('shell.trashItem', { reason: 'plugin', hint: 'Register tauri-plugin-electron in src-tauri/src/lib.rs.' })
       // Electron's message, with the native reason attached.
       throw new Error('Failed to move item to trash', { cause: error })
     }
   },
 
   writeShortcutLink() {
-    throw new NotImplementedError('shell.writeShortcutLink')
+    throw new NotImplementedError('shell.writeShortcutLink', { reason: 'unimplemented', hint: 'Windows .lnk files need a Rust command.' })
   },
 
   readShortcutLink() {
-    throw new NotImplementedError('shell.readShortcutLink')
+    throw new NotImplementedError('shell.readShortcutLink', { reason: 'unimplemented', hint: 'Windows .lnk files need a Rust command.' })
   },
 }

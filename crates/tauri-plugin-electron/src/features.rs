@@ -79,6 +79,7 @@ const MAIN_CORE: &[&str] = &[
     "core:app:allow-app-hide",
     "core:app:allow-set-app-theme",
     "core:app:allow-set-dock-visibility",
+    "core:app:allow-default-window-icon",
     "core:webview:allow-create-webview-window",
     "core:webview:allow-set-webview-zoom",
     "core:webview:allow-clear-all-browsing-data",
@@ -159,9 +160,11 @@ fn main_permissions() -> Vec<Value> {
         add(&[json!("notification:default")]);
     }
     if cfg!(feature = "shell") {
-        // Electron's shell.openPath may open any path.
+        // Electron's shell.openExternal opens any URL (custom schemes such as
+        // `vscode://` included) and shell.openPath any path.
         add(&[
             json!("opener:default"),
+            json!({ "identifier": "opener:allow-open-url", "allow": [{ "url": "*" }] }),
             json!({ "identifier": "opener:allow-open-path", "allow": [{ "path": "**" }] }),
         ]);
     }

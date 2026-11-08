@@ -40,15 +40,15 @@ class WebRequest {
 
 class Cookies extends EventEmitter {
   get() {
-    return Promise.reject(new NotImplementedError('session.cookies.get'))
+    return Promise.reject(new NotImplementedError('session.cookies.get', { reason: 'unimplemented', hint: 'Tauri has cookie APIs in Rust; tauri-plugin-electron could expose them.' }))
   }
 
   set() {
-    return Promise.reject(new NotImplementedError('session.cookies.set'))
+    return Promise.reject(new NotImplementedError('session.cookies.set', { reason: 'unimplemented' }))
   }
 
   remove() {
-    return Promise.reject(new NotImplementedError('session.cookies.remove'))
+    return Promise.reject(new NotImplementedError('session.cookies.remove', { reason: 'unimplemented' }))
   }
 
   flushStore() {
@@ -107,12 +107,12 @@ export class Session extends EventEmitter {
     this.protocol = protocol
     this.serviceWorkers = new EventEmitter()
     this.extensions = {
-      loadExtension: () => Promise.reject(new NotImplementedError('session.extensions.loadExtension')),
+      loadExtension: () => Promise.reject(new NotImplementedError('session.extensions.loadExtension', { reason: 'unsupported', hint: 'Chrome extensions do not exist in WebKit / WebView2.' })),
       removeExtension() {},
       getExtension: () => null,
       getAllExtensions: () => [],
     }
-    this.netLog = { startLogging: () => Promise.reject(new NotImplementedError('session.netLog')), stopLogging: () => Promise.resolve(), currentlyLogging: false }
+    this.netLog = { startLogging: () => Promise.reject(new NotImplementedError('session.netLog', { reason: 'unsupported' })), stopLogging: () => Promise.resolve(), currentlyLogging: false }
     this.availableSpellCheckerLanguages = typeof navigator !== 'undefined' ? [...(navigator.languages ?? [navigator.language])] : ['en-US']
   }
 
@@ -198,8 +198,8 @@ export class Session extends EventEmitter {
   flushStorageData() {}
 
   // --- downloads -------------------------------------------------------------------
-  downloadURL() { throw new NotImplementedError('session.downloadURL') }
-  createInterruptedDownload() { throw new NotImplementedError('session.createInterruptedDownload') }
+  downloadURL() { throw new NotImplementedError('session.downloadURL', { reason: 'unimplemented', hint: 'Fetch with net.fetch() and write the file with @tauri-apps/plugin-fs.' }) }
+  createInterruptedDownload() { throw new NotImplementedError('session.createInterruptedDownload', { reason: 'unimplemented' }) }
   setDownloadPath(path) { this._downloadPath = path }
 
   // --- preloads (tauri-electron injects preloads at build time) -------------------
@@ -218,8 +218,8 @@ export class Session extends EventEmitter {
 
   setCodeCachePath() {}
   clearCodeCaches() { return Promise.resolve() }
-  getBlobData() { return Promise.reject(new NotImplementedError('session.getBlobData')) }
-  loadExtension() { return Promise.reject(new NotImplementedError('session.loadExtension')) }
+  getBlobData() { return Promise.reject(new NotImplementedError('session.getBlobData', { reason: 'unsupported' })) }
+  loadExtension() { return Promise.reject(new NotImplementedError('session.loadExtension', { reason: 'unsupported', hint: 'Chrome extensions do not exist in WebKit / WebView2.' })) }
   getAllExtensions() { return [] }
   getExtension() { return null }
   removeExtension() {}

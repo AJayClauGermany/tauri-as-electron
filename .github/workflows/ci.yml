@@ -30,3 +30,14 @@ jobs:
         run: npm run kitchen-sink:smoke
       - name: Template builds
         run: npm run build --workspace tauri-electron-app -- --debug --no-bundle
+      - name: Repository root packs as the tauri-electron package
+        run: npm pack --dry-run
+      - name: Scaffolded app installs the packed root and builds its frontend
+        run: |
+          npm pack --pack-destination /tmp
+          node scripts/create-app.mjs /tmp/scaffolded --name scaffolded
+          cd /tmp/scaffolded
+          npm pkg set "dependencies.tauri-electron=file:$(ls /tmp/tauri-as-electron-*.tgz)"
+          npm install
+          npx vite build
+          test -f dist/electron-main.html

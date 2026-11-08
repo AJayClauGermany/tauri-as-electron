@@ -13,7 +13,10 @@
     "./path": "./src/path.js",
     "./process": "./src/process.js",
     "./renderer-bootstrap": "./src/renderer/bootstrap.js",
-    "./vite": "./vite.js"
+    "./vite": "./vite.js",
+    "./require": "./src/require.js",
+    "./events": "./src/events.js",
+    "./url": "./src/url.js"
   },
   "files": [
     "src",

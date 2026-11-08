@@ -7,11 +7,20 @@
  * It
  *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron
  *    and `path` / `node:path` to a browser-safe implementation,
- *  - rewrites `__dirname`, `__filename`, `import.meta.dirname` and
- *    `import.meta.filename` in your source to project-relative paths, so
+ *  - aliases the Node built-ins it implements (`path`, `process`, `events`,
+ *    `url`) and turns the others (`fs`, `child_process`, …) into a clear
+ *    runtime error instead of a build error,
+ *  - provides `require('electron')`, `require('path')` and friends for
+ *    CommonJS main / preload scripts (`tauri-electron/require`),
+ *  - rewrites `__dirname`, `__filename`, `import.meta.dirname`,
+ *    `import.meta.filename` and `fileURLToPath(import.meta.url)` in your
+ *    source to project-relative paths, so
  *    `win.loadFile(path.join(__dirname, 'index.html'))` keeps working,
- *  - injects the renderer bootstrap and your preload script at the top of
- *    every HTML page except the main-process page (`electron-main.html`),
+ *  - loads the renderer bootstrap and your preload script at the top of
+ *    every HTML page except the main-process page (`electron-main.html`), as
+ *    an external module script so pages with a `script-src 'self'` CSP work,
+ *  - gives classic `<script src="renderer.js">` tags `type="module"` so Vite
+ *    bundles them (Electron pages rarely use module scripts),
  *  - makes `process.env` read the real environment (the main process gets it
  *    from tauri-plugin-electron) instead of Vite's empty object,
  *  - adds every root-level *.html file to the build inputs,
@@ -42,12 +51,48 @@ addEventListener('error', (e) => send('error', [e.error || e.message]))
 addEventListener('unhandledrejection', (e) => send('error', ['Unhandled rejection:', e.reason]))
 `
 
+/**
+ * Virtual entry modules injected into pages. Virtual (rather than inline)
+ * so that the page's own Content-Security-Policy (`script-src 'self'`, as in
+ * electron-quick-start) does not block them, and so that their imports go
+ * through Vite like everything else.
+ */
+const VIRTUAL = {
+  console: 'virtual:tauri-electron/console', // dev only: main window console → terminal
+  main: 'virtual:tauri-electron/main', // require() for the main process
+  renderer: 'virtual:tauri-electron/renderer', // require(), bootstrap, preload(s)
+}
+const RESOLVED = '\0'
+
+/** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
+export const NODE_BUILTINS = [
+  'assert', 'async_hooks', 'buffer', 'child_process', 'cluster', 'constants', 'crypto', 'dgram',
+  'diagnostics_channel', 'dns', 'domain', 'fs', 'fs/promises', 'http', 'http2', 'https',
+  'inspector', 'module', 'net', 'os', 'perf_hooks', 'punycode', 'querystring', 'readline',
+  'repl', 'stream', 'stream/promises', 'stream/web', 'string_decoder', 'sys', 'timers',
+  'timers/promises', 'tls', 'trace_events', 'tty', 'util', 'util/types', 'v8', 'vm',
+  'wasi', 'worker_threads', 'zlib',
+]
+const NODE_BUILTIN_PREFIX = '\0tauri-electron:node:'
+
+/** Node built-ins tauri-electron implements (aliased, like `electron` itself). */
+export const NODE_SHIMS = {
+  path: 'tauri-electron/path',
+  'path/posix': 'tauri-electron/path',
+  process: 'tauri-electron/process',
+  events: 'tauri-electron/events',
+  url: 'tauri-electron/url',
+}
+
 const SOURCE_FILE = /\.(m?[jt]sx?|cjs|cts)$/
 // Comments and quoted strings are matched (and kept) so that only real
 // identifiers are rewritten. Template literals are scanned as code so
 // `${__dirname}` inside them still works.
+// `fileURLToPath(import.meta.url)` is how ES-module Electron code gets its
+// file name (Node < 20.11 has no import.meta.dirname); rewritten as a whole so
+// it yields the source file, not the URL of the bundled chunk.
 const PATH_GLOBALS =
-  /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")|(?<![.$\w])__(dirname|filename)(?![$\w])|\bimport\.meta\.(dirname|filename)\b/g
+  /(\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")|(?<![.$\w])__(dirname|filename)(?![$\w])|\bimport\.meta\.(dirname|filename)\b|\bfileURLToPath\(\s*import\.meta\.url\s*\)/g
 
 export function rewritePathGlobals(code, dirname, filename) {
   return code.replace(PATH_GLOBALS, (match, skipped, legacy, meta) => {
@@ -56,8 +101,33 @@ export function rewritePathGlobals(code, dirname, filename) {
   })
 }
 
+/**
+ * Electron renderer pages load their scripts with plain `<script src>`; Vite
+ * only bundles module scripts. Give classic external scripts `type="module"`
+ * (inline classic scripts, `nomodule`, JSON and import maps are left alone).
+ */
+const CLASSIC_SCRIPT = /<script\b([^>]*)>/gi
+const CLASSIC_TYPES = /^(?:text|application)\/(?:java|ecma)script$/i
+
+export function moduleScripts(html) {
+  return html.replace(CLASSIC_SCRIPT, (match, attrs) => {
+    if (!/\bsrc\s*=/i.test(attrs) || /\bnomodule\b/i.test(attrs)) return match
+    const type = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs)
+    if (!type) return `<script type="module"${attrs}>`
+    const value = (type[1] ?? type[2] ?? type[3]).trim()
+    if (!value || CLASSIC_TYPES.test(value)) return `<script${attrs.replace(type[0], 'type="module"')}>`
+    return match
+  })
+}
+
 function toPosix(p) {
   return p.split(path.sep).join('/')
+}
+
+/** The module id a page's injected `<script src>` points at, in dev and in build. */
+function virtualSrc(id, isDev) {
+  // Dev: Vite serves ids that are not paths under /@id/ (null byte escaped).
+  return isDev ? `/@id/__x00__${id}` : id
 }
 
 /**
@@ -65,11 +135,14 @@ function toPosix(p) {
  * @param {string|string[]|false} [options.preload] Preload script(s), relative to the Vite root.
  * @param {string} [options.mainHtml='electron-main.html'] Page that runs the Electron main-process code.
  * @param {boolean} [options.aliasPath=true] Alias `path`/`node:path` to tauri-electron/path.
+ * @param {boolean} [options.require=true] Provide a global `require()` for CommonJS Electron code.
+ * @param {boolean} [options.moduleScripts=true] Give classic `<script src>` tags `type="module"`.
  * @param {boolean} [options.forwardMainConsole=true] Print the main window's console in the terminal during dev.
  */
 export default function tauriElectron(options = {}) {
   const mainHtml = options.mainHtml ?? 'electron-main.html'
   const preloads = [options.preload].flat().filter(Boolean)
+  const withRequire = options.require !== false
   let root = process.cwd()
   let isDev = false
 
@@ -79,10 +152,11 @@ export default function tauriElectron(options = {}) {
 
     config(userConfig) {
       root = path.resolve(userConfig.root ?? process.cwd())
-      const alias = [
-        { find: /^electron(\/(main|renderer|common))?$/, replacement: 'tauri-electron' },
-      ]
-      if (options.aliasPath !== false) alias.push({ find: /^(node:)?path(\/posix)?$/, replacement: 'tauri-electron/path' })
+      const alias = [{ find: /^electron(\/(main|renderer|common))?$/, replacement: 'tauri-electron' }]
+      for (const [name, replacement] of Object.entries(NODE_SHIMS)) {
+        if (options.aliasPath === false && name.startsWith('path')) continue
+        alias.push({ find: new RegExp(`^(node:)?${name}$`), replacement })
+      }
 
       const config = {
         resolve: { alias },
@@ -137,6 +211,43 @@ export default function tauriElectron(options = {}) {
       })
     },
 
+    resolveId(id) {
+      if (Object.values(VIRTUAL).includes(id)) return RESOLVED + id
+      // `import fs from 'fs'` in Electron code: resolve to a module that
+      // explains the situation when used, rather than failing the build.
+      const bare = id.replace(/^node:/, '')
+      if (NODE_BUILTINS.includes(bare) || (options.aliasPath === false && /^path(\/(posix|win32))?$/.test(bare))) {
+        return NODE_BUILTIN_PREFIX + bare
+      }
+      return null
+    },
+
+    load(id) {
+      if (id.startsWith(NODE_BUILTIN_PREFIX)) {
+        const name = JSON.stringify(id.slice(NODE_BUILTIN_PREFIX.length))
+        // Build: a CommonJS module, so `require('fs')`, `import fs from 'fs'`
+        // and `import { readFileSync } from 'fs'` all reach the stub. Dev
+        // serves native ES modules, where only the default import can be stubbed.
+        return isDev
+          ? `import { nodeBuiltin } from 'tauri-electron/require'\nexport default nodeBuiltin(${name})\n`
+          : `module.exports = require('tauri-electron/require').nodeBuiltin(${name})\n`
+      }
+      if (!id.startsWith(RESOLVED)) return null
+      const name = id.slice(RESOLVED.length)
+      if (!Object.values(VIRTUAL).includes(name)) return null
+      const lines = []
+      if (name === VIRTUAL.console) lines.push(CONSOLE_FORWARDER)
+      if (name === VIRTUAL.main && withRequire) {
+        lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
+      }
+      if (name === VIRTUAL.renderer) {
+        if (withRequire) lines.push(`import 'tauri-electron/require'`)
+        lines.push(`import 'tauri-electron/renderer-bootstrap'`)
+        for (const preload of preloads) lines.push(`import ${JSON.stringify('/' + toPosix(preload).replace(/^\/+/, ''))}`)
+      }
+      return lines.join('\n') + '\n'
+    },
+
     transform(code, id) {
       const file = id.split('?')[0]
       if (!SOURCE_FILE.test(file) || file.includes('/node_modules/') || !file.startsWith(root)) return null
@@ -151,13 +262,15 @@ export default function tauriElectron(options = {}) {
       order: 'pre',
       handler(html, ctx) {
         const page = toPosix(path.relative(root, ctx.filename))
+        const script = (id) => ({ tag: 'script', attrs: { type: 'module', src: virtualSrc(id, isDev) }, injectTo: 'head-prepend' })
+        const tags = []
         if (page === mainHtml) {
-          if (!isDev || options.forwardMainConsole === false) return html
-          return [{ tag: 'script', attrs: { type: 'module' }, children: CONSOLE_FORWARDER, injectTo: 'head-prepend' }]
+          if (withRequire) tags.push(script(VIRTUAL.main))
+          if (isDev && options.forwardMainConsole !== false) tags.unshift(script(VIRTUAL.console))
+          return { html, tags }
         }
-        const imports = ['tauri-electron/renderer-bootstrap', ...preloads.map((p) => '/' + toPosix(p).replace(/^\/+/, ''))]
-        const script = imports.map((p) => `import ${JSON.stringify(p)};`).join(' ')
-        return [{ tag: 'script', attrs: { type: 'module' }, children: script, injectTo: 'head-prepend' }]
+        tags.push(script(VIRTUAL.renderer))
+        return { html: options.moduleScripts === false ? html : moduleScripts(html), tags }
       },
     },
   }

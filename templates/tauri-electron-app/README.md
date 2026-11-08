@@ -1,7 +1,12 @@
 # Tauri + Electron API template
 
-A Tauri v2 app written like an Electron app. Copy this folder to start a
-new project or to port an existing Electron one
+A Tauri v2 app written like an Electron app. Start a project from it with
+
+```bash
+npx github:AJayClauGermany/tauri-as-electron my-app
+```
+
+or add Tauri to an existing Electron project with `--into <dir>`
 (see [MIGRATING.md](../../docs/MIGRATING.md)).
 
 ```
@@ -38,7 +43,9 @@ npm run build   # tauri build
   Electron's defaults (the main process may use everything enabled,
   renderers only IPC). Add capability files if your pages call Tauri APIs
   directly.
-- Until tauri-electron is published,
-  `tauri-plugin-electron` points at this repository with a relative `path`.
-  In a copy outside the repository, use
-  `git = "https://github.com/AJayClauGermany/tauri-as-electron"`.
+- Dependencies: inside this repository the template uses the workspace
+  (`"tauri-electron": "*"`, `tauri-plugin-electron = { path = … }`). A copy
+  made with `npx github:AJayClauGermany/tauri-as-electron my-app` points both
+  at GitHub instead (`github:AJayClauGermany/tauri-as-electron` and
+  `git = "https://github.com/AJayClauGermany/tauri-as-electron"`); add
+  `#<tag>` / `tag = "<tag>"` to pin.

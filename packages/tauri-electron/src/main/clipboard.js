@@ -139,18 +139,18 @@ export const clipboard = {
     return ['text/plain', ...buffers.keys()]
   },
   readHTML() {
-    throw new NotImplementedError('clipboard.readHTML')
+    throw new NotImplementedError('clipboard.readHTML', { reason: 'unimplemented', hint: 'tauri-plugin-clipboard-manager reads text and images only.' })
   },
   readRTF() {
-    throw new NotImplementedError('clipboard.readRTF')
+    throw new NotImplementedError('clipboard.readRTF', { reason: 'unsupported' })
   },
   writeRTF() {
-    throw new NotImplementedError('clipboard.writeRTF')
+    throw new NotImplementedError('clipboard.writeRTF', { reason: 'unsupported' })
   },
   readBookmark() {
-    throw new NotImplementedError('clipboard.readBookmark')
+    throw new NotImplementedError('clipboard.readBookmark', { reason: 'unsupported' })
   },
   writeBookmark() {
-    throw new NotImplementedError('clipboard.writeBookmark')
+    throw new NotImplementedError('clipboard.writeBookmark', { reason: 'unsupported' })
   },
 }

@@ -9,7 +9,7 @@
  */
 import { invoke, convertFileSrc } from '@tauri-apps/api/core'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { inTauri, report } from './runtime.js'
+import { inTauri, report, NotImplementedError } from './runtime.js'
 
 export const BRIDGE_SCHEME = 'tauri-electron'
 
@@ -63,9 +63,10 @@ export function hasFeature(name) {
 
 /** Error for an API whose tauri-plugin-electron feature is off. */
 export function featureError(api, feature) {
-  const error = new Error(`${api} needs the \`${feature}\` feature of tauri-plugin-electron (src-tauri/Cargo.toml).`)
-  error.name = 'NotImplementedError'
-  return error
+  return new NotImplementedError(api, {
+    reason: 'feature',
+    hint: `Add "${feature}" to the features of tauri-plugin-electron in src-tauri/Cargo.toml.`,
+  })
 }
 
 // --- requests forwarded from Rust to the main process -----------------------------

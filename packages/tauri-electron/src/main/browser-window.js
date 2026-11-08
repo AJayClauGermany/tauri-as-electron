@@ -206,10 +206,10 @@ export class WebContents extends EventEmitter {
     this.devToolsWebContents = null
     this.opener = null
     this.debugger = {
-      attach() { throw new NotImplementedError('webContents.debugger.attach') },
+      attach() { throw new NotImplementedError('webContents.debugger.attach', { reason: 'unsupported', hint: 'The Chrome DevTools Protocol is not reachable from a Tauri webview.' }) },
       detach() {},
       isAttached: () => false,
-      sendCommand: () => Promise.reject(new NotImplementedError('webContents.debugger.sendCommand')),
+      sendCommand: () => Promise.reject(new NotImplementedError('webContents.debugger.sendCommand', { reason: 'unsupported' })),
       on() { return this },
       once() { return this },
       removeListener() { return this },
@@ -670,9 +670,9 @@ export class WebContents extends EventEmitter {
   getFrameRate() { return 60 }
   invalidate() {}
   startDrag() { warnOnce('startDrag', 'webContents.startDrag() is a no-op in tauri-electron.') }
-  beginFrameSubscription() { throw new NotImplementedError('webContents.beginFrameSubscription') }
+  beginFrameSubscription() { throw new NotImplementedError('webContents.beginFrameSubscription', { reason: 'unsupported' }) }
   endFrameSubscription() {}
-  getMediaSourceId() { throw new NotImplementedError('webContents.getMediaSourceId') }
+  getMediaSourceId() { throw new NotImplementedError('webContents.getMediaSourceId', { reason: 'unsupported', hint: 'There is no desktopCapturer.' }) }
 
   /** Single native process: the app's pid (from tauri-plugin-electron). */
   getOSProcessId() {
@@ -684,19 +684,19 @@ export class WebContents extends EventEmitter {
   }
 
   capturePage() {
-    return Promise.reject(new NotImplementedError('webContents.capturePage'))
+    return Promise.reject(new NotImplementedError('webContents.capturePage', { reason: 'unsupported', hint: 'Tauri exposes no page capture; render to a canvas inside the page instead.' }))
   }
 
   printToPDF() {
-    return Promise.reject(new NotImplementedError('webContents.printToPDF'))
+    return Promise.reject(new NotImplementedError('webContents.printToPDF', { reason: 'unsupported', hint: 'Use webContents.print(); the system print dialog can save a PDF.' }))
   }
 
   savePage() {
-    return Promise.reject(new NotImplementedError('webContents.savePage'))
+    return Promise.reject(new NotImplementedError('webContents.savePage', { reason: 'unsupported' }))
   }
 
   downloadURL() {
-    throw new NotImplementedError('webContents.downloadURL')
+    throw new NotImplementedError('webContents.downloadURL', { reason: 'unimplemented', hint: 'Fetch with net.fetch() and write the file with @tauri-apps/plugin-fs.' })
   }
 
   close() {
@@ -1518,7 +1518,7 @@ export class BrowserWindow extends EventEmitter {
   invalidateShadow() {}
   setAccentColor() {}
   getAccentColor() { return '' }
-  getMediaSourceId() { throw new NotImplementedError('BrowserWindow.getMediaSourceId') }
+  getMediaSourceId() { throw new NotImplementedError('BrowserWindow.getMediaSourceId', { reason: 'unsupported', hint: 'There is no desktopCapturer.' }) }
 
   // --- menus ---------------------------------------------------------------------------
 
@@ -1574,7 +1574,7 @@ export class BrowserWindow extends EventEmitter {
   }
 
   getNativeWindowHandle() {
-    throw new NotImplementedError('BrowserWindow.getNativeWindowHandle')
+    throw new NotImplementedError('BrowserWindow.getNativeWindowHandle', { reason: 'unsupported', hint: 'Native handles exist only in Rust (tauri::Window::hwnd / ns_window / gtk_window).' })
   }
 
   capturePage() {

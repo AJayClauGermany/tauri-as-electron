@@ -196,6 +196,6 @@ export const net = {
   },
 
   resolveHost() {
-    return Promise.reject(new NotImplementedError('net.resolveHost'))
+    return Promise.reject(new NotImplementedError('net.resolveHost', { reason: 'unimplemented', hint: 'DNS lookups need a Rust command.' }))
   },
 }
