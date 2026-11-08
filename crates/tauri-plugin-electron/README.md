@@ -27,6 +27,9 @@ tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-ele
 `src-tauri/build.rs` needs a few lines so Tauri sees the permissions of the
 plugins registered for you (Cargo only exposes a build script to its direct
 dependencies); copy it from the [template](../../templates/tauri-electron-app/src-tauri/build.rs).
+`npx github:AJayClauGermany/tauri-as-electron --into .` writes all of this
+for you. Pin with `tag = "v0.1.0"` (or `branch`, `rev`); keep the JavaScript
+half (`tauri-electron`) at the same ref.
 
 ## Features
 
@@ -52,7 +55,8 @@ first, so a second launch exits before anything else starts), then grants:
 
 - `electron-main` (the hidden main-process window): every permission of the
   enabled features, plus the core window/webview permissions, like
-  Electron's main process. `net` gets unrestricted `http(s)://**`.
+  Electron's main process. `net` gets unrestricted `http(s)://**`; `shell`
+  may open any URL (custom schemes included) and any path, like Electron's.
 - `electron-renderer` (every window): IPC, zoom, `window.close()` and
   `-webkit-app-region` dragging, like a context-isolated, sandboxed
   Electron renderer.
