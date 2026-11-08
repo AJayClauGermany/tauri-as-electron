@@ -23,5 +23,6 @@ tauri = { version = "2", features = [] }
 # Add opt-in ones with e.g. `features = ["single-instance"]`; to drop defaults,
 # set `default-features = false` and list the ones you keep.
 # Until tauri-electron is published, a copy outside this repository should use
-# `git = "https://github.com/AJayClauGermany/tauri-as-electron"` instead of `path`.
+# `git = "https://github.com/AJayClauGermany/tauri-as-electron"` instead of `path`
+# (the scaffolder, `npx github:AJayClauGermany/tauri-as-electron my-app`, does that).
 tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron" }

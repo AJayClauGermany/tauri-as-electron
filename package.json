@@ -1,8 +1,35 @@
 {
   "name": "tauri-as-electron",
-  "private": true,
-  "description": "Electron-compatible JavaScript API on top of Tauri v2: shim library, starter template and kitchen-sink app.",
+  "version": "0.1.0",
+  "description": "Electron-compatible JavaScript API on top of Tauri v2: the tauri-electron library (importable straight from this GitHub repository), a starter template and a kitchen-sink app.",
   "license": "0BSD",
+  "repository": "github:AJayClauGermany/tauri-as-electron",
+  "type": "module",
+  "main": "./packages/tauri-electron/src/index.js",
+  "exports": {
+    ".": "./packages/tauri-electron/src/index.js",
+    "./main": "./packages/tauri-electron/src/index.js",
+    "./renderer": "./packages/tauri-electron/src/index.js",
+    "./common": "./packages/tauri-electron/src/index.js",
+    "./path": "./packages/tauri-electron/src/path.js",
+    "./process": "./packages/tauri-electron/src/process.js",
+    "./renderer-bootstrap": "./packages/tauri-electron/src/renderer/bootstrap.js",
+    "./vite": "./packages/tauri-electron/vite.js",
+    "./require": "./packages/tauri-electron/src/require.js",
+    "./events": "./packages/tauri-electron/src/events.js",
+    "./url": "./packages/tauri-electron/src/url.js"
+  },
+  "bin": {
+    "create-tauri-electron-app": "./scripts/create-app.mjs"
+  },
+  "files": [
+    "packages/tauri-electron/src",
+    "packages/tauri-electron/vite.js",
+    "packages/tauri-electron/README.md",
+    "templates/tauri-electron-app",
+    "scripts/create-app.mjs",
+    "docs"
+  ],
   "workspaces": [
     "packages/*",
     "templates/*",
@@ -14,6 +41,21 @@
     "template:build": "npm run build --workspace tauri-electron-app",
     "kitchen-sink:dev": "npm run dev --workspace kitchen-sink",
     "kitchen-sink:build": "npm run build --workspace kitchen-sink",
-    "kitchen-sink:smoke": "npm run smoke --workspace kitchen-sink"
+    "kitchen-sink:smoke": "npm run smoke --workspace kitchen-sink",
+    "create-app": "node scripts/create-app.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.0",
+    "@tauri-apps/plugin-autostart": "^2.7.0",
+    "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
+    "@tauri-apps/plugin-deep-link": "^2.6.3",
+    "@tauri-apps/plugin-dialog": "^2.8.0",
+    "@tauri-apps/plugin-global-shortcut": "^2.4.0",
+    "@tauri-apps/plugin-http": "^2.8.3",
+    "@tauri-apps/plugin-notification": "^2.8.0",
+    "@tauri-apps/plugin-opener": "^2.7.0",
+    "@tauri-apps/plugin-os": "^2.4.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1"
   }
 }
