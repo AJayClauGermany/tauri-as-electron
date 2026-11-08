@@ -65,7 +65,7 @@ runs JavaScript only inside webviews, so:
 - **Rust is boilerplate**: `lib.rs` only registers official plugins
   (dialog, clipboard, notification, opener, os, process, http, deep-link,
   global-shortcut, autostart) and `tauri-plugin-electron`. Single-instance
-  locking is opt-in, like in Electron: one commented-out line in `lib.rs`.
+  locking is opt-in, like in Electron: a Cargo feature of `tauri-plugin-electron`.
 
 ## Quick start
 

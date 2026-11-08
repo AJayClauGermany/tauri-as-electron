@@ -12,8 +12,8 @@ default = []
 # feature; uses private APIs on macOS, so not App Store compatible).
 devtools = ["tauri/devtools"]
 # Electron's app.requestSingleInstanceLock() / 'second-instance', through
-# tauri-plugin-single-instance. Off by default, like in Electron: enable it
-# and register `tauri_plugin_electron::single_instance()` as the first plugin.
+# tauri-plugin-single-instance, registered by `Builder::install`. Off by
+# default, like in Electron.
 single-instance = ["dep:tauri-plugin-single-instance"]
 
 [build-dependencies]

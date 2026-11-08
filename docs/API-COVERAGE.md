@@ -31,7 +31,7 @@ tauri-electron follows Electron's defaults. Capabilities enforce them in
 | `webPreferences.backgroundThrottling` | `true` | `backgroundThrottling: 'disabled'` when `false` |
 | Built-in context menu | none | The webview's default menu is suppressed; use `webContents.on('context-menu')`. |
 | `window.open` | opens a `BrowserWindow` | Same: it goes through `setWindowOpenHandler` (default: allow) |
-| Single instance | off (opt-in with `requestSingleInstanceLock()`) | Off. Opt in at build time: the `single-instance` feature of `tauri-plugin-electron` plus one line in `lib.rs` (commented out in the template). |
+| Single instance | off (opt-in with `requestSingleInstanceLock()`) | Off. Opt in at build time with the `single-instance` feature of `tauri-plugin-electron`. |
 
 ## Main process
 

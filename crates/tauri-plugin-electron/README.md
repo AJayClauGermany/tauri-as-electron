@@ -15,20 +15,17 @@ This plugin covers the rest:
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
-| `app.requestSingleInstanceLock`, `second-instance` (opt-in) | `single_instance()` wraps `tauri-plugin-single-instance` (`single-instance` feature) |
+| `app.requestSingleInstanceLock`, `second-instance` (opt-in) | `single-instance` feature: `Builder::install` registers `tauri-plugin-single-instance` first |
 
 Everything is delivered to the hidden `electron-main` window, which runs the
 app's Electron main-process code.
 
 ```rust
-tauri::Builder::default()
-    // Optional (the `single-instance` feature), and must come first.
-    .plugin(tauri_plugin_electron::single_instance())
-    .plugin(
-        tauri_plugin_electron::Builder::new()
-            .protocol("app") // one per scheme passed to protocol.handle()
-            .build(),
-    )
+// Registers the plugin, plus what its enabled features need, ahead of
+// the app's other plugins.
+let builder = tauri_plugin_electron::Builder::new()
+    .protocol("app") // one per scheme passed to protocol.handle()
+    .install(tauri::Builder::default());
 ```
 
 Grant `electron:default` to the `electron-main` window only. Renderers
@@ -38,9 +35,10 @@ to, and sync dialogs only to the main window.
 
 ## Features
 
-- `single-instance`: provides `single_instance()`, Electron's
-  `app.requestSingleInstanceLock()` and `'second-instance'` on top of
-  `tauri-plugin-single-instance`. Off by default because Electron apps allow
+- `single-instance`: Electron's `app.requestSingleInstanceLock()` and
+  `'second-instance'`. `Builder::install` registers
+  `tauri-plugin-single-instance` before the plugin, so enabling the feature
+  is all it takes. Off by default because Electron apps allow
   several instances unless they ask for the lock. The lock is taken at
   startup, not when JavaScript requests it: a second launch exits before its
   main process runs.

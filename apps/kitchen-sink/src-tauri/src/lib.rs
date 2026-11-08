@@ -5,19 +5,16 @@
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default();
-
-    // Electron's app.requestSingleInstanceLock() / 'second-instance' are
-    // opt-in, like in Electron. To use them, enable the `single-instance`
-    // feature of tauri-plugin-electron in Cargo.toml and uncomment this line.
-    // It must stay the first plugin.
-    // builder = builder.plugin(tauri_plugin_electron::single_instance());
+    // tauri-plugin-electron goes first. Its Cargo features add what they
+    // need here: "single-instance" registers tauri-plugin-single-instance
+    // ahead of everything else, so a second launch exits early.
+    // "kitchen": exercised by the protocol.handle() checks. Add one
+    // `.protocol()` per scheme passed to protocol.handle().
+    let mut builder = tauri_plugin_electron::Builder::new()
+        .protocol("kitchen")
+        .install(tauri::Builder::default());
 
     builder = builder
-        // "kitchen": exercised by the protocol.handle() check. Add one
-        // `.protocol()` per scheme passed to protocol.handle().
-        .plugin(tauri_plugin_electron::Builder::new().protocol("kitchen").build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())

@@ -32,11 +32,10 @@ npm run build   # tauri build
 - `src-tauri/capabilities/main.json`: what the main process may do. Remove
   plugins you don't use (and their entries in `Cargo.toml` / `lib.rs`).
 - `src-tauri/src/lib.rs`: declare every scheme your main process passes to
-  `protocol.handle()` with `.protocol("app")`; uncomment the
-  `single_instance()` line (and enable the `single-instance` feature in
-  `Cargo.toml`) if your app calls `app.requestSingleInstanceLock()`;
-  register `tauri-plugin-updater` to use `autoUpdater`.
-- `src-tauri/Cargo.toml`: until tauri-electron is published,
+  `protocol.handle()` with `.protocol("app")`; register `tauri-plugin-updater` to use `autoUpdater`.
+- `src-tauri/Cargo.toml`: enable the `single-instance` feature of
+  `tauri-plugin-electron` if your app calls `app.requestSingleInstanceLock()`.
+  Until tauri-electron is published,
   `tauri-plugin-electron` points at this repository with a relative `path`.
   In a copy outside the repository, use
   `git = "https://github.com/AJayClauGermany/tauri-as-electron"`.
