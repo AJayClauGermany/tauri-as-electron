@@ -2,9 +2,12 @@
  * screen: monitors are fetched before `ready` and refreshed in the
  * background on every call, so the sync getters return recent data.
  * getCursorScreenPoint() is async in Tauri, so it returns a Promise here.
+ * Tauri has no monitor-change event: display-added / display-removed /
+ * display-metrics-changed come from polling (every 2 s, only while someone
+ * listens).
  */
 import { availableMonitors, primaryMonitor, cursorPosition } from '@tauri-apps/api/window'
-import { EventEmitter } from '../internal/emitter.js'
+import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { inTauri, report } from '../internal/runtime.js'
 
 let displays = []
@@ -59,7 +62,84 @@ function distanceToRect(point, r) {
   return dx * dx + dy * dy
 }
 
+const DISPLAY_EVENTS = new Set(['display-added', 'display-removed', 'display-metrics-changed'])
+const POLL_MS = 2000
+
+const sameRect = (a, b) => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
+
+/** Electron's changedMetrics for two snapshots of the same display. */
+export function changedMetrics(before, after) {
+  const changed = []
+  if (!sameRect(before.bounds, after.bounds)) changed.push('bounds')
+  if (!sameRect(before.workArea, after.workArea)) changed.push('workArea')
+  if (before.scaleFactor !== after.scaleFactor) changed.push('scaleFactor')
+  if (before.rotation !== after.rotation) changed.push('rotation')
+  return changed
+}
+
+/** Diff two display lists (matched by label, then id) into Electron events. */
+export function diffDisplays(before, after) {
+  const key = (d) => `${d.label}#${d.id}`
+  const old = new Map(before.map((d) => [key(d), d]))
+  const events = []
+  for (const display of after) {
+    const previous = old.get(key(display))
+    if (!previous) events.push(['display-added', display])
+    else {
+      old.delete(key(display))
+      const changed = changedMetrics(previous, display)
+      if (changed.length) events.push(['display-metrics-changed', display, changed])
+    }
+  }
+  for (const display of old.values()) events.push(['display-removed', display])
+  return events
+}
+
 class Screen extends EventEmitter {
+  on(name, listener) {
+    super.on(name, listener)
+    if (DISPLAY_EVENTS.has(name)) this._startPolling()
+    return this
+  }
+
+  once(name, listener) {
+    super.once(name, listener)
+    if (DISPLAY_EVENTS.has(name)) this._startPolling()
+    return this
+  }
+
+  addListener(name, listener) {
+    return this.on(name, listener)
+  }
+
+  _listeningForDisplays() {
+    return [...DISPLAY_EVENTS].some((name) => this.listenerCount(name) > 0)
+  }
+
+  _startPolling() {
+    if (this._pollTimer || !inTauri) return
+    // Own snapshot: the getters also refresh `displays` in the background.
+    this._snapshot = displays
+    this._pollTimer = setInterval(async () => {
+      if (!this._listeningForDisplays()) {
+        clearInterval(this._pollTimer)
+        this._pollTimer = null
+        return
+      }
+      const before = this._snapshot
+      try {
+        await refresh()
+      } catch (error) {
+        report('screen poll')(error)
+        return
+      }
+      this._snapshot = displays
+      for (const [name, display, changed] of diffDisplays(before, displays)) {
+        this.emit(name, createEvent(), { ...display }, ...(changed ? [changed] : []))
+      }
+    }, POLL_MS)
+  }
+
   getAllDisplays() {
     refreshInBackground()
     return displays.map((d) => ({ ...d }))

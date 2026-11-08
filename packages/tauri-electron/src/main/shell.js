@@ -1,6 +1,12 @@
-/** shell, implemented with @tauri-apps/plugin-opener. */
+/** shell, implemented with @tauri-apps/plugin-opener (trashItem: tauri-plugin-electron). */
 import { openUrl, openPath, revealItemInDir } from '@tauri-apps/plugin-opener'
 import { NotImplementedError, report } from '../internal/runtime.js'
+import { native } from '../internal/native.js'
+
+/** True when an invoke error means tauri-plugin-electron is missing or not permitted. */
+export function isMissingPluginError(error) {
+  return /plugin electron not found|not found.*electron|electron\.[a-z_]+ not allowed|command .* not found/i.test(String(error?.message ?? error))
+}
 
 export const shell = {
   async openExternal(url) {
@@ -36,8 +42,15 @@ export const shell = {
     }
   },
 
-  trashItem() {
-    return Promise.reject(new NotImplementedError('shell.trashItem'))
+  /** Via tauri-plugin-electron (the `trash` crate). */
+  async trashItem(path) {
+    try {
+      await native('trash_item', { path: String(path) })
+    } catch (error) {
+      if (isMissingPluginError(error)) throw new NotImplementedError('shell.trashItem', 'register tauri-plugin-electron')
+      // Electron's message, with the native reason attached.
+      throw new Error('Failed to move item to trash', { cause: error })
+    }
   },
 
   writeShortcutLink() {

@@ -12,11 +12,16 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { getCurrentWebviewWindow, getAllWebviewWindows } from '@tauri-apps/api/webviewWindow'
 import { locale as osLocale } from '@tauri-apps/plugin-os'
 import { exit as processExit, relaunch as processRelaunch } from '@tauri-apps/plugin-process'
+import * as deepLink from '@tauri-apps/plugin-deep-link'
+import * as autostart from '@tauri-apps/plugin-autostart'
 import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { bus } from '../internal/bus.js'
 import { deferred, isMainProcess, isPackagedBuild, report, warnOnce, NotImplementedError } from '../internal/runtime.js'
 import { join as joinPath } from '../path.js'
-import { BrowserWindow } from './browser-window.js'
+import { applyProcessInfo, platform } from '../process.js'
+import { loadProcessInfo, processInfo, hasFeature, hasNativePlugin } from '../internal/native.js'
+import { BrowserWindow, onPageLoad } from './browser-window.js'
+import { Menu } from './menu.js'
 import { startMainBridge } from './ipc-main.js'
 import { initNativeTheme } from './native-theme.js'
 import { initScreen } from './screen.js'
@@ -79,13 +84,13 @@ class App extends EventEmitter {
     this._badgeCount = 0
     this._aboutPanelOptions = {}
     this.isPackaged = isPackagedBuild()
-    this.commandLine = {
-      appendSwitch() {},
-      appendArgument() {},
-      hasSwitch: () => false,
-      getSwitchValue: () => '',
-      removeSwitch() {},
-    }
+    this._loginItem = { openAtLogin: false }
+    this._protocolClients = new Set()
+    this._accessibility = false
+    this.userAgentFallback = typeof navigator !== 'undefined' ? navigator.userAgent : ''
+    this.runningUnderARM64Translation = false
+    this.runningUnderRosettaTranslation = false
+    this.commandLine = createCommandLine()
     this.dock = {
       bounce: () => 0,
       cancelBounce() {},
@@ -106,20 +111,29 @@ class App extends EventEmitter {
   async _boot() {
     await closeStaleWindows()
     const settle = (promise) => promise.then((value) => ({ ok: true, value }), () => ({ ok: false }))
-    const [name, version, locale, appPath, ...paths] = await Promise.all([
+    const webview = getCurrentWebviewWindow()
+    const [info, loginItem, name, version, locale, appPath, ...paths] = await Promise.all([
+      loadProcessInfo(),
+      settle(autostart.isEnabled()),
       settle(tauriApp.getName()),
       settle(tauriApp.getVersion()),
       settle(osLocale()),
       settle(tauriPath.resourceDir()),
       ...Object.values(PATH_RESOLVERS).map((resolve) => settle(resolve())),
       startMainBridge(),
-      // Forwarded by the template's lib.rs from tauri::RunEvent::Reopen (macOS).
-      getCurrentWebviewWindow().listen('tauri-electron:activate', ({ payload }) =>
-        this.emit('activate', createEvent(), Boolean(payload)),
+      // Native events forwarded by tauri-plugin-electron.
+      webview.listen('tauri-electron:activate', ({ payload }) => this.emit('activate', createEvent(), Boolean(payload))),
+      webview.listen('tauri-electron:page-load', ({ payload }) => onPageLoad(payload)),
+      webview.listen('tauri-electron:second-instance', ({ payload }) =>
+        this.emit('second-instance', createEvent(), payload.argv ?? [], payload.cwd ?? '', {}),
       ),
+      webview.listen('tauri-electron:opened', ({ payload }) => this._onOpened(payload)),
       initNativeTheme(),
       initScreen(),
     ])
+    applyProcessInfo(info, { type: 'browser' })
+    if (info?.execPath) Object.assign(this._paths, { exe: info.execPath })
+    if (loginItem.ok) this._loginItem.openAtLogin = loginItem.value
     if (name.ok && !this._name) this._name = name.value
     if (version.ok) this._version = version.value
     if (locale.ok && locale.value) this._locale = locale.value
@@ -134,9 +148,21 @@ class App extends EventEmitter {
     }
 
     this.emit('will-finish-launching')
+    // macOS delivers the URL that launched the app before 'ready', as open-url.
+    if (platform === 'darwin') {
+      deepLink.getCurrent().then((urls) => urls && this._onOpened(urls), () => {})
+    }
     this._ready = true
     this._readyDeferred.resolve()
     this.emit('ready', createEvent(), {})
+  }
+
+  /** macOS open-file / open-url (tauri::RunEvent::Opened). */
+  _onOpened(urls) {
+    for (const url of urls ?? []) {
+      if (url.startsWith('file://')) this.emit('open-file', createEvent(), decodeURIComponent(new URL(url).pathname))
+      else this.emit('open-url', createEvent(), url)
+    }
   }
 
   isReady() {
@@ -275,8 +301,96 @@ class App extends EventEmitter {
     return {}
   }
 
+  getGPUInfo() {
+    return Promise.resolve({ auxAttributes: {}, gpuDevice: [] })
+  }
+
+  /** One native process hosts every webview. */
   getAppMetrics() {
-    return []
+    return [{
+      pid: processInfo()?.pid ?? 0,
+      type: 'Browser',
+      creationTime: typeof performance !== 'undefined' ? performance.timeOrigin : Date.now(),
+      cpu: { percentCPUUsage: 0, idleWakeupsPerSecond: 0 },
+      memory: { workingSetSize: 0, peakWorkingSetSize: 0 },
+      sandboxed: false,
+    }]
+  }
+
+  setAppLogsPath(path) {
+    if (path) this._paths.logs = path
+  }
+
+  resolveProxy() {
+    return Promise.resolve('DIRECT')
+  }
+
+  setProxy() {
+    warnOnce('app.setProxy', 'app.setProxy() is ignored; Tauri webviews use the system proxy.')
+    return Promise.resolve()
+  }
+
+  isAccessibilitySupportEnabled() {
+    return this._accessibility
+  }
+
+  setAccessibilitySupportEnabled(enabled) {
+    this._accessibility = Boolean(enabled)
+  }
+
+  get accessibilitySupportEnabled() { return this._accessibility }
+  set accessibilitySupportEnabled(value) { this.setAccessibilitySupportEnabled(value) }
+
+  get applicationMenu() { return Menu.getApplicationMenu() }
+  set applicationMenu(menu) { Menu.setApplicationMenu(menu) }
+
+  get badgeCount() { return this._badgeCount }
+  set badgeCount(count) { this.setBadgeCount(count) }
+
+  isInApplicationsFolder() {
+    return false
+  }
+
+  moveToApplicationsFolder() {
+    return false
+  }
+
+  isEmojiPanelSupported() {
+    return false
+  }
+
+  showEmojiPanel() {}
+
+  setActivationPolicy() {}
+
+  isSecureKeyboardEntryEnabled() {
+    return false
+  }
+
+  setSecureKeyboardEntryEnabled() {}
+
+  startAccessingSecurityScopedResource() {
+    return () => {}
+  }
+
+  setUserActivity() {}
+  getCurrentActivityType() { return '' }
+  invalidateCurrentActivity() {}
+  resignCurrentActivity() {}
+  updateCurrentActivity() {}
+  configureHostResolver() {}
+  isUnityRunning() { return false }
+
+  getApplicationNameForProtocol() {
+    return ''
+  }
+
+  getApplicationInfoForProtocol() {
+    return Promise.reject(new NotImplementedError('app.getApplicationInfoForProtocol'))
+  }
+
+  getJumpListSettings() {
+    return { minItems: 0, removedItems: [] }
   }
 
   // --- misc --------------------------------------------------------------------------
@@ -300,19 +414,27 @@ class App extends EventEmitter {
   }
 
   /**
-   * Single-instance locking needs tauri-plugin-single-instance (Rust side).
-   * Returning true keeps the usual Electron boilerplate working.
+   * Opt-in, like in Electron: enable the `single-instance` feature of
+   * tauri-plugin-electron in src-tauri/Cargo.toml. The lock is then taken at startup - a second launch exits
+   * before its main process runs - so the instance that gets here holds it.
+   * Without that, there is no lock: this warns and returns true so the usual
+   * `if (!app.requestSingleInstanceLock()) app.quit()` keeps working.
    */
   requestSingleInstanceLock() {
-    warnOnce('single-instance', 'app.requestSingleInstanceLock() always returns true; add tauri-plugin-single-instance for real locking.')
+    if (!hasNativePlugin() || !hasFeature('single-instance')) {
+      warnOnce('single-instance', "app.requestSingleInstanceLock(): no lock is taken. Enable the `single-instance` feature of tauri-plugin-electron in src-tauri/Cargo.toml.")
+    }
+    this._singleInstanceLock = true
     return true
   }
 
   hasSingleInstanceLock() {
-    return true
+    return Boolean(this._singleInstanceLock)
   }
 
-  releaseSingleInstanceLock() {}
+  releaseSingleInstanceLock() {
+    this._singleInstanceLock = false
+  }
 
   setAppUserModelId() {}
 
@@ -322,29 +444,57 @@ class App extends EventEmitter {
 
   enableSandbox() {}
 
-  setAsDefaultProtocolClient() {
-    warnOnce('protocol-client', 'app.setAsDefaultProtocolClient() needs tauri-plugin-deep-link; returning false.')
-    return false
+  /**
+   * tauri-plugin-deep-link. Registration happens asynchronously; macOS needs
+   * the scheme in tauri.conf.json (plugins.deep-link.desktop.schemes).
+   */
+  setAsDefaultProtocolClient(protocol) {
+    if (platform === 'darwin') {
+      warnOnce('protocol-client', 'app.setAsDefaultProtocolClient(): on macOS declare the scheme in tauri.conf.json (plugins.deep-link.desktop.schemes).')
+      return this._protocolClients.has(protocol)
+    }
+    this._protocolClients.add(protocol)
+    deepLink.register(protocol).catch((error) => {
+      this._protocolClients.delete(protocol)
+      report(`app.setAsDefaultProtocolClient(${protocol})`)(error)
+    })
+    return true
   }
 
-  isDefaultProtocolClient() {
-    return false
+  isDefaultProtocolClient(protocol) {
+    deepLink.isRegistered(protocol).then((yes) => (yes ? this._protocolClients.add(protocol) : this._protocolClients.delete(protocol)), () => {})
+    return this._protocolClients.has(protocol)
   }
 
-  removeAsDefaultProtocolClient() {
-    return false
+  removeAsDefaultProtocolClient(protocol) {
+    const had = this._protocolClients.delete(protocol)
+    deepLink.unregister(protocol).catch(report(`app.removeAsDefaultProtocolClient(${protocol})`))
+    return had
   }
 
   addRecentDocument() {}
 
   clearRecentDocuments() {}
 
-  setLoginItemSettings() {
-    warnOnce('login-item', 'app.setLoginItemSettings() needs tauri-plugin-autostart; ignored.')
+  /** tauri-plugin-autostart. Only `openAtLogin` has an effect. */
+  setLoginItemSettings(settings = {}) {
+    if (settings.openAtLogin === undefined) return
+    const enable = Boolean(settings.openAtLogin)
+    this._loginItem.openAtLogin = enable
+    ;(enable ? autostart.enable() : autostart.disable()).catch(report('app.setLoginItemSettings'))
   }
 
   getLoginItemSettings() {
-    return { openAtLogin: false, openAsHidden: false, wasOpenedAtLogin: false, wasOpenedAsHidden: false }
+    return {
+      openAtLogin: this._loginItem.openAtLogin,
+      openAsHidden: false,
+      wasOpenedAtLogin: false,
+      wasOpenedAsHidden: false,
+      restoreState: false,
+      executableWillLaunchAtLogin: this._loginItem.openAtLogin,
+      launchItems: [],
+      status: this._loginItem.openAtLogin ? 'enabled' : 'not-registered',
+    }
   }
 
   setUserTasks() {
@@ -366,6 +516,7 @@ export const app = new App()
 
 // Re-emit window lifecycle events on `app`, like Electron does.
 bus.on('browser-window-created', (win) => app.emit('browser-window-created', createEvent(), win))
+bus.on('web-contents-created', (contents) => app.emit('web-contents-created', createEvent(), contents))
 bus.on('browser-window-focus', (win) => app.emit('browser-window-focus', createEvent(), win))
 bus.on('browser-window-blur', (win) => app.emit('browser-window-blur', createEvent(), win))
 bus.on('quit-requested', () => app.quit())
@@ -377,4 +528,34 @@ if (isMainProcess) {
   // Let the user's main script register its listeners first (it runs
   // synchronously after this module is evaluated), then boot.
   queueMicrotask(() => app._boot().catch(report('app startup')))
+}
+
+/** app.commandLine over the real process arguments (tauri-plugin-electron). */
+function createCommandLine() {
+  const appended = new Map()
+  const fromArgv = (name) => {
+    const argv = globalThis.process?.argv ?? []
+    for (const arg of argv) {
+      if (arg === `--${name}`) return ''
+      if (arg.startsWith(`--${name}=`)) return arg.slice(name.length + 3)
+    }
+    return undefined
+  }
+  return {
+    appendSwitch(name, value = '') {
+      appended.set(String(name), String(value))
+    },
+    appendArgument(arg) {
+      appended.set(String(arg), '')
+    },
+    hasSwitch(name) {
+      return appended.has(name) || fromArgv(name) !== undefined
+    },
+    getSwitchValue(name) {
+      return appended.get(name) ?? fromArgv(name) ?? ''
+    },
+    removeSwitch(name) {
+      appended.delete(name)
+    },
+  }
 }

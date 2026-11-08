@@ -1,6 +1,6 @@
 // Kitchen sink main process. Plain Electron code: it runs unchanged on
 // Electron (`npm run start:electron`) and on Tauri via tauri-electron.
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, protocol } from 'electron'
 import path from 'node:path'
 import { checks, applicationMenu } from './checks.js'
 
@@ -24,13 +24,29 @@ ipcMain.handle('kitchen:list', () => checks.map(({ id, manual }) => ({ id, manua
 ipcMain.handle('kitchen:run', async (_event, id) => {
   const check = checks.find((c) => c.id === id)
   if (!check) throw new Error(`Unknown check: ${id}`)
+  progress({ id, status: 'running' })
+  let result
   try {
-    return { status: 'pass', detail: format(await check.run()) }
+    result = { status: 'pass', detail: format(await check.run()) }
   } catch (error) {
     const unsupported = error?.name === 'NotImplementedError'
-    return { status: unsupported ? 'unsupported' : 'fail', detail: String(error?.message ?? error) }
+    result = { status: unsupported ? 'unsupported' : 'fail', detail: String(error?.message ?? error) }
   }
+  progress({ id, ...result })
+  return result
 })
+
+// Renderer-side checks report their progress here too.
+ipcMain.on('kitchen:progress', (_event, entry) => progress(entry))
+
+/** Smoke runs print each check as it starts and ends, so a hang shows where. */
+function progress(entry) {
+  if (!SMOKE_URL) return
+  if (entry.status !== 'note') lastProgress = entry
+  fetch(SMOKE_URL.replace(/\/report$/, '/progress'), { method: 'POST', body: JSON.stringify(entry) }).catch(() => {})
+}
+let lastProgress = null
+globalThis.kitchenTrace = (message) => progress({ id: message, status: 'note' })
 
 ipcMain.handle('kitchen:report', async (_event, results) => {
   if (!SMOKE_URL) return false
@@ -47,7 +63,16 @@ async function postSmoke(body) {
   }
 }
 
+// Custom schemes must be declared before 'ready' (Electron); see the
+// protocol.handle checks. On Tauri, src-tauri/src/lib.rs declares it too.
+protocol.registerSchemesAsPrivileged([{ scheme: 'kitchen', privileges: { standard: true, supportFetchAPI: true } }])
+
 // --- IPC endpoints used by the renderer-side checks ---------------------------------
+ipcMain.on('kitchen:port', (event) => {
+  const [port] = event.ports
+  port.on('message', ({ data }) => port.postMessage({ doubled: data * 2 }))
+  port.start()
+})
 ipcMain.handle('kitchen:echo', (_event, ...args) => args)
 ipcMain.handle('kitchen:throw', () => {
   throw new Error('boom')
@@ -89,9 +114,10 @@ app.whenReady().then(() => {
   })
   if (SMOKE_URL) {
     setTimeout(async () => {
-      await postSmoke({ error: 'timed out waiting for the renderer report' })
+      const last = lastProgress ? ` (last: ${lastProgress.status} ${lastProgress.id})` : ''
+      await postSmoke({ error: `timed out waiting for the renderer report${last}` })
       app.exit(1)
-    }, 120_000)
+    }, 300_000)
   }
 })
 

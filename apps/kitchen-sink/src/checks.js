@@ -19,18 +19,17 @@ import {
   nativeImage,
   screen,
   globalShortcut,
-  powerMonitor,
-  powerSaveBlocker,
-  safeStorage,
-  session,
-  systemPreferences,
   desktopCapturer,
-  net,
+  contentTracing,
+  utilityProcess,
+  MessageChannelMain,
+  session,
   protocol,
-  autoUpdater,
-  crashReporter,
 } from 'electron'
 import path from 'node:path'
+import { moduleChecks } from './checks-modules.js'
+
+const isElectron = Boolean(process.versions.electron)
 
 const dirname = import.meta.dirname
 
@@ -63,11 +62,19 @@ async function withChildWindow(fn, options = {}) {
     webPreferences: { preload: path.join(dirname, 'preload.mjs'), sandbox: false },
     ...options,
   })
+  // Smoke runs print how long each phase of opening the window took.
+  const start = Date.now()
+  const phases = []
+  for (const name of ['did-start-loading', 'dom-ready', 'did-finish-load']) {
+    win.webContents.once(name, () => phases.push(`${name} +${Date.now() - start}ms`))
+  }
   try {
     const loaded = waitFor(win.webContents, 'did-finish-load', 10000)
     win.loadFile(path.join(dirname, '../child.html'))
     await loaded
-    return await fn(win)
+    const result = await fn(win)
+    globalThis.kitchenTrace?.(`window ${win.id}: ${phases.join(', ')}, done +${Date.now() - start}ms`)
+    return result
   } finally {
     if (!win.isDestroyed()) win.destroy()
   }
@@ -75,7 +82,7 @@ async function withChildWindow(fn, options = {}) {
 
 let tray = null
 
-export const checks = [
+const coreChecks = [
   // --- app -------------------------------------------------------------------
   { id: 'app.isReady', run: () => { assert(app.isReady() === true, 'ready'); return true } },
   { id: 'app.whenReady', run: async () => { await app.whenReady(); return 'resolved' } },
@@ -353,18 +360,179 @@ export const checks = [
   // --- path (Node built-in) ------------------------------------------------------------------
   { id: "path.join(__dirname, '..', 'index.html')", run: () => path.join(dirname, '..', 'index.html') },
 
-  // --- Not implemented in tauri-electron yet (expect "unsupported") -------------------------------
-  { id: 'powerMonitor.getSystemIdleState', run: () => powerMonitor.getSystemIdleState(60) },
-  { id: 'powerSaveBlocker.start', run: () => { const id = powerSaveBlocker.start('prevent-app-suspension'); powerSaveBlocker.stop(id); return id } },
-  { id: 'safeStorage.isEncryptionAvailable', run: () => safeStorage.isEncryptionAvailable() },
-  { id: 'session.fromPartition', run: () => typeof session.fromPartition('persist:kitchen').getUserAgent() },
-  { id: 'systemPreferences.getAnimationSettings', run: () => JSON.stringify(systemPreferences.getAnimationSettings()) },
+  // --- APIs on the main code path of VS Code / GitHub Desktop ---------------------------
+  { id: 'process.argv / execPath', run: () => {
+    assert(process.argv.length >= 1 && process.execPath, `argv ${JSON.stringify(process.argv)}`)
+    return `${process.argv.length} args, ${process.execPath}`
+  } },
+  { id: 'process.env', run: () => { assert(Object.keys(process.env).some((k) => k.toUpperCase() === 'PATH'), 'PATH set'); return `${Object.keys(process.env).length} vars` } },
+  { id: 'app.commandLine.appendSwitch/hasSwitch', run: () => {
+    app.commandLine.appendSwitch('kitchen-switch', '7')
+    assert(app.commandLine.hasSwitch('kitchen-switch') && app.commandLine.getSwitchValue('kitchen-switch') === '7', 'switch')
+    return 'ok'
+  } },
+  { id: 'app.getLoginItemSettings', run: () => JSON.stringify(app.getLoginItemSettings().openAtLogin) },
+  { id: 'app.on(web-contents-created)', run: async () => {
+    const created = waitFor(app, 'web-contents-created')
+    await withChildWindow(async () => { await created })
+    return 'emitted'
+  } },
+  { id: 'MessageChannelMain (in-process)', run: async () => {
+    const { port1, port2 } = new MessageChannelMain()
+    const received = new Promise((resolve) => port2.once('message', (event) => resolve(event.data)))
+    port2.start()
+    port1.postMessage({ bytes: new Uint8Array([1, 2, 3]) })
+    const data = await received
+    assert(data.bytes instanceof Uint8Array && data.bytes[2] === 3, 'structured clone')
+    return 'ok'
+  } },
+  { id: 'webContents.postMessage(MessagePortMain) ↔ renderer', run: () => withChildWindow(async (win) => {
+    const { port1, port2 } = new MessageChannelMain()
+    const echoed = new Promise((resolve) => port1.once('message', (event) => resolve(event.data)))
+    port1.start()
+    win.webContents.postMessage('kitchen:port-echo', null, [port2])
+    port1.postMessage('hello')
+    const data = await Promise.race([echoed, sleep(5000).then(() => 'timeout')])
+    assert(data === 'hello!', `got ${data}`)
+    return data
+  }) },
+  { id: 'IpcMainEvent.senderFrame.url', run: () => withChildWindow(async (win) => {
+    const pong = new Promise((resolve) => ipcMain.once('kitchen:child-pong', (event) => resolve(event)))
+    win.webContents.send('kitchen:child-ping', 1)
+    const event = await pong
+    assert(event.senderFrame?.url?.includes('child.html'), `url ${event.senderFrame?.url}`)
+    assert(event.processId === win.webContents.getProcessId(), 'processId')
+    return event.senderFrame.url
+  }) },
+  { id: 'webContents.ipc.handle (per-window handler)', run: () => withChildWindow(async (win) => {
+    win.webContents.ipc.handle('kitchen:scoped', () => 'scoped')
+    const value = await win.webContents.executeJavaScript("window.kitchen.invoke('kitchen:scoped')")
+    assert(value === 'scoped', `got ${value}`)
+    return value
+  }) },
+  { id: 'webContents events did-start-loading / did-navigate', run: async () => {
+    const win = new BrowserWindow({ show: false })
+    try {
+      const started = waitFor(win.webContents, 'did-start-loading', 10000)
+      const navigated = waitFor(win.webContents, 'did-navigate', 10000)
+      win.loadFile(path.join(dirname, '../child.html'))
+      await started
+      const [, url] = await navigated
+      assert(url.includes('child.html'), url)
+      return url
+    } finally {
+      win.destroy()
+    }
+  } },
+  { id: 'setWindowOpenHandler (deny)', run: () => withChildWindow(async (win) => {
+    const before = BrowserWindow.getAllWindows().length
+    const details = new Promise((resolve) => win.webContents.setWindowOpenHandler((d) => { resolve(d); return { action: 'deny' } }))
+    await win.webContents.executeJavaScript("window.open('https://example.com/opened', '_blank'); 1")
+    const d = await Promise.race([details, sleep(5000).then(() => null)])
+    assert(d?.url === 'https://example.com/opened', `details ${JSON.stringify(d)}`)
+    await sleep(300)
+    assert(BrowserWindow.getAllWindows().length === before, 'no window created')
+    return d.disposition
+  }) },
+  { id: 'setWindowOpenHandler (allow) + did-create-window', run: () => withChildWindow(async (win) => {
+    win.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { show: false, width: 300, height: 200 } }))
+    const created = waitFor(win.webContents, 'did-create-window', 5000)
+    await win.webContents.executeJavaScript("window.open('child.html?opened=1'); 1")
+    const [child] = await created
+    try {
+      assert(child instanceof BrowserWindow, 'BrowserWindow')
+      return `window ${child.id}`
+    } finally {
+      child.destroy()
+    }
+  }) },
+  { id: 'will-navigate (preventDefault)', run: () => withChildWindow(async (win) => {
+    const url = new Promise((resolve) => win.webContents.on('will-navigate', (event, u) => { event.preventDefault(); resolve(u) }))
+    await sleep(100)
+    await win.webContents.executeJavaScript("const a = document.createElement('a'); a.href = 'https://example.com/nav'; document.body.append(a); a.click(); 1")
+    const u = await Promise.race([url, sleep(5000).then(() => 'timeout')])
+    assert(u === 'https://example.com/nav', u)
+    await sleep(300)
+    assert(win.webContents.getURL().includes('child.html'), 'navigation prevented')
+    return u
+  }) },
+  { id: "webContents.on('console-message')", run: () => withChildWindow(async (win) => {
+    const message = new Promise((resolve) => win.webContents.on('console-message', (event, _level, text) => (event.message ?? text) === 'kitchen-console' && resolve(event.message ?? text)))
+    await sleep(100)
+    await win.webContents.executeJavaScript("console.log('kitchen-console'); 1")
+    return Promise.race([message, sleep(5000).then(() => { throw new Error('no console-message') })])
+  }) },
+  { id: "webContents.on('context-menu')", run: () => withChildWindow(async (win) => {
+    if (isElectron) return 'Electron only reports native right-clicks (not synthetic events)'
+    const params = new Promise((resolve) => win.webContents.on('context-menu', (_event, p) => resolve(p)))
+    await sleep(100)
+    await win.webContents.executeJavaScript("document.body.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 12, clientY: 34, button: 2 })); 1")
+    const p = await Promise.race([params, sleep(5000).then(() => null)])
+    assert(p?.x === 12 && p?.y === 34 && p.editFlags, `params ${p && Object.keys(p).join(',')}`)
+    return `x=${p.x} y=${p.y}`
+  }) },
+  { id: 'webContents.findInPage → found-in-page', run: () => withChildWindow(async (win) => {
+    const result = new Promise((resolve) => win.webContents.on('found-in-page', (_event, r) => r.finalUpdate && resolve(r)))
+    win.webContents.findInPage('window')
+    const r = await Promise.race([result, sleep(5000).then(() => null)])
+    win.webContents.stopFindInPage('clearSelection')
+    assert(r, 'no found-in-page event')
+    // Chromium finds nothing in a hidden window; tauri-electron searches the DOM.
+    if (!isElectron) assert(r.matches >= 1, JSON.stringify(r))
+    return `${r.matches} matches`
+  }) },
+  { id: 'webContents.navigationHistory', run: () => withChildWindow(async (win) => {
+    const history = win.webContents.navigationHistory
+    assert(!history.canGoBack(), 'cannot go back initially')
+    await win.loadFile(path.join(dirname, '../child.html'), { query: { page: '2' } })
+    await sleep(300)
+    assert(history.canGoBack(), `can go back (${history.length()} entries)`)
+    const back = waitFor(win.webContents, 'did-navigate', 10000)
+    history.goBack()
+    await back
+    assert(history.getActiveIndex() === 0 && history.canGoForward(), `index ${history.getActiveIndex()}`)
+    return `${history.length()} entries`
+  }) },
+  { id: 'webContents.zoomFactor property', run: () => withChildWindow((win) => { win.webContents.zoomFactor = 1.25; assert(win.webContents.getZoomFactor() === 1.25, 'zoom'); return win.webContents.zoomLevel.toFixed(2) }) },
+  { id: 'webContents.getOSProcessId', run: () => withChildWindow((win) => { const pid = win.webContents.getOSProcessId(); assert(pid > 0, `pid ${pid}`); return pid }) },
+  { id: 'webContents.session === session.defaultSession', run: () => withChildWindow((win) => { assert(win.webContents.session === session.defaultSession, 'default session'); return 'ok' }) },
+  { id: 'webPreferences.additionalArguments → process.argv', run: () => withChildWindow(async (win) => {
+    const argv = await win.webContents.executeJavaScript('window.kitchen.argv')
+    assert(argv.includes('--kitchen-arg=42'), JSON.stringify(argv))
+    return '--kitchen-arg=42'
+  }, { webPreferences: { preload: path.join(dirname, 'preload.mjs'), sandbox: false, additionalArguments: ['--kitchen-arg=42'] } }) },
+  { id: 'protocol.handle → BrowserWindow.loadURL(kitchen://)', run: async () => {
+    if (!(await protocol.isProtocolHandled('kitchen'))) await moduleChecks.find((c) => c.id === "protocol.handle('kitchen')").run()
+    const win = new BrowserWindow({ show: false })
+    try {
+      const loaded = waitFor(win.webContents, 'did-finish-load', 10000)
+      win.loadURL('kitchen://localhost/hello')
+      await loaded
+      await sleep(200)
+      assert(win.webContents.getURL().includes('hello'), win.webContents.getURL())
+      return win.webContents.getURL()
+    } finally {
+      win.destroy()
+    }
+  } },
+  { id: 'BrowserWindow.setEnabled/isEnabled', run: () => withChildWindow((win) => { win.setEnabled(false); const disabled = !win.isEnabled(); win.setEnabled(true); assert(disabled && win.isEnabled(), 'toggled'); return 'ok' }) },
+  { id: 'BrowserWindow.getNormalBounds', run: () => withChildWindow((win) => JSON.stringify(win.getNormalBounds())) },
+  { id: 'webContents.toggleDevTools', manual: true, run: () => { BrowserWindow.getAllWindows()[0].webContents.toggleDevTools(); return 'toggled' } },
+  { id: 'Frameless window: -webkit-app-region drag + file drop', manual: true, run: async () => {
+    const win = new BrowserWindow({ width: 520, height: 360, frame: false, webPreferences: { preload: path.join(dirname, 'preload.mjs'), sandbox: false } })
+    await win.loadFile(path.join(dirname, '../child.html'), { query: { frameless: '1' } })
+    return 'drag the header; drop files on the window'
+  } },
+
+  // --- Not implemented in tauri-electron (expect "unsupported") ---------------------------
   { id: 'desktopCapturer.getSources', run: async () => (await desktopCapturer.getSources({ types: ['screen'] })).length },
-  { id: 'net.isOnline', run: () => net.isOnline() },
-  { id: 'protocol.isProtocolHandled', run: async () => String(await protocol.isProtocolHandled('https')) },
-  { id: 'autoUpdater.getFeedURL', run: () => autoUpdater.getFeedURL() || '(empty)' },
-  { id: 'crashReporter.getUploadedReports', run: () => crashReporter.getUploadedReports().length },
+  { id: 'utilityProcess.fork', run: () => { const child = utilityProcess.fork(path.join(dirname, 'no-such-module.js')); child.kill(); return 'forked' } },
+  { id: 'contentTracing.getCategories', run: async () => (await contentTracing.getCategories()).length },
 ]
+
+// Module checks override same-named core checks.
+const moduleIds = new Set(moduleChecks.map((c) => c.id))
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

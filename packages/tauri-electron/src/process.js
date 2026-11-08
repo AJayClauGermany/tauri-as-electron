@@ -77,7 +77,38 @@ export const processShim = {
   ),
   uptime: () => performance.now() / 1000,
   memoryUsage: () => ({ rss: 0, heapTotal: 0, heapUsed: 0, external: 0 }),
+  // Electron additions (renderer & main)
+  getProcessMemoryInfo: () => Promise.resolve({ residentSet: 0, private: 0, shared: 0 }),
+  getSystemMemoryInfo: () => ({ total: 0, free: 0 }),
+  getHeapStatistics: () => ({ totalHeapSize: 0, totalHeapSizeExecutable: 0, totalPhysicalSize: 0, totalAvailableSize: 0, usedHeapSize: 0, heapSizeLimit: 0, mallocedMemory: 0, peakMallocedMemory: 0, doesZapGarbage: false }),
+  getBlinkMemoryInfo: () => ({ allocated: 0, total: 0 }),
+  getCPUUsage: () => ({ percentCPUUsage: 0, idleWakeupsPerSecond: 0 }),
+  getCreationTime: () => (typeof performance !== 'undefined' ? performance.timeOrigin : Date.now()),
+  takeHeapSnapshot: () => false,
+  crash() {},
+  hang() {},
+  setFdLimit() {},
+  mas: false,
+  windowsStore: false,
   getSystemVersion: () => (inTauri ? safe(osVersion, '') : ''),
+}
+
+/**
+ * Fill in what only the native side knows (tauri-plugin-electron):
+ * argv, env, execPath, pid, cwd. `type` is 'browser' in the main process
+ * and 'renderer' in windows, like Electron.
+ */
+export function applyProcessInfo(info, extra = {}) {
+  const target = installProcessShim()
+  if (!info) return target
+  if (Array.isArray(info.argv)) target.argv = [...info.argv]
+  if (info.env) Object.assign(target.env, info.env)
+  if (info.execPath) target.execPath = info.execPath
+  if (info.pid) target.pid = info.pid
+  if (info.cwd) target.cwd = () => info.cwd
+  if (info.resourcesPath) target.resourcesPath = info.resourcesPath
+  Object.assign(target, extra)
+  return target
 }
 
 /** Install `globalThis.process` unless something (e.g. a bundler) already did. */

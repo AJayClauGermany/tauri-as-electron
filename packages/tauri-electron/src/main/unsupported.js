@@ -37,30 +37,45 @@ export function unsupportedClass(name, hint) {
   }
 }
 
-export const autoUpdater = unsupportedModule('autoUpdater', 'use @tauri-apps/plugin-updater')
-export const crashReporter = unsupportedModule('crashReporter')
 export const contentTracing = unsupportedModule('contentTracing')
 export const desktopCapturer = unsupportedModule('desktopCapturer')
 export const inAppPurchase = unsupportedModule('inAppPurchase')
-export const net = unsupportedModule('net', 'use fetch() or @tauri-apps/plugin-http')
 export const netLog = unsupportedModule('netLog')
-export const powerMonitor = unsupportedModule('powerMonitor')
-export const powerSaveBlocker = unsupportedModule('powerSaveBlocker')
-export const protocol = unsupportedModule('protocol', 'register URI scheme protocols from Rust')
 export const pushNotifications = unsupportedModule('pushNotifications')
-export const safeStorage = unsupportedModule('safeStorage', 'consider tauri-plugin-stronghold or the keyring crate')
-export const session = unsupportedModule('session')
-export const systemPreferences = unsupportedModule('systemPreferences')
-export const utilityProcess = unsupportedModule('utilityProcess', 'use a sidecar via @tauri-apps/plugin-shell')
-export const webFrameMain = unsupportedModule('webFrameMain')
-export const webUtils = { getPathForFile: (file) => file?.path ?? '' }
+export const utilityProcess = unsupportedModule('utilityProcess', 'run Node code as a sidecar via @tauri-apps/plugin-shell')
 
 export const BrowserView = unsupportedClass('BrowserView')
 export const WebContentsView = unsupportedClass('WebContentsView')
-export const MessageChannelMain = unsupportedClass('MessageChannelMain')
 export const ShareMenu = unsupportedClass('ShareMenu')
-export const TouchBar = unsupportedClass('TouchBar')
 export const View = unsupportedClass('View')
 export const sharedTexture = unsupportedModule('sharedTexture')
 export const ImageView = unsupportedClass('ImageView')
 export const IpcMainServiceWorker = unsupportedClass('IpcMainServiceWorker')
+
+/**
+ * macOS Touch Bar: accepted and ignored, so `win.setTouchBar(new TouchBar(...))`
+ * keeps working (Tauri has no Touch Bar API).
+ */
+class TouchBarItem {
+  constructor(options = {}) {
+    Object.assign(this, options)
+  }
+}
+
+export class TouchBar {
+  constructor(options = {}) {
+    this.items = options.items ?? []
+    this.escapeItem = options.escapeItem ?? null
+  }
+
+  static TouchBarButton = class TouchBarButton extends TouchBarItem {}
+  static TouchBarColorPicker = class TouchBarColorPicker extends TouchBarItem {}
+  static TouchBarGroup = class TouchBarGroup extends TouchBarItem {}
+  static TouchBarLabel = class TouchBarLabel extends TouchBarItem {}
+  static TouchBarPopover = class TouchBarPopover extends TouchBarItem {}
+  static TouchBarScrubber = class TouchBarScrubber extends TouchBarItem {}
+  static TouchBarSegmentedControl = class TouchBarSegmentedControl extends TouchBarItem {}
+  static TouchBarSlider = class TouchBarSlider extends TouchBarItem {}
+  static TouchBarSpacer = class TouchBarSpacer extends TouchBarItem {}
+  static TouchBarOtherItemsProxy = class TouchBarOtherItemsProxy extends TouchBarItem {}
+}

@@ -1,9 +1,11 @@
 # Cargo workspace so the template and the kitchen sink share one build cache.
 # Each member is still a self-contained crate: copying a member out of this
-# repository works without changes.
+# repository works without changes (except the relative path to
+# crates/tauri-plugin-electron, see the template README).
 [workspace]
 resolver = "2"
 members = [
+  "crates/tauri-plugin-electron",
   "templates/tauri-electron-app/src-tauri",
   "apps/kitchen-sink/src-tauri",
 ]

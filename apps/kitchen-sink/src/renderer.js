@@ -42,7 +42,20 @@ const rendererChecks = [
     })
     kitchen.send('kitchen:ping', 'hello')
   }) },
-  { id: 'ipcRenderer.sendSync', run: () => kitchen.sendSync('kitchen:sync') },
+  { id: 'ipcRenderer.sendSync', run: () => { const v = kitchen.sendSync('kitchen:sync'); assert(v === 'sync-ok', `got ${v}`); return v } },
+  { id: 'ipcRenderer.invoke (structured clone)', run: async () => {
+    const [bytes, date, map, missing, big] = await kitchen.invoke('kitchen:echo', new Uint8Array([1, 2, 255]), new Date(0), new Map([['a', 1]]), undefined, 10n)
+    assert(bytes instanceof Uint8Array && bytes[2] === 255, `bytes ${bytes}`)
+    assert(date instanceof Date && date.getTime() === 0, `date ${date}`)
+    assert(map instanceof Map && map.get('a') === 1, 'map')
+    assert(missing === undefined && big === 10n, 'undefined / bigint')
+    return 'Uint8Array, Date, Map, undefined, BigInt'
+  } },
+  { id: 'ipcRenderer.postMessage (MessagePort → main)', run: async () => {
+    const reply = await kitchen.portRoundTrip(21)
+    assert(reply?.doubled === 42, JSON.stringify(reply))
+    return JSON.stringify(reply)
+  } },
   { id: 'BrowserWindow.loadFile({ query })', run: () => { assert(params.get('from') === 'main', location.search); return location.search } },
 ]
 
@@ -99,6 +112,7 @@ async function run(id) {
   if (entry.where === 'main') {
     Object.assign(entry, await kitchen.runMainCheck(id))
   } else {
+    if (smoke) kitchen.progress({ id, status: 'running' })
     try {
       const value = await rendererChecks.find((c) => c.id === id).run()
       Object.assign(entry, { status: 'pass', detail: typeof value === 'string' ? value : JSON.stringify(value) })
@@ -106,6 +120,7 @@ async function run(id) {
       const unsupported = error?.name === 'NotImplementedError' || /not implemented/.test(error?.message)
       Object.assign(entry, { status: unsupported ? 'unsupported' : 'fail', detail: String(error?.message ?? error) })
     }
+    if (smoke) kitchen.progress({ id, status: entry.status, detail: entry.detail })
   }
   render()
 }

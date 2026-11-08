@@ -1,0 +1,78 @@
+[package]
+name = "tauri-plugin-electron"
+version = "0.1.0"
+description = "Native half of tauri-electron: registers the official Tauri plugins Electron's API is built on, grants Electron's default capabilities, and covers what those plugins cannot."
+edition = "2021"
+license = "0BSD"
+links = "tauri-plugin-electron"
+
+# Every Electron module that needs an official Tauri plugin is a feature.
+# `Builder::install` registers the plugins of the enabled features and grants
+# the main window their permissions, so toggling a feature is all it takes.
+# The defaults match what Electron offers out of the box; the rest is opt-in,
+# like in Electron.
+[features]
+default = [
+  "dialog",
+  "clipboard",
+  "notification",
+  "shell",
+  "net",
+  "global-shortcut",
+  "tray",
+  "protocol-client",
+  "login-item",
+]
+# dialog.* (including the *Sync variants)
+dialog = ["dep:tauri-plugin-dialog"]
+# clipboard.*
+clipboard = ["dep:tauri-plugin-clipboard-manager"]
+# Notification
+notification = ["dep:tauri-plugin-notification"]
+# shell.openExternal / openPath / showItemInFolder
+shell = ["dep:tauri-plugin-opener"]
+# net.fetch / net.request (and autoUpdater downloads)
+net = ["dep:tauri-plugin-http"]
+# globalShortcut
+global-shortcut = ["dep:tauri-plugin-global-shortcut"]
+# Tray
+tray = ["tauri/tray-icon"]
+# app.setAsDefaultProtocolClient & co.
+protocol-client = ["dep:tauri-plugin-deep-link"]
+# app.setLoginItemSettings / getLoginItemSettings
+login-item = ["dep:tauri-plugin-autostart"]
+
+# --- opt-in ------------------------------------------------------------------------
+# app.requestSingleInstanceLock() / 'second-instance'. Electron apps allow several
+# instances unless they ask for the lock, so this is off by default.
+single-instance = ["dep:tauri-plugin-single-instance"]
+# autoUpdater. Needs `plugins.updater` (endpoints, public key) in tauri.conf.json.
+updater = ["dep:tauri-plugin-updater"]
+# webContents.openDevTools() in release builds (Tauri's `devtools` feature; uses
+# private APIs on macOS, so not App Store compatible).
+devtools = ["tauri/devtools"]
+
+[build-dependencies]
+tauri-plugin = { version = "2", features = ["build"] }
+
+[dependencies]
+# image-png / image-ico: icons passed as bytes (nativeImage, Tray, BrowserWindow#setIcon).
+tauri = { version = "2", features = ["image-png", "image-ico"] }
+tauri-plugin-os = "2"
+tauri-plugin-process = "2"
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-clipboard-manager = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-opener = { version = "2", optional = true }
+tauri-plugin-http = { version = "2", optional = true }
+tauri-plugin-deep-link = { version = "2", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.23"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+trash = "5"
+tauri-plugin-global-shortcut = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
+tauri-plugin-single-instance = { version = "2", optional = true }
+tauri-plugin-updater = { version = "2", optional = true }
