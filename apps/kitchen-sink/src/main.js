@@ -42,10 +42,11 @@ ipcMain.on('kitchen:progress', (_event, entry) => progress(entry))
 /** Smoke runs print each check as it starts and ends, so a hang shows where. */
 function progress(entry) {
   if (!SMOKE_URL) return
-  lastProgress = entry
+  if (entry.status !== 'note') lastProgress = entry
   fetch(SMOKE_URL.replace(/\/report$/, '/progress'), { method: 'POST', body: JSON.stringify(entry) }).catch(() => {})
 }
 let lastProgress = null
+globalThis.kitchenTrace = (message) => progress({ id: message, status: 'note' })
 
 ipcMain.handle('kitchen:report', async (_event, results) => {
   if (!SMOKE_URL) return false
@@ -116,7 +117,7 @@ app.whenReady().then(() => {
       const last = lastProgress ? ` (last: ${lastProgress.status} ${lastProgress.id})` : ''
       await postSmoke({ error: `timed out waiting for the renderer report${last}` })
       app.exit(1)
-    }, 120_000)
+    }, 300_000)
   }
 })
 

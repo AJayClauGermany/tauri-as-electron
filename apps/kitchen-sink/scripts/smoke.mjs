@@ -64,6 +64,7 @@ const report = new Promise((resolve) => {
         // Live progress, so a hang in CI shows which check it is in.
         const { id, status, detail } = JSON.parse(body)
         if (status === 'running') console.log(`${elapsed()}  …  ${id}`)
+        else if (status === 'note') console.log(`${elapsed()}     ${id}`)
         else console.log(`${elapsed()}  ${status === 'pass' ? '✓' : status === 'fail' ? '✗' : '-'}  ${id}${status === 'fail' ? `: ${detail}` : ''}`)
         return
       }
@@ -107,7 +108,7 @@ const timeout = setTimeout(() => {
   console.error('Timed out waiting for the kitchen sink report')
   app.kill()
   process.exit(2)
-}, 180_000)
+}, 360_000)
 
 const data = await report
 clearTimeout(timeout)

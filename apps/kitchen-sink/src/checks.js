@@ -62,11 +62,19 @@ async function withChildWindow(fn, options = {}) {
     webPreferences: { preload: path.join(dirname, 'preload.mjs'), sandbox: false },
     ...options,
   })
+  // Smoke runs print how long each phase of opening the window took.
+  const start = Date.now()
+  const phases = []
+  for (const name of ['did-start-loading', 'dom-ready', 'did-finish-load']) {
+    win.webContents.once(name, () => phases.push(`${name} +${Date.now() - start}ms`))
+  }
   try {
     const loaded = waitFor(win.webContents, 'did-finish-load', 10000)
     win.loadFile(path.join(dirname, '../child.html'))
     await loaded
-    return await fn(win)
+    const result = await fn(win)
+    globalThis.kitchenTrace?.(`window ${win.id}: ${phases.join(', ')}, done +${Date.now() - start}ms`)
+    return result
   } finally {
     if (!win.isDestroyed()) win.destroy()
   }
