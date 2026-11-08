@@ -49,7 +49,7 @@ round of work; **now** is the current status. See
 | `session.defaultSession.resolveProxy` | Proxy detection for git and HTTP | ❌ | 🟡 always `DIRECT` |
 | `session` spell-checker languages / dictionary | Spell-check context menu | ❌ | 🟡 stored; no native spell checker |
 | `net.request` / `net.fetch` | Desktop: error reports; VS Code: request service | ❌ | ✅ `tauri-plugin-http` |
-| `autoUpdater` (`setFeedURL`, `checkForUpdates`, `quitAndInstall`, events) | Updates | ❌ | 🟡 `tauri-plugin-updater`; feed comes from `tauri.conf.json` |
+| `autoUpdater` (`setFeedURL`, `checkForUpdates`, `quitAndInstall`, events) | Updates | ❌ | 🟡 opt-in `updater` feature (`tauri-plugin-updater`); feed comes from `tauri.conf.json` |
 | `crashReporter.start` | Startup | ❌ (throws at startup) | ⚪ |
 | `app.disableHardwareAcceleration`, `setAppUserModelId` | Startup tweaks | ⚪ | ⚪ |
 

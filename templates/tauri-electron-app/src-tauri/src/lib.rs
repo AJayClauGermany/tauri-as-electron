@@ -1,36 +1,16 @@
-//! The Rust side is intentionally boilerplate: it registers the official
-//! plugins that tauri-electron builds the Electron API on, plus
-//! tauri-plugin-electron for the few things they do not cover. Your app
-//! logic lives in JavaScript (src/main.js), like in an Electron app.
+//! The Rust side is boilerplate. tauri-plugin-electron registers the
+//! official Tauri plugins that tauri-electron builds the Electron API on
+//! (pick them with its Cargo features in Cargo.toml) and grants Electron's
+//! default capabilities. Your app logic lives in JavaScript (src/main.js),
+//! like in an Electron app.
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // tauri-plugin-electron goes first. Its Cargo features add what they
-    // need here: "single-instance" registers tauri-plugin-single-instance
-    // ahead of everything else, so a second launch exits early.
-    // Add `.protocol("app")` for every scheme your main process passes to
-    // protocol.handle(); Tauri needs to know them when the app is built.
-    let mut builder = tauri_plugin_electron::Builder::new()
-        .install(tauri::Builder::default());
-
-    builder = builder
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_deep_link::init());
-
-    #[cfg(desktop)]
-    {
-        builder = builder
-            .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-            .plugin(tauri_plugin_autostart::Builder::new().build());
-    }
-
-    builder
+    tauri_plugin_electron::Builder::new()
+        // Declare every scheme your main process passes to protocol.handle();
+        // Tauri needs to know them when the app is built.
+        // .protocol("app")
+        .install(tauri::Builder::default())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

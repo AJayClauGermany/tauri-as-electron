@@ -19,7 +19,7 @@ import { bus } from '../internal/bus.js'
 import { deferred, isMainProcess, isPackagedBuild, report, warnOnce, NotImplementedError } from '../internal/runtime.js'
 import { join as joinPath } from '../path.js'
 import { applyProcessInfo, platform } from '../process.js'
-import { loadProcessInfo, processInfo } from '../internal/native.js'
+import { loadProcessInfo, processInfo, hasFeature, hasNativePlugin } from '../internal/native.js'
 import { BrowserWindow, onPageLoad } from './browser-window.js'
 import { Menu } from './menu.js'
 import { startMainBridge } from './ipc-main.js'
@@ -421,7 +421,7 @@ class App extends EventEmitter {
    * `if (!app.requestSingleInstanceLock()) app.quit()` keeps working.
    */
   requestSingleInstanceLock() {
-    if (!processInfo()?.singleInstance) {
+    if (!hasNativePlugin() || !hasFeature('single-instance')) {
       warnOnce('single-instance', "app.requestSingleInstanceLock(): no lock is taken. Enable the `single-instance` feature of tauri-plugin-electron in src-tauri/Cargo.toml.")
     }
     this._singleInstanceLock = true

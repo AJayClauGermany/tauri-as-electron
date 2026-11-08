@@ -54,18 +54,20 @@ runs JavaScript only inside webviews, so:
 - **Capabilities mirror Electron's security model and defaults**: the hidden
   main window may use all APIs; renderer windows may only exchange IPC
   messages (plus zoom, `window.close()` and `-webkit-app-region` dragging),
-  like context-isolated, sandboxed Electron renderers. See
-  `src-tauri/capabilities/` and the security table in API-COVERAGE.md.
+  like context-isolated, sandboxed Electron renderers. `tauri-plugin-electron`
+  grants them at startup; see the security table in API-COVERAGE.md.
 - Electron APIs that are **synchronous** but async in Tauri (`app.getPath`,
   `app.getVersion`, `screen.getAllDisplays`, `BrowserWindow#getSize`, …) are
   pre-fetched before `ready` or cached from window events, so they stay
   synchronous. The few that cannot (`clipboard.readText`,
   `screen.getCursorScreenPoint`) return Promises — `await` works in both
   runtimes (current Electron's clipboard is async too).
-- **Rust is boilerplate**: `lib.rs` only registers official plugins
-  (dialog, clipboard, notification, opener, os, process, http, deep-link,
-  global-shortcut, autostart) and `tauri-plugin-electron`. Single-instance
-  locking is opt-in, like in Electron: a Cargo feature of `tauri-plugin-electron`.
+- **Rust is boilerplate**: `lib.rs` is one call to
+  `tauri_plugin_electron::Builder::new().install(...)`. Which Electron
+  modules exist is set by that plugin's Cargo features, each backed by an
+  official Tauri plugin (dialog, clipboard, notification, shell, net,
+  global-shortcut, tray, protocol-client, login-item on by default;
+  single-instance, updater, devtools opt-in, like in Electron).
 
 ## Quick start
 

@@ -11,7 +11,7 @@ src/main.js               Electron main process: app, BrowserWindow, ipcMain, ..
 src/preload.js            preload: contextBridge.exposeInMainWorld(...)
 src/renderer.js           page code; talks to main through window.api
 vite.config.js            tauri-electron/vite plugin (aliases `electron`)
-src-tauri/                Tauri shell: plugin registration, config, capabilities
+src-tauri/                Tauri shell: config, and tauri-plugin-electron's features in Cargo.toml
 ```
 
 ```bash
@@ -26,16 +26,19 @@ npm run build   # tauri build
 
 - `src-tauri/tauri.conf.json`: `productName`, `version`, `identifier`.
 - Icons: `npx tauri icon path/to/icon.png`.
-- `src-tauri/capabilities/renderer.json`: renderers can only do IPC by
-  default (like a context-isolated Electron renderer). Widen it if your pages
-  call Tauri APIs directly.
-- `src-tauri/capabilities/main.json`: what the main process may do. Remove
-  plugins you don't use (and their entries in `Cargo.toml` / `lib.rs`).
+- `src-tauri/Cargo.toml`: the features of `tauri-plugin-electron` pick the
+  Electron modules (and the official Tauri plugins behind them). Most are on
+  by default; add `"single-instance"` if your app calls
+  `app.requestSingleInstanceLock()`, `"updater"` for `autoUpdater` (plus
+  `plugins.updater` in `tauri.conf.json`). See the
+  [feature list](../../crates/tauri-plugin-electron/README.md#features).
 - `src-tauri/src/lib.rs`: declare every scheme your main process passes to
-  `protocol.handle()` with `.protocol("app")`; register `tauri-plugin-updater` to use `autoUpdater`.
-- `src-tauri/Cargo.toml`: enable the `single-instance` feature of
-  `tauri-plugin-electron` if your app calls `app.requestSingleInstanceLock()`.
-  Until tauri-electron is published,
+  `protocol.handle()` with `.protocol("app")`. Nothing else to change.
+- `src-tauri/capabilities/`: empty on purpose; tauri-plugin-electron grants
+  Electron's defaults (the main process may use everything enabled,
+  renderers only IPC). Add capability files if your pages call Tauri APIs
+  directly.
+- Until tauri-electron is published,
   `tauri-plugin-electron` points at this repository with a relative `path`.
   In a copy outside the repository, use
   `git = "https://github.com/AJayClauGermany/tauri-as-electron"`.

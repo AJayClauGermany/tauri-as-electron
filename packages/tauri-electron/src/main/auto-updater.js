@@ -4,13 +4,14 @@
  * Electron's flow (check -> download automatically -> 'update-downloaded'
  * -> quitAndInstall()) maps directly onto Tauri's check() / download() /
  * install(). The update server and signing key come from `plugins.updater`
- * in tauri.conf.json (and tauri-plugin-updater must be registered in Rust);
+ * in tauri.conf.json (and the `updater` feature of tauri-plugin-electron must be on);
  * setFeedURL() is recorded for getFeedURL() and the event arguments only.
  */
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { warnOnce } from '../internal/runtime.js'
+import { hasFeature, featureError } from '../internal/native.js'
 
 class AutoUpdater extends EventEmitter {
   constructor() {
@@ -43,6 +44,7 @@ class AutoUpdater extends EventEmitter {
     this._checking = true
     this.emit('checking-for-update', createEvent())
     try {
+      if (!hasFeature('updater')) throw featureError('autoUpdater', 'updater')
       const update = await check({ headers: this._headers })
       if (!update) {
         this.emit('update-not-available', createEvent())

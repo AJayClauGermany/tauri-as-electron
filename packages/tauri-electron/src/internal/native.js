@@ -53,6 +53,21 @@ export function hasNativePlugin() {
   return info !== null
 }
 
+/**
+ * Whether a Cargo feature of tauri-plugin-electron is enabled ('updater',
+ * 'single-instance', ...). Unknown (true) when the plugin is not installed.
+ */
+export function hasFeature(name) {
+  return info === null || (info.features ?? []).includes(name)
+}
+
+/** Error for an API whose tauri-plugin-electron feature is off. */
+export function featureError(api, feature) {
+  const error = new Error(`${api} needs the \`${feature}\` feature of tauri-plugin-electron (src-tauri/Cargo.toml).`)
+  error.name = 'NotImplementedError'
+  return error
+}
+
 // --- requests forwarded from Rust to the main process -----------------------------
 
 const handlers = new Map()

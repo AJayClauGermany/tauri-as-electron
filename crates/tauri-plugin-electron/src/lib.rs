@@ -25,12 +25,14 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread,
     time::Duration,
 };
+
+mod features;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -141,6 +143,7 @@ fn forward<R: Runtime>(
     });
 }
 
+#[cfg(all(desktop, feature = "dialog"))]
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct DialogFilter {
@@ -148,6 +151,7 @@ struct DialogFilter {
     extensions: Vec<String>,
 }
 
+#[cfg(all(desktop, feature = "dialog"))]
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct FileDialogOptions {
@@ -159,6 +163,7 @@ struct FileDialogOptions {
     can_create_directories: Option<bool>,
 }
 
+#[cfg(all(desktop, feature = "dialog"))]
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 struct MessageDialogOptions {
@@ -168,7 +173,7 @@ struct MessageDialogOptions {
     buttons: Vec<String>,
 }
 
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "dialog"))]
 fn file_dialog<R: Runtime>(
     app: &AppHandle<R>,
     options: &FileDialogOptions,
@@ -202,7 +207,7 @@ fn file_dialog<R: Runtime>(
 }
 
 /// Blocking dialogs for `dialog.show*Sync()`. Runs off the main thread.
-#[cfg(desktop)]
+#[cfg(all(desktop, feature = "dialog"))]
 fn sync_dialog<R: Runtime>(app: &AppHandle<R>, kind: &str, body: &[u8]) -> Result<Value, String> {
     use tauri_plugin_dialog::{
         DialogExt, MessageDialogButtons, MessageDialogKind, MessageDialogResult,
@@ -318,7 +323,7 @@ fn handle_bridge<R: Runtime>(
             );
         }
         p if p.starts_with("dialog/") => {
-            #[cfg(desktop)]
+            #[cfg(all(desktop, feature = "dialog"))]
             {
                 if label != MAIN_LABEL {
                     respond(
@@ -336,8 +341,13 @@ fn handle_bridge<R: Runtime>(
                     Err(error) => respond(responder, 500, "text/plain", error.into_bytes()),
                 });
             }
-            #[cfg(not(desktop))]
-            respond(responder, 501, "text/plain", b"not supported".to_vec());
+            #[cfg(not(all(desktop, feature = "dialog")))]
+            respond(
+                responder,
+                501,
+                "text/plain",
+                b"enable the `dialog` feature of tauri-plugin-electron".to_vec(),
+            );
         }
         _ => respond(responder, 404, "text/plain", Vec::new()),
     }
@@ -385,8 +395,8 @@ struct ProcessInfo {
     cwd: String,
     env: HashMap<String, String>,
     resources_path: String,
-    /// Whether the `single-instance` feature is on (requestSingleInstanceLock works).
-    single_instance: bool,
+    /// Enabled Cargo features of this crate (see `features.rs`).
+    features: Vec<&'static str>,
 }
 
 #[tauri::command]
@@ -407,7 +417,7 @@ fn process_info<R: Runtime>(app: AppHandle<R>) -> ProcessInfo {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
         env: std::env::vars().collect(),
-        single_instance: SINGLE_INSTANCE.load(Ordering::Relaxed),
+        features: features::enabled(),
         resources_path: app
             .path()
             .resource_dir()
@@ -502,8 +512,6 @@ fn bridge_respond(bridge: State<'_, SharedBridge>, response: BridgeResponse) -> 
 
 // --- events ------------------------------------------------------------------------------
 
-static SINGLE_INSTANCE: AtomicBool = AtomicBool::new(false);
-
 /// Forwards a second launch to the main process as Electron's `second-instance`.
 /// [`Builder::install`] wires this up with the `single-instance` feature; it is
 /// public for apps that configure `tauri-plugin-single-instance` on their own.
@@ -516,14 +524,33 @@ pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>, argv: Vec<String>, cwd
 }
 
 /// Builder for the plugin.
-#[derive(Default)]
 pub struct Builder {
     protocols: Vec<String>,
+    default_capabilities: bool,
+}
+
+impl Default for Builder {
+    fn default() -> Self {
+        Self {
+            protocols: Vec::new(),
+            default_capabilities: true,
+        }
+    }
 }
 
 impl Builder {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether to grant Electron's default capabilities at startup (on by
+    /// default): the `electron-main` window gets every permission of the
+    /// enabled features, and every window gets the renderer permissions (IPC,
+    /// zoom, `window.close()`, window dragging). Turn it off to manage all
+    /// permissions yourself in `src-tauri/capabilities/`.
+    pub fn default_capabilities(mut self, enabled: bool) -> Self {
+        self.default_capabilities = enabled;
+        self
     }
 
     /// Declare a custom URI scheme handled by `protocol.handle(scheme, handler)`
@@ -534,27 +561,27 @@ impl Builder {
         self
     }
 
-    /// Register the plugin on an app builder, with what the enabled features
-    /// need: the `single-instance` feature adds `tauri-plugin-single-instance`
-    /// first (Electron's `app.requestSingleInstanceLock()` / `'second-instance'`),
-    /// so a second launch exits before the plugins after it start. Call it
-    /// before registering other plugins.
+    /// Register the plugin on an app builder, together with the official
+    /// Tauri plugins of the enabled Cargo features (dialog, clipboard, ...,
+    /// and opt-in ones such as `single-instance` and `updater`). Call it on
+    /// a fresh builder, before other plugins: with `single-instance`, a second
+    /// launch then exits before anything else starts.
     ///
     /// ```ignore
-    /// let builder = tauri_plugin_electron::Builder::new().install(tauri::Builder::default());
+    /// tauri_plugin_electron::Builder::new()
+    ///     .install(tauri::Builder::default())
+    ///     .run(tauri::generate_context!())
     /// ```
     pub fn install<R: Runtime>(self, builder: tauri::Builder<R>) -> tauri::Builder<R> {
         #[cfg(all(desktop, feature = "single-instance"))]
-        let builder = {
-            SINGLE_INSTANCE.store(true, Ordering::Relaxed);
-            builder.plugin(tauri_plugin_single_instance::init(on_second_instance))
-        };
-        builder.plugin(self.build())
+        let builder = builder.plugin(tauri_plugin_single_instance::init(on_second_instance));
+        features::register(builder.plugin(self.build()))
     }
 
-    /// The plugin alone. Prefer [`Builder::install`], which also wires up the
-    /// optional features.
+    /// The plugin alone, without the official plugins of its features.
+    /// Prefer [`Builder::install`].
     pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
+        let default_capabilities = self.default_capabilities;
         let mut builder = PluginBuilder::new("electron")
             .invoke_handler(tauri::generate_handler![
                 process_info,
@@ -565,8 +592,13 @@ impl Builder {
                 trash_item,
                 bridge_respond
             ])
-            .setup(|app, _api| {
+            .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                if default_capabilities {
+                    for capability in features::capabilities() {
+                        app.add_capability(capability)?;
+                    }
+                }
                 Ok(())
             })
             // Navigation events for every window, including remote pages that

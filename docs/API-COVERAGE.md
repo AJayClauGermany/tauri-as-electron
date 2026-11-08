@@ -12,13 +12,19 @@ plugin in this repository that covers what Tauri's JS API and official
 plugins cannot. Without it, those APIs fall back or report themselves as
 unsupported.
 
+Modules backed by an official plugin are switched on or off with
+[`tauri-plugin-electron`'s Cargo features](../crates/tauri-plugin-electron/README.md#features)
+(for example `features = ["single-instance", "updater"]`); a module whose
+feature is off fails with an error naming the feature or the plugin.
+
 To see which of these APIs VS Code and GitHub Desktop rely on, read
 [TARGET-APPS.md](TARGET-APPS.md).
 
 ## Security defaults
 
-tauri-electron follows Electron's defaults. Capabilities enforce them in
-`src-tauri/capabilities/`:
+tauri-electron follows Electron's defaults. `tauri-plugin-electron` grants
+the matching capabilities at startup (add files in `src-tauri/capabilities/`
+for more):
 
 | Electron | Default | tauri-electron |
 | --- | --- | --- |
@@ -159,7 +165,7 @@ tauri-electron follows Electron's defaults. Capabilities enforce them in
 | `net.fetch`, `net.request` (`ClientRequest` / `IncomingMessage`), `net.isOnline`, `net.online` | ✅ | [`plugin-http`] Not subject to CORS, like Electron's main process. `data:`/`blob:` use the webview's `fetch`. `resolveHost` ❌. |
 | `protocol.handle`, `unhandle`, `isProtocolHandled`, `registerSchemesAsPrivileged`, `register{String,Buffer,Http}Protocol` | 🟡 | [native] Each scheme must also be declared in Rust: `tauri_plugin_electron::Builder::new().protocol("app")`. Handlers receive a `Request` and return a `Response`. Privileges are recorded only. `registerFileProtocol`, `registerStreamProtocol`, `intercept*` ❌. |
 | `session.defaultSession`, `fromPartition`, `fromPath` | 🟡 | `getUserAgent`/`setUserAgent` (new windows), spell-checker settings (stored), `resolveProxy` (`DIRECT`), `clearStorageData`/`clearData` (Tauri `clearAllBrowsingData`, whole store), permission/certificate handlers (stored), `webRequest` listeners (stored, **not applied**), `fetch`. In-memory partitions → incognito webviews; `persist:` partitions get their own store on macOS 14+ only. `cookies.get/set/remove`, downloads, extensions ❌. |
-| `autoUpdater` | 🟡 | [`plugin-updater`] `checkForUpdates` emits `checking-for-update`, `update-available` / `update-not-available`, downloads, then `update-downloaded`; `quitAndInstall` installs and relaunches. The feed comes from `plugins.updater` in `tauri.conf.json` (`setFeedURL` only records it), and the plugin must be registered in Rust. |
+| `autoUpdater` | 🟡 | [`plugin-updater`] `checkForUpdates` emits `checking-for-update`, `update-available` / `update-not-available`, downloads, then `update-downloaded`; `quitAndInstall` installs and relaunches. The feed comes from `plugins.updater` in `tauri.conf.json` (`setFeedURL` only records it), and the `updater` feature of `tauri-plugin-electron` must be enabled. |
 | `powerMonitor` | 🟡 | `getSystemIdleState` → `'unknown'`, `getSystemIdleTime` → `0`, `getCurrentThermalState` → `'unknown'`, `isOnBatteryPower`/`on-ac`/`on-battery` from `navigator.getBattery()` where available, `resume` detected heuristically from timer drift. No `suspend`, `lock-screen`, `unlock-screen`. |
 | `powerSaveBlocker` | 🟡 | IDs as in Electron; holds a Screen Wake Lock in a visible window where the webview supports it. |
 | `systemPreferences` | 🟡 | `getAnimationSettings`, `getAccentColor` and `getColor` (CSS system colours), `getEffectiveAppearance`, `getMediaAccessStatus` (`granted`), `getUserDefault` (empty defaults), notification subscriptions (never fire). |

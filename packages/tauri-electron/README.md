@@ -29,10 +29,10 @@ Options: `preload` (string or array), `mainHtml` (default
 `electron-main.html`), `aliasPath` (default `true`), `forwardMainConsole`
 (default `true`).
 
-The Tauri side needs the plugins registered in `lib.rs` (including
-[`tauri-plugin-electron`](../../crates/tauri-plugin-electron)), the
-`electron-main` hidden window in `tauri.conf.json`, and the two capability
-files — see [the template](../../templates/tauri-electron-app/src-tauri).
+The Tauri side needs [`tauri-plugin-electron`](../../crates/tauri-plugin-electron)
+(which registers the official plugins and grants the capabilities) and the
+`electron-main` hidden window in `tauri.conf.json` — see
+[the template](../../templates/tauri-electron-app/src-tauri).
 
 ## Layout
 
