@@ -414,19 +414,28 @@ class App extends EventEmitter {
   }
 
   /**
-   * With tauri-plugin-single-instance (in the template), a second launch
-   * exits before any JavaScript runs and this instance gets
-   * 'second-instance' - so the instance that gets to run always holds the lock.
+   * Opt-in, like in Electron: enable the `single-instance` feature of
+   * tauri-plugin-electron and register `tauri_plugin_electron::single_instance()`
+   * first in lib.rs. The lock is then taken at startup - a second launch exits
+   * before its main process runs - so the instance that gets here holds it.
+   * Without that, there is no lock: this warns and returns true so the usual
+   * `if (!app.requestSingleInstanceLock()) app.quit()` keeps working.
    */
   requestSingleInstanceLock() {
+    if (!processInfo()?.singleInstance) {
+      warnOnce('single-instance', "app.requestSingleInstanceLock(): no lock is taken. Enable tauri-plugin-electron's `single-instance` feature and register tauri_plugin_electron::single_instance() first in src-tauri/src/lib.rs.")
+    }
+    this._singleInstanceLock = true
     return true
   }
 
   hasSingleInstanceLock() {
-    return true
+    return Boolean(this._singleInstanceLock)
   }
 
-  releaseSingleInstanceLock() {}
+  releaseSingleInstanceLock() {
+    this._singleInstanceLock = false
+  }
 
   setAppUserModelId() {}
 

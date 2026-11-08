@@ -46,7 +46,7 @@ are rewritten to project-relative paths at build time, so
 | IPC payloads with class instances or cycles | Structured-clone types (`Uint8Array`, `Date`, `Map`, `Error`, …) work; class instances arrive as plain objects (as in Electron) and cyclic objects throw. |
 | `protocol.handle('app', …)` | Also declare the scheme in `src-tauri/src/lib.rs`: `tauri_plugin_electron::Builder::new().protocol("app")`. |
 | `autoUpdater` | Register `tauri-plugin-updater` in `lib.rs`, configure `plugins.updater` (endpoints, public key) in `tauri.conf.json` and add `updater:default` to `capabilities/main.json`. |
-| App allows several instances (Electron's default) | Remove `tauri-plugin-single-instance` from `Cargo.toml` and `lib.rs`. |
+| `app.requestSingleInstanceLock()` | Opt in: add `features = ["single-instance"]` to `tauri-plugin-electron` in `src-tauri/Cargo.toml` and uncomment `tauri_plugin_electron::single_instance()` in `lib.rs`. The lock is taken at startup, so a second launch exits before its main process runs. |
 | Custom title bars (`frame: false` + `-webkit-app-region: drag`) | Works. Interactive elements inside a drag area need `-webkit-app-region: no-drag`, as in Electron. |
 | `webContents.on('before-input-event')` with `preventDefault()` | Reported after the fact; use a `keydown` listener in the page to block keys. |
 | `fs`, `child_process`, other Node built-ins in main | Not available (the main process is a webview). Use Tauri plugins such as `@tauri-apps/plugin-fs` / `plugin-shell`, or a Rust command. |

@@ -31,11 +31,11 @@ tauri-electron follows Electron's defaults. Capabilities enforce them in
 | `webPreferences.backgroundThrottling` | `true` | `backgroundThrottling: 'disabled'` when `false` |
 | Built-in context menu | none | The webview's default menu is suppressed; use `webContents.on('context-menu')`. |
 | `window.open` | opens a `BrowserWindow` | Same: it goes through `setWindowOpenHandler` (default: allow) |
-| Single instance | off (opt-in at runtime) | `tauri-plugin-single-instance` is registered in the template, so a second launch always exits. Remove it to allow several instances. |
+| Single instance | off (opt-in with `requestSingleInstanceLock()`) | Off. Opt in at build time: the `single-instance` feature of `tauri-plugin-electron` plus one line in `lib.rs` (commented out in the template). |
 
 ## Main process
 
-### `app` [`@tauri-apps/api/app`, `/path`, `plugin-os`, `plugin-process`, `plugin-deep-link`, `plugin-autostart`, `plugin-single-instance`, native]
+### `app` [`@tauri-apps/api/app`, `/path`, `plugin-os`, `plugin-process`, `plugin-deep-link`, `plugin-autostart`, `plugin-single-instance` (opt-in), native]
 
 | API | | Notes |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ tauri-electron follows Electron's defaults. Capabilities enforce them in
 | `window-all-closed` | ✅ | Without a listener the app quits, like Electron. |
 | `browser-window-created`, `browser-window-focus`, `browser-window-blur`, `web-contents-created` | ✅ | |
 | `activate` | ✅ | macOS dock click [native]. |
-| `requestSingleInstanceLock`, `second-instance` | ✅ | [`plugin-single-instance` + native] `second-instance` gets `(event, argv, workingDirectory)`; `additionalData` is `{}`. |
+| `requestSingleInstanceLock`, `hasSingleInstanceLock`, `releaseSingleInstanceLock`, `second-instance` | 🟡 | Opt-in [native `single-instance` feature → `plugin-single-instance`]. The lock is taken at startup, so a second launch exits before its main process runs instead of `requestSingleInstanceLock()` returning `false`. `second-instance` gets `(event, argv, workingDirectory)`; `additionalData` is `{}`. Without the feature, `requestSingleInstanceLock()` warns and returns `true`. |
 | `open-file`, `open-url` | ✅ | macOS [native `RunEvent::Opened`]. On Windows/Linux the URL is in `process.argv` / `second-instance`, like Electron. |
 | `setAsDefaultProtocolClient`, `isDefaultProtocolClient`, `removeAsDefaultProtocolClient` | ✅ | [`plugin-deep-link`] Async registration; on macOS declare schemes in `plugins.deep-link.desktop.schemes`. |
 | `setLoginItemSettings`, `getLoginItemSettings` | 🟡 | [`plugin-autostart`] `openAtLogin` only; cached. |

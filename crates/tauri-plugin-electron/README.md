@@ -15,15 +15,15 @@ This plugin covers the rest:
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
-| `app` event `second-instance` | `on_second_instance`, the callback for `tauri-plugin-single-instance` |
+| `app.requestSingleInstanceLock`, `second-instance` (opt-in) | `single_instance()` wraps `tauri-plugin-single-instance` (`single-instance` feature) |
 
 Everything is delivered to the hidden `electron-main` window, which runs the
 app's Electron main-process code.
 
 ```rust
 tauri::Builder::default()
-    // Optional, and must come first: Electron's single-instance lock.
-    .plugin(tauri_plugin_single_instance::init(tauri_plugin_electron::on_second_instance))
+    // Optional (the `single-instance` feature), and must come first.
+    .plugin(tauri_plugin_electron::single_instance())
     .plugin(
         tauri_plugin_electron::Builder::new()
             .protocol("app") // one per scheme passed to protocol.handle()
@@ -38,6 +38,12 @@ to, and sync dialogs only to the main window.
 
 ## Features
 
+- `single-instance`: provides `single_instance()`, Electron's
+  `app.requestSingleInstanceLock()` and `'second-instance'` on top of
+  `tauri-plugin-single-instance`. Off by default because Electron apps allow
+  several instances unless they ask for the lock. The lock is taken at
+  startup, not when JavaScript requests it: a second launch exits before its
+  main process runs.
 - `devtools`: allow `webContents.openDevTools()` in release builds
   (Tauri's `devtools` feature; it uses private APIs on macOS, so it is not
   App Store compatible).

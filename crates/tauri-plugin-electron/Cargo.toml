@@ -11,6 +11,10 @@ default = []
 # Allow webContents.openDevTools() in release builds (Tauri's `devtools`
 # feature; uses private APIs on macOS, so not App Store compatible).
 devtools = ["tauri/devtools"]
+# Electron's app.requestSingleInstanceLock() / 'second-instance', through
+# tauri-plugin-single-instance. Off by default, like in Electron: enable it
+# and register `tauri_plugin_electron::single_instance()` as the first plugin.
+single-instance = ["dep:tauri-plugin-single-instance"]
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
@@ -24,3 +28,4 @@ base64 = "0.23"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 trash = "5"
+tauri-plugin-single-instance = { version = "2", optional = true }

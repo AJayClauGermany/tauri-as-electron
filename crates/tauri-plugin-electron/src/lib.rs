@@ -16,8 +16,8 @@
 //!   **`shell.trashItem()`**.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
 //!   events for every window, including remote pages), macOS `activate`,
-//!   `open-file` / `open-url`, and `second-instance` (with
-//!   `tauri-plugin-single-instance`, see [`on_second_instance`]).
+//!   `open-file` / `open-url`, and `second-instance` (opt-in, see
+//!   [`single_instance`]).
 //!
 //! Everything is forwarded to the hidden `electron-main` window, which runs the
 //! app's Electron main-process code.
@@ -25,7 +25,7 @@
 use std::{
     collections::HashMap,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc, Mutex,
     },
     thread,
@@ -385,6 +385,8 @@ struct ProcessInfo {
     cwd: String,
     env: HashMap<String, String>,
     resources_path: String,
+    /// Whether [`single_instance`] is registered (requestSingleInstanceLock works).
+    single_instance: bool,
 }
 
 #[tauri::command]
@@ -405,6 +407,7 @@ fn process_info<R: Runtime>(app: AppHandle<R>) -> ProcessInfo {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default(),
         env: std::env::vars().collect(),
+        single_instance: SINGLE_INSTANCE.load(Ordering::Relaxed),
         resources_path: app
             .path()
             .resource_dir()
@@ -499,12 +502,33 @@ fn bridge_respond(bridge: State<'_, SharedBridge>, response: BridgeResponse) -> 
 
 // --- events ------------------------------------------------------------------------------
 
-/// Callback for `tauri-plugin-single-instance`: emits Electron's
-/// `second-instance` event in the main process.
+static SINGLE_INSTANCE: AtomicBool = AtomicBool::new(false);
+
+/// Opt in to Electron's `app.requestSingleInstanceLock()` /
+/// `'second-instance'` (needs the `single-instance` feature). Register it
+/// **before any other plugin**:
 ///
 /// ```ignore
-/// .plugin(tauri_plugin_single_instance::init(tauri_plugin_electron::on_second_instance))
+/// tauri::Builder::default().plugin(tauri_plugin_electron::single_instance())
 /// ```
+///
+/// Unlike Electron, the lock is taken at startup rather than when JavaScript
+/// asks for it: a second launch exits before its main process runs, and the
+/// first instance gets `second-instance` with the new argv and working
+/// directory. On mobile this is a no-op.
+#[cfg(feature = "single-instance")]
+pub fn single_instance<R: Runtime>() -> TauriPlugin<R> {
+    #[cfg(desktop)]
+    {
+        SINGLE_INSTANCE.store(true, Ordering::Relaxed);
+        tauri_plugin_single_instance::init(on_second_instance)
+    }
+    #[cfg(not(desktop))]
+    PluginBuilder::new("electron-single-instance").build()
+}
+
+/// The `second-instance` forwarder used by [`single_instance`]; usable as the
+/// callback of a `tauri_plugin_single_instance::Builder` you configure yourself.
 pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>, argv: Vec<String>, cwd: String) {
     let _ = app.emit_to(
         MAIN_LABEL,

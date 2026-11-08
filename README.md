@@ -64,7 +64,8 @@ runs JavaScript only inside webviews, so:
   runtimes (current Electron's clipboard is async too).
 - **Rust is boilerplate**: `lib.rs` only registers official plugins
   (dialog, clipboard, notification, opener, os, process, http, deep-link,
-  global-shortcut, autostart, single-instance) and `tauri-plugin-electron`.
+  global-shortcut, autostart) and `tauri-plugin-electron`. Single-instance
+  locking is opt-in, like in Electron: one commented-out line in `lib.rs`.
 
 ## Quick start
 

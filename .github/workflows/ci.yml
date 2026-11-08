@@ -22,6 +22,8 @@ jobs:
       - run: npm ci
       - name: Unit tests
         run: npm test
+      - name: tauri-plugin-electron optional features compile
+        run: cargo check -p tauri-plugin-electron --features single-instance,devtools
       - name: Kitchen sink on Tauri (build + automatic checks)
         run: npm run kitchen-sink:smoke
       - name: Template builds

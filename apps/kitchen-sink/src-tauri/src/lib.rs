@@ -8,14 +8,11 @@ pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
-    #[cfg(desktop)]
-    {
-        // Must be registered first. Electron's app.requestSingleInstanceLock()
-        // + 'second-instance' (a second launch exits and notifies this one).
-        builder = builder.plugin(tauri_plugin_single_instance::init(
-            tauri_plugin_electron::on_second_instance,
-        ));
-    }
+    // Electron's app.requestSingleInstanceLock() / 'second-instance' are
+    // opt-in, like in Electron. To use them, enable the `single-instance`
+    // feature of tauri-plugin-electron in Cargo.toml and uncomment this line.
+    // It must stay the first plugin.
+    // builder = builder.plugin(tauri_plugin_electron::single_instance());
 
     builder = builder
         // "kitchen": exercised by the protocol.handle() check. Add one

@@ -2226,7 +2226,6 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-process",
- "tauri-plugin-single-instance",
 ]
 
 [[package]]
@@ -4272,7 +4271,6 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-os",
  "tauri-plugin-process",
- "tauri-plugin-single-instance",
 ]
 
 [[package]]
@@ -4383,6 +4381,7 @@ dependencies = [
  "tauri",
  "tauri-plugin",
  "tauri-plugin-dialog",
+ "tauri-plugin-single-instance",
  "trash",
 ]
 

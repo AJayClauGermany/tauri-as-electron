@@ -23,7 +23,7 @@ round of work; **now** is the current status. See
 | API | How they use it | Before | Now |
 | --- | --- | --- | --- |
 | `app` lifecycle: `ready`, `before-quit`, `will-quit`, `window-all-closed`, `activate`, `quit`, `exit`, `relaunch` | Startup and shutdown | ✅ | ✅ |
-| `app.requestSingleInstanceLock` + `second-instance` | A second launch hands its arguments to the running app | ⚪ | ✅ `tauri-plugin-single-instance` |
+| `app.requestSingleInstanceLock` + `second-instance` | A second launch hands its arguments to the running app | ⚪ | ✅ opt-in `single-instance` feature (`tauri-plugin-single-instance`) |
 | `app.on('open-url' / 'open-file')` | macOS deep links and file associations | ❌ | ✅ `RunEvent::Opened` |
 | `app.setAsDefaultProtocolClient` | `x-github-client://`, `vscode://` | ⚪ | ✅ `tauri-plugin-deep-link` (macOS: declared in config) |
 | `app.getPath`, `getAppPath`, `getVersion`, `getLocale`, `getLocaleCountryCode`, `setAppLogsPath` | Paths and locale | ✅ | ✅ |
