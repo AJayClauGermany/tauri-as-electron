@@ -52,12 +52,21 @@ if (!electron && !args.includes('--no-build')) {
   })
 }
 
+const started = Date.now()
+const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1)}s`.padStart(7)
 const report = new Promise((resolve) => {
   const server = http.createServer((req, res) => {
     let body = ''
     req.on('data', (chunk) => (body += chunk))
     req.on('end', () => {
       res.writeHead(204, { 'access-control-allow-origin': '*' }).end()
+      if (req.url === '/progress') {
+        // Live progress, so a hang in CI shows which check it is in.
+        const { id, status, detail } = JSON.parse(body)
+        if (status === 'running') console.log(`${elapsed()}  …  ${id}`)
+        else console.log(`${elapsed()}  ${status === 'pass' ? '✓' : status === 'fail' ? '✗' : '-'}  ${id}${status === 'fail' ? `: ${detail}` : ''}`)
+        return
+      }
       server.close()
       resolve(JSON.parse(body))
     })
@@ -79,9 +88,20 @@ const [command, commandArgs] = useXvfb ? ['xvfb-run', ['-a', ...launch.flat()]] 
 console.log(`\n> ${command} ${commandArgs.join(' ')}`)
 const app = spawn(command, commandArgs, {
   cwd: root,
-  stdio: 'inherit',
+  stdio: ['ignore', 'pipe', 'pipe'],
   env: { ...process.env, KITCHEN_SMOKE_URL: smokeUrl },
 })
+// GTK prints a warning per menu accelerator it cannot bind on Xvfb; drop
+// that noise (and blank lines) so real errors stay visible.
+const NOISE = /Gtk-WARNING \*\*: .*no accelerator|^\s*$/
+for (const stream of [app.stdout, app.stderr]) {
+  let pending = ''
+  stream.on('data', (chunk) => {
+    const lines = (pending + chunk).split('\n')
+    pending = lines.pop()
+    for (const line of lines) if (!NOISE.test(line)) process.stderr.write(line + '\n')
+  })
+}
 
 const timeout = setTimeout(() => {
   console.error('Timed out waiting for the kitchen sink report')

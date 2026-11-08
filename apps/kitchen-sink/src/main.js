@@ -24,13 +24,28 @@ ipcMain.handle('kitchen:list', () => checks.map(({ id, manual }) => ({ id, manua
 ipcMain.handle('kitchen:run', async (_event, id) => {
   const check = checks.find((c) => c.id === id)
   if (!check) throw new Error(`Unknown check: ${id}`)
+  progress({ id, status: 'running' })
+  let result
   try {
-    return { status: 'pass', detail: format(await check.run()) }
+    result = { status: 'pass', detail: format(await check.run()) }
   } catch (error) {
     const unsupported = error?.name === 'NotImplementedError'
-    return { status: unsupported ? 'unsupported' : 'fail', detail: String(error?.message ?? error) }
+    result = { status: unsupported ? 'unsupported' : 'fail', detail: String(error?.message ?? error) }
   }
+  progress({ id, ...result })
+  return result
 })
+
+// Renderer-side checks report their progress here too.
+ipcMain.on('kitchen:progress', (_event, entry) => progress(entry))
+
+/** Smoke runs print each check as it starts and ends, so a hang shows where. */
+function progress(entry) {
+  if (!SMOKE_URL) return
+  lastProgress = entry
+  fetch(SMOKE_URL.replace(/\/report$/, '/progress'), { method: 'POST', body: JSON.stringify(entry) }).catch(() => {})
+}
+let lastProgress = null
 
 ipcMain.handle('kitchen:report', async (_event, results) => {
   if (!SMOKE_URL) return false
@@ -98,7 +113,8 @@ app.whenReady().then(() => {
   })
   if (SMOKE_URL) {
     setTimeout(async () => {
-      await postSmoke({ error: 'timed out waiting for the renderer report' })
+      const last = lastProgress ? ` (last: ${lastProgress.status} ${lastProgress.id})` : ''
+      await postSmoke({ error: `timed out waiting for the renderer report${last}` })
       app.exit(1)
     }, 120_000)
   }

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('kitchen', {
   listMainChecks: () => ipcRenderer.invoke('kitchen:list'),
   runMainCheck: (id) => ipcRenderer.invoke('kitchen:run', id),
   report: (results) => ipcRenderer.invoke('kitchen:report', results),
+  progress: (entry) => ipcRenderer.send('kitchen:progress', entry),
 
   // Raw IPC helpers used by the renderer-side checks
   invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),

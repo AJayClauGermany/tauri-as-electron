@@ -112,6 +112,7 @@ async function run(id) {
   if (entry.where === 'main') {
     Object.assign(entry, await kitchen.runMainCheck(id))
   } else {
+    if (smoke) kitchen.progress({ id, status: 'running' })
     try {
       const value = await rendererChecks.find((c) => c.id === id).run()
       Object.assign(entry, { status: 'pass', detail: typeof value === 'string' ? value : JSON.stringify(value) })
@@ -119,6 +120,7 @@ async function run(id) {
       const unsupported = error?.name === 'NotImplementedError' || /not implemented/.test(error?.message)
       Object.assign(entry, { status: unsupported ? 'unsupported' : 'fail', detail: String(error?.message ?? error) })
     }
+    if (smoke) kitchen.progress({ id, status: entry.status, detail: entry.detail })
   }
   render()
 }
