@@ -1,0 +1,39 @@
+{
+  "name": "tauri-electron",
+  "version": "0.1.0",
+  "description": "Electron's JavaScript API implemented on top of Tauri v2 and its official plugins. Alias `electron` to this package.",
+  "license": "0BSD",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./main": "./src/index.js",
+    "./renderer": "./src/index.js",
+    "./common": "./src/index.js",
+    "./path": "./src/path.js",
+    "./process": "./src/process.js",
+    "./renderer-bootstrap": "./src/renderer/bootstrap.js",
+    "./vite": "./vite.js"
+  },
+  "files": [
+    "src",
+    "vite.js",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.0",
+    "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.8.0",
+    "@tauri-apps/plugin-global-shortcut": "^2.4.0",
+    "@tauri-apps/plugin-notification": "^2.8.0",
+    "@tauri-apps/plugin-opener": "^2.7.0",
+    "@tauri-apps/plugin-os": "^2.4.0",
+    "@tauri-apps/plugin-process": "^2.4.0"
+  },
+  "devDependencies": {
+    "vitest": "^5.1.0"
+  }
+}

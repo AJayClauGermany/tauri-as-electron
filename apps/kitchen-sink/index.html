@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Electron Kitchen Sink</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Electron Kitchen Sink</h1>
+      <p>
+        Runtime: <strong id="runtime">…</strong>.
+        <span id="summary"></span>
+      </p>
+      <p>
+        <button id="run-auto">Run automatic checks</button>
+        <label><input type="checkbox" id="hide-pass" /> Hide passing</label>
+      </p>
+      <p class="legend">
+        <span class="status pass">pass</span> works ·
+        <span class="status fail">fail</span> threw or returned the wrong value ·
+        <span class="status unsupported">unsupported</span> not implemented (NotImplementedError) ·
+        <span class="status manual">manual</span> needs a click (dialogs, notifications, window state…) ·
+        Right-click anywhere for a context menu (Menu.popup).
+      </p>
+    </header>
+    <main id="checks"></main>
+    <script type="module" src="./src/renderer.js"></script>
+  </body>
+</html>
