@@ -1,0 +1,19 @@
+{
+  "name": "tauri-as-electron",
+  "private": true,
+  "description": "Electron-compatible JavaScript API on top of Tauri v2: shim library, starter template and kitchen-sink app.",
+  "license": "0BSD",
+  "workspaces": [
+    "packages/*",
+    "templates/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspace tauri-electron",
+    "template:dev": "npm run dev --workspace tauri-electron-app",
+    "template:build": "npm run build --workspace tauri-electron-app",
+    "kitchen-sink:dev": "npm run dev --workspace kitchen-sink",
+    "kitchen-sink:build": "npm run build --workspace kitchen-sink",
+    "kitchen-sink:smoke": "npm run smoke --workspace kitchen-sink"
+  }
+}

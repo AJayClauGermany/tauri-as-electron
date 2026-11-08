@@ -1,0 +1,24 @@
+{
+  "name": "kitchen-sink",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Exercises the Electron API surface. Runs on Tauri through tauri-electron, and unchanged on real Electron for comparison.",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "dev:web": "vite",
+    "build:web": "vite build",
+    "smoke": "node scripts/smoke.mjs",
+    "start:electron": "npx --yes electron@latest .",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "tauri-electron": "*"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.0",
+    "vite": "^8.0.0"
+  }
+}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tauri + Electron API</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Tauri + Electron API</h1>
+      <p>
+        This window was created with <code>new BrowserWindow()</code> from
+        <code>src/main.js</code>, running on Tauri.
+      </p>
+
+      <h2>Versions</h2>
+      <pre id="versions">loading…</pre>
+
+      <h2>IPC</h2>
+      <form id="title-form">
+        <input id="title" placeholder="New window title" />
+        <button type="submit">Set title (ipcRenderer.send)</button>
+      </form>
+      <p><button id="ping">Ping main (ipcRenderer.invoke)</button> <output id="pong"></output></p>
+      <p>Message from main: <output id="from-main">–</output></p>
+    </main>
+    <script type="module" src="/src/renderer.js"></script>
+  </body>
+</html>
