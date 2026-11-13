@@ -333,6 +333,45 @@ Notes for the pure-JS modules:
 - Globals to install on the main page only: `Buffer`, `setImmediate`,
   `clearImmediate`, `global`.
 
+### 7.1 Working out which native features an app needs
+
+Not designed in detail yet. The default stays "everything on" (section 5.3);
+this is the tooling that lets a user turn features off with confidence.
+
+Three sources of truth, from cheapest to most exact:
+
+1. **Static scan at scaffold time.** `create-app.mjs --into` already reads the
+   project. Have it scan the app's own source for `require('x')` /
+   `import … from 'x'` of Node built-ins (with and without `node:`) and print
+   a table: module, where it is used, status on Tauri (works / needs feature
+   `node-fs` / not supported). It can then write only the needed feature
+   lines, with the unused ones present but commented out so they stay visible.
+   Blind spot: dependencies in `node_modules` and computed `require(name)`.
+2. **Exact list from the bundler.** In a production build every built-in
+   import, including those inside dependencies, passes through the plugins'
+   resolver (`resolveId` in `vite.js`, the redirect in `webpack.cjs`). Record
+   them with their importers and write a report file
+   (for example `dist/tauri-electron-node-report.json`), and print a summary:
+   which features the bundle needs, which enabled features nothing imports,
+   which imports are unsupported. Vite dev is not a reliable source, because
+   its dependency optimizer bypasses the resolver (section 3).
+3. **Run time.** A module whose feature is off already has a defined
+   behaviour: `NotImplementedError` with `reason: 'feature'` naming the
+   feature to enable. That catches whatever static analysis missed, such as
+   an import that exists but is only called on one code path.
+
+A small command ties these together, for example
+`npx tauri-electron doctor`: it compares the bundler report with the features
+in `src-tauri/Cargo.toml` and prints what to add or remove. Editing
+`Cargo.toml` stays opt-in behind a flag (`--fix`); never rewrite it silently
+during a build.
+
+Limits to state in the docs: importing a module is not the same as calling it
+(the report over-approximates), and a computed `require()` is invisible to
+it (the run-time error covers that case). Only the three native features
+need this at all; the pure-JS modules are always available and unused ones
+are dropped by the bundler.
+
 ## 8. Pitfalls
 
 ### 8.1 `__dirname` is not a real directory
