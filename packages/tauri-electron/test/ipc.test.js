@@ -96,6 +96,31 @@ describe('MessageChannelMain', () => {
     expect(() => transferPorts([port2], 'x')).toThrow()
   })
 
+  it('keeps port messages that reach the renderer before the port itself', async () => {
+    const { ipcRenderer, onMessage } = await import('../src/renderer/ipc-renderer.js')
+    const received = new Promise((resolve) => {
+      ipcRenderer.once('early-port', (event) => {
+        const [port] = event.ports
+        const messages = []
+        port.onmessage = ({ data }) => {
+          messages.push(data)
+          if (messages.length === 2) resolve({ messages, port })
+        }
+      })
+    })
+    // The transfer ('send' with ports) and the port's traffic are separate
+    // Tauri events; here the traffic wins the race.
+    onMessage({ type: 'port-message', port: 'main:early', data: encode('first') })
+    onMessage({ type: 'port-message', port: 'main:early', data: encode('second') })
+    onMessage({ type: 'send', channel: 'early-port', args: encode([null]), ports: ['main:early'] })
+    const { messages, port } = await received
+    expect(messages).toEqual(['first', 'second'])
+    // Traffic for a port that was closed afterwards is dropped, not kept.
+    onMessage({ type: 'port-close', port: 'main:early' })
+    onMessage({ type: 'port-message', port: 'main:early', data: encode('late') })
+    port.close()
+  })
+
   it('wraps ports that live in a renderer', async () => {
     emitted.length = 0
     const port = MessagePortMain._fromRenderer('electron-window-2', 'electron-window-2:1')
