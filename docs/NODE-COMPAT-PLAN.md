@@ -81,6 +81,17 @@ Two Vite dev-server gaps were also reproduced (Vite 8.3.6):
 | `import { readFileSync } from 'fs'` in dev | Page fails to load: `does not provide an export named 'readFileSync'`. The dev stub has only a default export. |
 | A dependency in `node_modules` that does `require('util')` / `require('fs')` in dev | The plugin's `resolveId` stub is bypassed. Vite's dependency optimizer substitutes its own "externalized for browser compatibility" proxy, so `util.inspect is not a function`. `require('path')` in the same dependency works, because `path` is a `resolve.alias` entry and the optimizer honours aliases. |
 
+A second throwaway run (also reverted) checked the later-layer ideas in the
+same environment:
+
+| Question | Result |
+| --- | --- |
+| Can a hidden `<iframe>` serve as a `vm` context? | Yes. `iframe.contentWindow.eval(...)` ran synchronously in about 1 ms, mutated an object shared from the main page by reference, called a function passed in from it, and kept its own globals (a global set inside was not visible outside). Arrays created inside fail `instanceof Array` outside but pass `Array.isArray`, as with Node contexts. |
+| Can a Web Worker reach the synchronous bridge? | Yes: a blocking request from a worker returned status 200. Native-backed modules are therefore reachable from a `worker_threads` adapter. |
+| `performance.memory` | Not available on WebKitGTK, so `v8.getHeapStatistics()` has to return zeros there. |
+| `SharedArrayBuffer` | Undefined (`crossOriginIsolated` is `false`). |
+| `bundle.resources` as `{ "electron-resources/": "" }` | Copies the folder's contents to the resource root: `electron-resources/app/src/data.json` appeared as `<target>/debug/app/src/data.json` and `electron-resources/extra/note.txt` as `<target>/debug/extra/note.txt`, in a debug build. |
+
 **Not verified:** macOS (WKWebView) and Windows (WebView2). CI is Linux-only,
 so the existing `sendSync` bridge is untested there too. Section 8 lists what
 to check on each.
@@ -181,8 +192,8 @@ What to do instead, all in the webview:
 | Module | Approach | Known limits |
 | --- | --- | --- |
 | `vm` | A hidden same-origin `<iframe>` per context; evaluate with the iframe's own `eval` / `Function`. Same engine, synchronous, objects shared by reference. | No `timeout`, no `breakOnSigint`, not a security boundary (neither is Node's). Needs `'unsafe-eval'` if the app sets a CSP. Objects from another context have different prototypes, as in Node. |
-| `v8` | Stubs: `getHeapStatistics()` from `performance.memory` where available (zeros elsewhere), `serialize` / `deserialize` with a structured-clone-compatible encoding, `setFlagsFromString` as a no-op. | Not the real wire format. |
-| `worker_threads` | Adapter over Web Workers: `Worker`, `parentPort`, `workerData`, `isMainThread`, `MessageChannel`. The worker script must be a bundler entry. | No native-backed modules inside the worker unless the bridge is reachable from it; no `SharedArrayBuffer` without cross-origin isolation. |
+| `v8` | Stubs: `getHeapStatistics()` from `performance.memory` where available (zeros elsewhere; it is absent on WebKitGTK), `serialize` / `deserialize` with a structured-clone-compatible encoding, `setFlagsFromString` as a no-op. | Not the real wire format. |
+| `worker_threads` | Adapter over Web Workers: `Worker`, `parentPort`, `workerData`, `isMainThread`, `MessageChannel`. The worker script must be a bundler entry. | The bridge is reachable from a worker (section 3), so native-backed modules can work there; check which window label Rust sees for a worker's request before applying the main-only guard. No `SharedArrayBuffer` (undefined in the webview without cross-origin isolation). |
 | `wasi` | A JS WASI implementation over the `fs` shim. | Low priority. |
 
 An embedded runtime stays a possible **opt-in feature for later**, to be
@@ -482,10 +493,9 @@ Implementation:
    folder (for example `src-tauri/electron-resources/app/…` and
    `src-tauri/electron-resources/<to>/…`) on every build and dev start, and
    have the scaffolder add one static entry to `tauri.conf.json` that maps
-   that folder to the resource root. The folder must exist before
-   `tauri-build` runs (commit a placeholder; add the contents to `.gitignore`).
-   Confirm the exact map syntax for "directory contents to resource root"
-   against the Tauri version in use before relying on it.
+   that folder to the resource root: `"resources": { "electron-resources/": "" }`
+   (verified, section 3). The folder must exist before `tauri-build` runs
+   (commit a placeholder; add the contents to `.gitignore`).
 2. **Which files.** Read the Electron packaging config the project already
    has: electron-builder `files` / `extraResources`, Forge `ignore` /
    `extraResource`. Without one, stage every project file except
