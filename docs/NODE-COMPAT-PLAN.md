@@ -22,8 +22,13 @@ Constraints set by the project owner:
   2. Rust, inside `tauri-plugin-electron` or through an official Tauri plugin.
 - The user's Electron source stays untouched. All wiring lives in the bundler
   plugins and in `src-tauri/`.
-- Native-backed built-ins may sit behind Cargo features. The owner is fine
-  with them being on by default if that makes migration easiest.
+- **Compatibility first.** A migrating app should get as much working as
+  possible before its author has to decide anything. Native-backed built-ins
+  are enabled for migrated apps, but each one is a visibly named switch that
+  is easy to turn off (section 5.3).
+- Third-party polyfill packages are acceptable as dependencies of
+  tauri-electron, as many as are useful. The user never chooses or installs
+  them.
 - Everything that works today must keep working (section 9).
 
 ## 2. What exists today
@@ -116,6 +121,39 @@ and Tauri commands (async variants). "Plugin" means an official Tauri plugin.
 | `vm`, `v8`, `cluster`, `repl`, `inspector`, `tty`, `wasi`, `domain`, `async_hooks`, `diagnostics_channel`, `trace_events`, `http2`, `sys` | Unsupported | Keep the stubs. `async_hooks.AsyncLocalStorage` and `diagnostics_channel` can get no-op-ish JS versions if a common dependency needs them. |
 | Native `.node` addons, `asar` | Unsupported | Cannot load in a webview. The escape hatch in section 7.4 lets a user map such a package to their own module. |
 
+### 4.1 Layers and how much of Node they cover
+
+Node 22 exposes 54 public built-in module specifiers
+(`require('module').builtinModules`, without the `_`-prefixed internals).
+Work proceeds in layers; each layer is shippable on its own.
+
+| Layer | Modules | Count | Cumulative |
+| --- | --- | --- | --- |
+| 0. Exists today | `path`, `path/posix`, `process`, `events`, `url` | 5 | 5 / 54 (9 %) |
+| 1. Proof of concept | `fs`, `fs/promises`, `buffer`, `path/win32` | 4 | 9 / 54 (17 %) |
+| 2. Major | `os`, `child_process`, `util`, `util/types`, `stream`, `stream/promises`, `crypto`, `http`, `https` (client side) | 9 | 18 / 54 (33 %) |
+| 3. Smaller, mostly pure JS | `assert`, `assert/strict`, `string_decoder`, `querystring`, `punycode`, `timers`, `timers/promises`, `perf_hooks`, `stream/web`, `stream/consumers`, `zlib`, `constants`, `console`, `sys`, `module` (partial), `readline`, `readline/promises` (partial), `async_hooks` (partial), `diagnostics_channel`, `tty` (minimal), `domain` (minimal) | 21 | 39 / 54 (72 %) |
+| 4. Networking in Rust, on demand | `net`, `tls`, `dns`, `dns/promises`, `dgram`, `http2`, and the server side of `http` / `https` | 6 | 45 / 54 (83 %) |
+| Not planned (need Node or V8 itself) | `cluster`, `inspector`, `inspector/promises`, `repl`, `trace_events`, `v8`, `vm`, `wasi`, `worker_threads` | 9 | |
+
+Read the percentages with care:
+
+- They count modules, not usage. Layers 0 to 2 are the modules application
+  code calls most. [TARGET-APPS.md](TARGET-APPS.md) names `fs`,
+  `child_process`, `os`, `crypto` and `net` as what VS Code and GitHub
+  Desktop use in the main process; the first four are in layers 1 and 2.
+  No usage survey of Electron apps was done, so the ordering inside a layer
+  is judgment.
+- A module being "covered" does not mean every export. `fs` has 106 exports
+  in Node 22; phase 1 (section 6) implements roughly 40, the ones typical
+  config and data-file code uses. `crypto` (67 exports) starts with hashing
+  and random values only.
+- `buffer` is in layer 1 because `fs` returns `Buffer`s. `util` and `stream`
+  are in layer 2 although they are pure JS, because `child_process`, `http`
+  and half of npm depend on them.
+- Native addons (`node-pty`, `sqlite3`, `keytar`) are outside all layers.
+  The `modules` escape hatch (section 7) is the answer there.
+
 ## 5. Design
 
 ### 5.1 JavaScript layout
@@ -170,15 +208,32 @@ Extend `handle_bridge` with one route family, for example `node/<module>/<op>`:
 - New modules in `crates/tauri-plugin-electron/src/` (`node_fs.rs`, later
   `node_os.rs`, `node_child_process.rs`), each behind a Cargo feature:
   `node-fs`, `node-os`, `node-child-process`.
-- Recommended default: all three **on by default**, because Electron's main
-  process has this access out of the box and the stated priority is easy
-  migration. `default-features = false` remains the way to drop them.
-  `node-child-process` being default-on is the one worth a second look by the
-  owner, since it is arbitrary command execution.
+- **Decided: enabled for every migrated app, as explicit switches.** The node
+  features are *not* part of the crate's `default` feature set. Instead the
+  scaffolder (`scripts/create-app.mjs`) and the template write them out in
+  the app's `src-tauri/Cargo.toml`:
+
+  ```toml
+  tauri-plugin-electron = { git = "…", features = [
+    "node-fs",             # fs, fs/promises
+    "node-os",             # os
+    "node-child-process",  # child_process: runs arbitrary commands; delete to disable
+  ] }
+  ```
+
+  A migrating user gets full compatibility without choosing anything, sees
+  exactly which native capabilities the app has, and disables one by deleting
+  a line. Apps that already depend on the crate do not silently gain file or
+  process access on update. The by-hand steps in `docs/MIGRATING.md` must show
+  the same block.
+- Give each feature its own named permission set (`node-fs`, `node-os`,
+  `node-child-process`) granted to `electron-main` by `features::capabilities()`,
+  rather than folding the commands into `default`, so the grant is visible in
+  the generated permission reference.
 - For each feature, follow the existing pattern exactly: `Cargo.toml` feature,
   `features::enabled()` list (so JS can tell "feature off" from "unsupported"),
   command names in `build.rs` `COMMANDS`, `generate_handler!` in `lib.rs`,
-  permissions in `permissions/default.toml`. When a feature is off, the JS
+  permissions in a per-feature set under `permissions/` (next point). When a feature is off, the JS
   module must throw `NotImplementedError` with `reason: 'feature'`, like the
   other feature-gated modules.
 - The pure-JS modules need no feature.
@@ -211,9 +266,9 @@ Deliver in this order. Each step should leave the test suites green.
 5. **Async API.** `fs.promises.*` over commands, and the callback forms as
    wrappers around the promises (errors as first argument, callbacks invoked
    asynchronously). `src/node/fs-promises.js` re-exports `fs.promises`.
-6. **Until `buffer` lands**, return a `Uint8Array` with a `toString(encoding)`
-   method, or land a minimal `Buffer` first. Decide before writing step 4;
-   landing `buffer` first is cleaner.
+6. **`buffer` and `path/win32` land in this phase** (layer 1), before step 4:
+   `fs` returns `Buffer`s, and real Windows paths need a real `path.win32`
+   (section 8.2).
 7. **App-relative paths** (section 8.1) must be handled in this phase, or the
    most common call, `fs.readFileSync(path.join(__dirname, 'x.json'))`, fails.
 8. **Tests.**
@@ -235,24 +290,48 @@ Phase 1 leaves out: file descriptors (`openSync` / `readSync` / `writeSync` /
 
 ## 7. Later phases
 
-1. **Pure-JS batch.** `buffer` (+ global `Buffer`), `util`, `assert`,
-   `string_decoder`, `querystring`, `timers`, `perf_hooks`, `stream`, `zlib`,
-   `crypto` subset. Prefer small maintained packages over one large bundle;
-   check licences (all candidates looked at are MIT) and that the root
-   package's `dependencies` and `files` stay consistent
-   (`test/root-package.test.js`, `npm pack --dry-run`). Globals to install
-   on the main page only: `Buffer`, `setImmediate`, `clearImmediate`, `global`.
-2. **`os`** (`node-os`).
-3. **`child_process`** (`node-child-process`).
-4. **Escape hatch.** A `modules` option on both bundler plugins
-   (`tauriElectron({ modules: { keytar: './tauri/keytar.js' } })`) plus the
-   runtime registry from 5.1, so users can map third-party or native packages
-   to their own implementations without touching app code.
-5. **fs follow-ups.** Descriptors, streams, `watch`.
-6. **Dev-mode named exports for the remaining stubs.** The Vite plugin runs
-   in Node, so it can read the real export names (`Object.keys(require('node:' + name))`)
-   and emit `export const X = stub.X` lines, fixing the named-import failure
-   in section 3 for modules that stay unsupported.
+These follow the layers in section 4.1.
+
+**Layer 2: major modules.**
+
+1. `util`, `util/types` and `stream`, `stream/promises` first: pure JS, and
+   the rest of this layer depends on them.
+2. `os` (`node-os`).
+3. `child_process` (`node-child-process`).
+4. `crypto` subset (hashing, HMAC, random values, `webcrypto`).
+5. `http` / `https` client on top of the existing `net.request`.
+
+**Layer 3: smaller modules.** `assert`, `string_decoder`, `querystring`,
+`punycode`, `timers`, `perf_hooks`, `stream/web`, `stream/consumers`, `zlib`,
+`constants`, `console`, `sys`, and the partial ones (`module`, `readline`,
+`async_hooks`, `diagnostics_channel`, `tty`, `domain`).
+
+**Alongside, in any order.**
+
+- **`fs` follow-ups.** Descriptors, streams (after `stream`), `watch`.
+- **Escape hatch.** A `modules` option on both bundler plugins
+  (`tauriElectron({ modules: { keytar: './tauri/keytar.js' } })`) plus the
+  runtime registry from 5.1, so users can map third-party or native packages
+  to their own implementations without touching app code.
+- **Dev-mode named exports for the remaining stubs.** The Vite plugin runs
+  in Node, so it can read the real export names
+  (`Object.keys(require('node:' + name))`) and emit `export const X = stub.X`
+  lines, fixing the named-import failure in section 3 for modules that stay
+  unsupported.
+
+**Layer 4** (`net`, `tls`, `dns`, `dgram`, `http2`, HTTP servers) waits until
+an app needs it.
+
+Notes for the pure-JS modules:
+
+- Third-party packages are approved (section 1): add them as regular
+  `dependencies` so the user installs nothing extra. Candidates checked on
+  npm, all MIT: `buffer`, `readable-stream`, `util`, `assert`, `fflate`,
+  `@noble/hashes`.
+- Keep the root package's `dependencies` and `files` consistent with the
+  workspace package (`test/root-package.test.js`, `npm pack --dry-run`).
+- Globals to install on the main page only: `Buffer`, `setImmediate`,
+  `clearImmediate`, `global`.
 
 ## 8. Pitfalls
 
@@ -268,20 +347,82 @@ ask the operating system for `/src/main/config.json`. In a production Tauri
 build the frontend is embedded in the binary, so app files are not on disk at
 all. `app.getAppPath()` has the same question.
 
-Proposed handling, to be confirmed while implementing:
+#### How Electron lays files out
 
-- Dev: the Vite / webpack plugin knows the project root. Pass it to the
-  runtime (a `define`) and resolve app-relative paths against it.
-- Production: resolve them against Tauri's resource directory, and document
-  that files read at runtime must be listed in `bundle.resources` in
-  `tauri.conf.json`. A read-only fallback that fetches the path from the
-  app's own origin covers files the bundler emitted.
-- Paths from `app.getPath(...)`, `os.homedir()`, `os.tmpdir()` and
-  `process.cwd()` are real and pass through untouched.
-- The ambiguity is that an app-relative path looks like an absolute POSIX
-  path. Try the real path first only if that cannot shadow app files;
-  otherwise prefer the app-relative mapping for paths under known source
-  roots. Write the rule down and test it.
+Electron itself has no packaging config; the packager decides. At run time
+an Electron app sees two roots:
+
+| | Development | Packaged |
+| --- | --- | --- |
+| `app.getAppPath()`, and `__dirname` relative to it | the project folder (where `package.json` is) | `<resources>/app.asar` (a virtual folder), or `<resources>/app` when asar is off |
+| `process.resourcesPath` | Electron's own `resources` folder | the app's `resources` folder (`Contents/Resources` on macOS) |
+
+What lands where is configured in one of two places:
+
+| Tool | App files (inside `app.asar`) | Extra files next to it |
+| --- | --- | --- |
+| electron-builder (`build` in `package.json`, or `electron-builder.{yml,json,json5,toml,js,ts}`) | `files` (globs with `!` negation; default: the whole project minus dev dependencies and build output). `asarUnpack` moves matches to `app.asar.unpacked`. | `extraResources` (into `resources/`), `extraFiles` (next to the executable). Entries are a path or `{ from, to, filter }`. |
+| Electron Forge / `@electron/packager` (`packagerConfig`) | the whole project minus `ignore` patterns; `asar.unpack` | `extraResource` (each path copied into `resources/` under its base name) |
+
+#### Mapping to Tauri (decided: automatic)
+
+Tauri's counterpart is `bundle.resources` in `tauri.conf.json`, read at run
+time from `resource_dir()`. Checked in the `tauri-utils` 2.10 and
+`tauri-build` sources: it accepts a `{ "source": "target" }` map, a source
+may be a directory (copied recursively), and `tauri-build` also copies
+resources into `target/<profile>/`, so they exist under `tauri dev` too.
+`process.resourcesPath` already returns `resource_dir()` (`process_info` in
+`lib.rs`).
+
+Reuse Electron's layout under that directory:
+
+| Electron | On Tauri | User code that keeps working |
+| --- | --- | --- |
+| `resources/app/…` (app files) | `<resource_dir>/app/<project-relative path>` | `fs.readFileSync(path.join(__dirname, 'x.json'))`, `path.join(app.getAppPath(), 'assets', …)` |
+| `extraResources` `{ from, to }` | `<resource_dir>/<to>` | `path.join(process.resourcesPath, to)` |
+| Forge `extraResource` | `<resource_dir>/<basename>` | same |
+| `asarUnpack` / `app.asar.unpacked` | nothing to do: every file is already a real file | `p.replace('app.asar', 'app.asar.unpacked')` is a harmless no-op |
+| `extraFiles` | no general equivalent (the resource and executable folders coincide only on Windows) | report as unsupported in the scaffolder summary |
+
+Implementation:
+
+1. **Staging at build time, not a file list in the config.** Tauri's resource
+   globs have no negation, and a list written once by the scaffolder goes
+   stale. Have the bundler plugins copy the selected files into a staging
+   folder (for example `src-tauri/electron-resources/app/…` and
+   `src-tauri/electron-resources/<to>/…`) on every build and dev start, and
+   have the scaffolder add one static entry to `tauri.conf.json` that maps
+   that folder to the resource root. The folder must exist before
+   `tauri-build` runs (commit a placeholder; add the contents to `.gitignore`).
+   Confirm the exact map syntax for "directory contents to resource root"
+   against the Tauri version in use before relying on it.
+2. **Which files.** Read the Electron packaging config the project already
+   has: electron-builder `files` / `extraResources`, Forge `ignore` /
+   `extraResource`. Without one, stage every project file except
+   `node_modules`, `src-tauri`, build output, dot-files, and the source
+   types the bundler compiles (`.js`, `.ts`, `.jsx`, `.tsx`, `.css`, `.html`
+   and their variants). Offer a `resources` plugin option to override.
+   The scaffolder already detects Forge configs (`FORGE_CONFIGS`); it does
+   not read electron-builder config yet.
+3. **Path resolution in the `fs` shim.** `__dirname` stays project-relative
+   (`/src/main`). When `fs` receives a path, resolve it in this order:
+   - a real path (under a known real root such as `app.getPath(...)`,
+     `os.homedir()`, `os.tmpdir()`, `process.cwd()`, `process.resourcesPath`,
+     or anything with a Windows drive prefix) is used as is;
+   - otherwise it is app-relative: map it to `<project root>/<path>` in dev
+     (the plugin passes the project root through a `define`) and to
+     `<resource_dir>/app/<path>` in a build.
+   Write this rule down in the user docs and unit-test both branches. The
+   remaining ambiguity is an absolute POSIX path outside every known root
+   (`/etc/hosts`): treat it as real when the app-relative mapping does not
+   exist on disk.
+4. **`app.getAppPath()`** should return the same app root (`<project root>`
+   in dev, `<resource_dir>/app` in a build) so that paths built from it and
+   paths built from `__dirname` agree. Check what it returns today and that
+   `loadFile` is unaffected.
+5. Writes to app-relative paths fail in a packaged Electron app too (asar is
+   read-only), so return `EROFS` / `EACCES` there rather than writing into
+   the install folder.
 
 ### 8.2 Windows paths
 
@@ -421,12 +562,11 @@ Notes:
   (`npm run smoke -- --electron` in `apps/kitchen-sink`), since the point is
   identical behaviour.
 
-## 10. Open decisions for the owner
+## 10. Decisions taken
 
-1. Is `node-child-process` on by default, or opt-in? (Recommended: on, with
-   the guards in 8.5; this is the one with the most security weight.)
-2. App files read through `fs` in production: is requiring
-   `bundle.resources` acceptable, or should the scaffolder add the project's
-   non-code files automatically?
-3. Which third-party polyfill packages are acceptable as dependencies of the
-   root package, given that it installs straight from GitHub.
+| Question | Decision |
+| --- | --- |
+| Is `child_process` enabled by default? | Yes for migrated apps, compatibility first, but as an explicit, named feature line in the app's `Cargo.toml` that can be deleted (section 5.3). |
+| App files read through `fs` in production | Staged and bundled automatically, mirroring Electron's `resources/app` and `extraResources` layout and reading the project's existing electron-builder / Forge config (section 8.1). |
+| Third-party polyfill packages | Allowed, as many as useful; shipped as dependencies of tauri-electron so the user makes no choice (section 7). |
+| Order of work | Layers in section 4.1: `fs` proof of concept, then the major modules, then the smaller ones. Full Node compatibility is not a goal yet. |
