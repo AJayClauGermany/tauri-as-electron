@@ -5,7 +5,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: vi.fn(), save: vi.fn(), mess
 
 const { toTauriAccelerator } = await import('../src/internal/accelerator.js')
 const { toOpenOptions, toMessageOptions, messageResultToIndex } = await import('../src/main/dialog.js')
-const { fileToUrl } = await import('../src/main/browser-window.js')
+const { fileToUrl, fileUrlToAppUrl } = await import('../src/main/browser-window.js')
 
 describe('accelerators', () => {
   it('maps Electron aliases to Tauri syntax', () => {
@@ -44,6 +44,9 @@ describe('loadFile URL mapping', () => {
     expect(fileToUrl('/index.html')).toBe('index.html')
     expect(fileToUrl('/src/renderer/page one.html', { query: { a: '1' }, hash: 'top' })).toBe('src/renderer/page%20one.html?a=1#top')
     expect(fileToUrl('file:///index.html', { search: 'x=1' })).toBe('index.html?x=1')
+    expect(fileUrlToAppUrl('file:///src/renderer/index.html?a=1#b')).toBe('src/renderer/index.html?a=1#b')
+    expect(fileUrlToAppUrl('file:///src/my%20page.html')).toBe('src/my%20page.html')
+    expect(fileUrlToAppUrl('https://example.com/')).toBe('https://example.com/')
   })
 })
 

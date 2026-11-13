@@ -44,6 +44,66 @@ Options: `preload` (string or array), `mainHtml` (default
 `true`), `moduleScripts` (default `true`), `forwardMainConsole` (default
 `true`).
 
+## Webpack and rspack
+
+Projects that build with webpack 5 or rspack use `tauri-electron/webpack`
+(also exported as `tauri-electron/rspack`) instead. Tauri runs main,
+preload and renderer in webviews, so one web build makes the whole app:
+
+```js
+// webpack.tauri.config.cjs (or rspack.tauri.config.cjs)
+const path = require('node:path')
+const { TauriElectronPlugin } = require('tauri-electron/webpack')
+
+module.exports = {
+  module: { rules: [/* your loaders */] },
+  output: { path: path.resolve(__dirname, 'dist'), publicPath: '/' },
+  plugins: [
+    new TauriElectronPlugin({
+      main: './src/main.js',
+      pages: [{ name: 'main_window', html: './src/index.html', js: './src/renderer.js', preload: './src/preload.js' }],
+    }),
+  ],
+  devServer: { port: 1420 },
+}
+```
+
+For an Electron Forge project, `fromForge()` builds the whole config from
+`@electron-forge/plugin-webpack`'s options:
+
+```js
+// webpack.tauri.config.cjs
+const { fromForge } = require('tauri-electron/webpack')
+module.exports = (env, argv) => fromForge('./forge.config.js', { mode: argv.mode })
+```
+
+The plugin:
+
+- adds an `electron-main` entry for `main` and emits `electron-main.html`
+  (the hidden page Tauri opens first, `tauri.conf.json` → `app.windows`);
+- prepends `require()`, the renderer bootstrap and the preload(s) to every
+  other entry;
+- with `pages`, creates the renderer entries and their HTML pages
+  (html-webpack-plugin from your project, else rspack's `HtmlRspackPlugin`)
+  and defines Electron Forge's `<NAME>_WEBPACK_ENTRY` /
+  `<NAME>_PRELOAD_WEBPACK_ENTRY` to match;
+- switches `electron-*` / `node` targets (and externals presets) to `web`;
+- redirects `electron`, `path`, `process`, `events`, `url` and stubs other
+  Node built-ins, with or without `node:` (names you already map in
+  `resolve.alias` / `resolve.fallback` are left alone);
+- rewrites `__dirname` & co. in your source (an `enforce: 'pre'` loader);
+- in watch mode with `mode: 'development'`, prints the main window's console
+  in the terminal (through a small listener of its own on 127.0.0.1, since
+  CLIs copy `devServer` options before plugins run).
+
+Options: `main` (required; string or array), `preload` (string, array, or
+`{ [entryName]: path }`), `pages` (`[{ name, js?, html?, filename?, preload?, title?, additionalChunks? }]`;
+`filename` defaults to `<name>/index.html`), `mainEntry` (default
+`electron-main`), `mainHtml` (default `electron-main.html`), `aliasPath`,
+`require`, `forwardMainConsole` (default `true` each), `forgeGlobals`
+(default `true`). `fromForge(forgeConfig?, { context, mode, outDir = 'dist', port = 1420, ...pluginOptions })`
+returns a Promise of the config.
+
 The Tauri side needs [`tauri-plugin-electron`](../../crates/tauri-plugin-electron)
 (which registers the official plugins and grants the capabilities) and the
 `electron-main` hidden window in `tauri.conf.json` — see
@@ -64,6 +124,8 @@ src/require.js          require() for CommonJS Electron code; stubs for Node bui
 src/events.js           node:events (EventEmitter, once)
 src/url.js              node:url (fileURLToPath, pathToFileURL, parse, format)
 vite.js                 the Vite plugin
+webpack.cjs             the webpack / rspack plugin (+ fromForge)
+bundler/                shared by both plugins: path rewriting, Node built-in stubs, page entries
 ```
 
 See [API-COVERAGE.md](../../docs/API-COVERAGE.md) for what is implemented.

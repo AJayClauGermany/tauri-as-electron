@@ -8,12 +8,17 @@ halves install straight from this GitHub repository.
 | You have | You get |
 | --- | --- |
 | `main.js` with `require('electron')` or `import … from 'electron'` | The same file, run by Tauri in a hidden window |
-| a preload script, renderer pages with `<script src>` | The same files, bundled by Vite and loaded into Tauri windows |
+| a preload script, renderer pages with `<script src>` | The same files, bundled by Vite (or [webpack / rspack](#webpack-and-rspack), if that is what the project uses) and loaded into Tauri windows |
 | `electron-builder` / Forge config | `src-tauri/tauri.conf.json` + `cargo`, via `tauri build` |
 | Node.js in the main process (`fs`, `child_process`, native modules) | **Not available.** See [Node.js code](#4-nodejs-code) |
 
 Requirements: Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
+
+Vite is the default bundler. Projects that already build with **webpack**
+(Electron Forge's webpack template, electron-react-boilerplate, hand-written
+configs) or **rspack** can keep it: see [Webpack and rspack](#webpack-and-rspack).
+The scaffolder below picks the bundler from your `package.json`.
 
 ## 1. Add Tauri to the project
 
@@ -23,7 +28,8 @@ One command, run in the project folder (nothing is installed globally):
 npx github:AJayClauGermany/tauri-as-electron --into .
 ```
 
-It adds files next to your code and leaves your code alone:
+It adds files next to your code and leaves your code alone (for a Vite
+build; webpack / rspack projects get a [different config file](#webpack-and-rspack)):
 
 ```
 electron-main.html      hidden page that loads your main script (package.json "main")
@@ -54,11 +60,120 @@ renderer, ES modules) with the dependencies already pointing at GitHub.
 Options for either form: `--name`, `--product-name`, `--identifier`
 (reverse-DNS app id), `--ref <tag|branch|sha>` to pin both dependencies to
 the same git ref, `--local <checkout>` to use a local clone of this
-repository, `--force` to overwrite. Run it with `--help` for the list.
+repository, `--force` to overwrite, and for `--into`, `--bundler
+vite|webpack|rspack` to override the detected bundler. Run it with `--help`
+for the list.
+
+### Webpack and rspack
+
+An Electron app built with webpack normally has three builds (main,
+preload, renderer, with `electron-*` targets). In Tauri all three run in
+webviews, so `tauri-electron/webpack` (the same plugin is exported as
+`tauri-electron/rspack`) turns **one web build** into the whole app:
+
+- an `electron-main` entry for your main script, and the hidden
+  `electron-main.html` page Tauri opens first (emitted by the plugin),
+- the renderer bootstrap and your preload prepended to every renderer entry,
+- `electron-*` / `node` targets switched to `web`,
+- `electron`, `path`, `process`, `events`, `url` redirected to tauri-electron,
+  other Node built-ins (`fs`, `child_process`, …, with or without `node:`)
+  to stubs that throw a [`NotImplementedError`](#6-reading-errors) when used,
+- `__dirname`, `__filename`, `import.meta.dirname|filename` and
+  `fileURLToPath(import.meta.url)` in your source rewritten to
+  project-relative paths,
+- in dev, the main window's console printed in the terminal (`[electron-main]`).
+
+Your existing webpack / Forge setup keeps working for Electron; the Tauri
+build is a separate config file next to it. Supported: webpack 5 and rspack
+1 or 2, with their own CLIs and dev servers.
+
+**Electron Forge** (`@electron-forge/plugin-webpack`, JavaScript or
+TypeScript, Forge 7 or 8). `--into` detects it and writes
+`webpack.tauri.config.cjs`, which reads everything from `forge.config.*`:
+
+```js
+// webpack.tauri.config.cjs
+const { fromForge } = require('tauri-electron/webpack')
+module.exports = (env, argv) => fromForge('./forge.config.mjs', { mode: argv.mode })
+```
+
+`fromForge()` takes the renderer config (loaders, plugins, `resolve`), the
+main config's entry, and the `entryPoints` (pages and their preloads). Each
+page is served at `<name>/index.html`, and `MAIN_WINDOW_WEBPACK_ENTRY` /
+`MAIN_WINDOW_PRELOAD_WEBPACK_ENTRY` (one pair per entry point) are defined
+to match, so the template's `mainWindow.loadURL(MAIN_WINDOW_WEBPACK_ENTRY)`
+works unchanged. Rules using `node-loader` and
+`@vercel/webpack-asset-relocator-loader` are dropped (they only handle
+native `.node` addons, which cannot load in a webview). TypeScript Forge
+configs are loaded with [jiti](https://github.com/unjs/jiti), like Forge 8
+does; the scaffolder adds it. To build a Forge project with rspack instead,
+pass `--bundler rspack`. Forge's templates pin `css-loader` 6 and
+`style-loader` 3, which declare support only up to rspack 1, so update them
+to 7 and 4 for rspack 2.
+
+**Other webpack / rspack projects.** `--into` writes
+`webpack.tauri.config.cjs` (or `rspack.tauri.config.cjs`) with the main
+script, preload, HTML template and renderer entry it found, plus loader
+rules for the loaders you have installed (`ts-loader`, `babel-loader`,
+`css-loader`, `sass-loader`; rspack gets `builtin:swc-loader` and native
+CSS otherwise). Check the paths (anything not found is marked `TODO`) and
+copy over what else your renderer config needs (aliases, `DefinePlugin`
+values, more loaders). The shape:
+
+```js
+// webpack.tauri.config.cjs
+const path = require('node:path')
+const { TauriElectronPlugin } = require('tauri-electron/webpack')
+
+module.exports = {
+  entry: {},
+  module: { rules: [/* your loaders */] },
+  output: { path: path.resolve(__dirname, 'dist'), publicPath: '/', clean: true },
+  plugins: [
+    new TauriElectronPlugin({
+      main: './src/main/main.ts',
+      pages: [{
+        name: 'index',
+        html: './src/renderer/index.html',      // template, via html-webpack-plugin (or HtmlRspackPlugin)
+        filename: 'src/renderer/index.html',    // where it is served
+        js: './src/renderer/index.tsx',
+        preload: './src/main/preload.ts',
+      }],
+    }),
+  ],
+  devServer: { port: 1420 },                    // tauri.conf.json build.devUrl
+}
+```
+
+Serving a page at its project-relative source path (`filename`) is what
+makes `win.loadFile(path.join(__dirname, '../renderer/index.html'))` and
+``win.loadURL(`file://${path.join(__dirname, '../renderer/index.html')}`)``
+find it, since `__dirname` is `/src/main` here. A dev-server URL in the main
+process (`http://localhost:1212/index.html`) does not; load the file instead.
+
+You can also add the plugin to a config that already has entries and
+`HtmlWebpackPlugin` pages: then `preload` (a path, a list, or
+`{ entryName: path }`) is prepended to every entry, and `main` becomes the
+`electron-main` entry. Options: `main`, `preload`, `pages`
+(`{ name, js, html, filename, preload }`), `mainEntry`, `mainHtml`,
+`aliasPath`, `require`, `forwardMainConsole`, `forgeGlobals`; see the
+[package README](../packages/tauri-electron/README.md#webpack-and-rspack).
+
+Scripts the scaffolder adds (`tauri.conf.json` runs the last two):
+
+| | webpack | rspack |
+| --- | --- | --- |
+| `dev:web` | `webpack serve --config webpack.tauri.config.cjs --mode development` | `rspack serve --config rspack.tauri.config.cjs --mode development` |
+| `build:web` | `webpack --config webpack.tauri.config.cjs --mode production` | `rspack build --config rspack.tauri.config.cjs --mode production` |
+| dev dependencies | `webpack`, `webpack-cli`, `webpack-dev-server`, `html-webpack-plugin` | `@rspack/core`, `@rspack/cli`, `@rspack/dev-server` |
+
+By hand: the same steps as [below](#doing-it-by-hand), with the config
+file above instead of `vite.config.mjs`, those scripts, and no
+`electron-main.html` (the plugin emits it).
 
 ### Doing it by hand
 
-The scaffolder only writes files; if you prefer to see each one:
+The scaffolder only writes files; if you prefer to see each one (Vite):
 
 1. `npm install github:AJayClauGermany/tauri-as-electron` as `tauri-electron`:
    in `package.json`, `"tauri-electron": "github:AJayClauGermany/tauri-as-electron"`
@@ -87,7 +202,8 @@ The scaffolder only writes files; if you prefer to see each one:
 ## 2. What keeps working unchanged
 
 - `import { app, BrowserWindow } from 'electron'` **and**
-  `const { app } = require('electron')`. The Vite plugin aliases `electron`
+  `const { app } = require('electron')`. The Vite plugin (or the
+  webpack / rspack plugin) aliases `electron`
   (also `electron/main`, `electron/renderer`, `electron/common`) and provides
   a `require()` in the main page and in every renderer page (preload scripts
   are usually CommonJS).
@@ -99,7 +215,8 @@ The scaffolder only writes files; if you prefer to see each one:
   build time, so `win.loadFile(path.join(__dirname, 'index.html'))` and
   `webPreferences.preload: path.join(__dirname, 'preload.js')` keep working.
 - `loadFile('index.html')`, `loadURL('https://…')`, `loadURL('app://…')` for
-  schemes you handle with `protocol.handle`.
+  schemes you handle with `protocol.handle`, and `loadURL('file://…')`
+  (treated like `loadFile`: the page at that path in the build).
 - Renderer pages: `<script src="renderer.js">` without `type="module"` is
   bundled anyway (the plugin adds the attribute). A
   `<meta http-equiv="Content-Security-Policy" content="script-src 'self'">`
@@ -179,6 +296,7 @@ whether to change your code, enable a feature, or stop looking:
 | `[tauri-electron] … failed: …` (console error) | A Tauri call behind a fire-and-forget Electron API rejected. The message is translated when it is a permission or feature problem. | Read the translated message. |
 | `plugin X not found` in a stack trace | Same as `reason: 'feature'`, seen raw. | Enable the feature. |
 | `Failed to resolve module specifier "fs"` in the browser console | A Node built-in imported from a page the Vite plugin did not process (e.g. a `<script>` tag loaded from outside the project). | Let Vite bundle the file, or drop the import. |
+| `Module not found: Can't resolve 'x'` from webpack / rspack | A dependency your Electron build left to Node (`externals`, a native module). | Remove it from `externals` in the Tauri config so it is bundled, or replace the native module. |
 
 Everything Electron accepts but behaves differently here is marked 🟡 in
 [API-COVERAGE.md](API-COVERAGE.md), with the difference spelled out. The
