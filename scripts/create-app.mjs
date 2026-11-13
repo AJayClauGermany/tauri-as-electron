@@ -29,12 +29,16 @@ Options:
   --identifier <id>       reverse-DNS app id               (default: com.example.<name>)
   --ref <branch|tag|sha>  pin tauri-electron and tauri-plugin-electron to a git ref (default: main)
   --local <path>          use a local checkout of tauri-as-electron instead of GitHub
+  --bundler <name>        with --into: vite, webpack or rspack  (default: detected from package.json)
   --force                 overwrite files that already exist
   -h, --help              this text
 
---into adds electron-main.html, vite.config.mjs and src-tauri/ next to your code,
-and the tauri-electron dependency plus "tauri:dev" / "tauri:build" scripts to
+--into adds src-tauri/ and a bundler config next to your code, and the
+tauri-electron dependency plus "tauri:dev" / "tauri:build" scripts to
 package.json. Your main, preload and renderer files are not touched.
+  vite (default):   electron-main.html + vite.config.mjs
+  webpack / rspack: webpack.tauri.config.cjs / rspack.tauri.config.cjs; Electron Forge
+                    projects using @electron-forge/plugin-webpack are read from forge.config.*
 `.trim()
 
 // --- arguments ------------------------------------------------------------------
@@ -57,6 +61,7 @@ function parseArgs(argv) {
       case '--identifier': options.identifier = value(); break
       case '--ref': options.ref = value(); break
       case '--local': options.local = path.resolve(value()); break
+      case '--bundler': options.bundler = value(); break
       case '--force': options.force = true; break
       default:
         if (arg.startsWith('-')) fail(`unknown option ${arg}`)
@@ -220,7 +225,7 @@ src-tauri/Cargo.toml. Guide: ${REPO_URL}/blob/main/docs/MIGRATING.md
 `)
 }
 
-// --- mode 2: add Tauri to an existing Electron project -----------------------------------------------------
+// --- finding the sources of an existing project ---------------------------------------------------------
 
 /** Guess the preload script from `webPreferences.preload` in the main file, or by name. */
 export function findPreload(appDir, mainFile) {
@@ -243,6 +248,138 @@ export function findPreload(appDir, mainFile) {
   return null
 }
 
+// --- webpack / rspack ----------------------------------------------------------------------------------------------
+
+/** Dev dependencies a webpack / rspack project needs for `tauri:dev` / `tauri:build` (added when missing). */
+export const BUNDLER_DEV_DEPENDENCIES = {
+  webpack: { webpack: '^5.101.0', 'webpack-cli': '^7.0.0', 'webpack-dev-server': '^5.2.0', 'html-webpack-plugin': '^5.6.0' },
+  rspack: { '@rspack/core': '^2.0.0', '@rspack/cli': '^2.0.0', '@rspack/dev-server': '^2.0.0' },
+}
+
+const FORGE_CONFIGS = ['forge.config.ts', 'forge.config.mts', 'forge.config.cts', 'forge.config.js', 'forge.config.mjs', 'forge.config.cjs']
+
+/**
+ * Which bundler an existing Electron project builds with: Electron Forge's
+ * webpack plugin, rspack, webpack, or (default, and for electron-vite) Vite.
+ */
+export function detectBundler(appDir, pkg) {
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+  if (deps['@electron-forge/plugin-webpack']) {
+    const forgeConfig = FORGE_CONFIGS.find((f) => fs.existsSync(path.join(appDir, f)))
+    if (forgeConfig || pkg.config?.forge) return { bundler: 'webpack', forge: true, forgeConfig, typescript: /\.[cm]?ts$/.test(forgeConfig ?? '') }
+  }
+  if (deps['@rspack/core'] || deps['@rspack/cli']) return { bundler: 'rspack' }
+  if (deps.vite || deps['electron-vite']) return { bundler: 'vite' }
+  if (deps.webpack || deps['webpack-cli']) return { bundler: 'webpack' }
+  return { bundler: 'vite' }
+}
+
+const exists = (appDir, file) => fs.existsSync(path.join(appDir, file))
+const firstExisting = (appDir, candidates) => candidates.find((c) => exists(appDir, c)) ?? null
+const BUILD_OUTPUT = /^(\.webpack|\.vite|dist|build|out|release|app\/dist)\//
+const SCRIPT_EXTS = ['ts', 'js', 'mjs', 'cjs', 'tsx', 'jsx']
+const withExts = (bases) => bases.flatMap((b) => SCRIPT_EXTS.map((e) => `${b}.${e}`))
+
+/** Best guesses at the source files of a webpack Electron project (null when not found). */
+export function guessSources(appDir, pkg) {
+  const declared = (pkg.main ?? '').replace(/^\.\//, '')
+  const main =
+    declared && !BUILD_OUTPUT.test(declared) && exists(appDir, declared)
+      ? declared
+      : firstExisting(appDir, withExts(['src/main/main', 'src/main/index', 'src/main', 'src/electron/main', 'electron/main', 'main', 'src/index']))
+  const html = firstExisting(appDir, ['src/renderer/index.html', 'src/renderer/index.ejs', 'src/index.html', 'src/index.ejs', 'public/index.html', 'index.html'])
+  const renderer = firstExisting(appDir, withExts(['src/renderer/index', 'src/renderer/renderer', 'src/renderer/main', 'src/renderer', 'src/app', 'renderer']))
+  const preload = main ? findPreload(appDir, main) : null
+  return { main, html, renderer, preload: preload ?? firstExisting(appDir, withExts(['src/main/preload', 'src/preload/index', 'src/preload'])) }
+}
+
+/** Loader rules for the loaders the project already has. */
+function loaderRules(deps, bundler) {
+  const rules = []
+  const react = Boolean(deps.react)
+  if (deps['ts-loader']) {
+    rules.push(`{ test: /\\.tsx?$/, exclude: /node_modules/, loader: 'ts-loader', options: { transpileOnly: true } }`)
+    if (deps['babel-loader']) rules.push(`{ test: /\\.jsx?$/, exclude: /node_modules/, loader: 'babel-loader' }`)
+  } else if (deps['babel-loader']) {
+    rules.push(`{ test: /\\.[jt]sx?$/, exclude: /node_modules/, loader: 'babel-loader' }`)
+  } else if (bundler === 'rspack') {
+    const transform = react ? `, transform: { react: { runtime: 'automatic' } }` : ''
+    rules.push(`{
+        test: /\\.[jt]sx?$/,
+        exclude: /node_modules/,
+        loader: 'builtin:swc-loader',
+        options: { jsc: { parser: { syntax: 'typescript', tsx: true }${transform} } },
+        type: 'javascript/auto',
+      }`)
+  }
+  const css = deps['style-loader'] && deps['css-loader'] ? `'style-loader', 'css-loader'` : null
+  if (css) rules.push(`{ test: /\\.css$/, use: [${css}] }`)
+  else if (bundler === 'rspack') rules.push(`{ test: /\\.css$/, type: 'css/auto' }`)
+  if (css && deps['sass-loader']) rules.push(`{ test: /\\.s[ac]ss$/, use: [${css}, 'sass-loader'] }`)
+  rules.push(`{ test: /\\.(png|jpe?g|gif|svg|ico|webp|woff2?|ttf|eot)$/, type: 'asset/resource' }`)
+  return rules
+}
+
+/** `webpack.tauri.config.cjs` / `rspack.tauri.config.cjs` for a project. */
+export function bundlerConfig({ bundler, forge, forgeConfig, sources, deps }) {
+  if (forge) {
+    return `// Tauri build of this Electron Forge project (tauri-electron).
+// Reads the @electron-forge/plugin-webpack options from ${forgeConfig ?? 'the Forge config'}: the main
+// entry, the renderer config's loaders and plugins, and the entry points
+// (pages + preloads). Builds them as one web app into dist/, served on port
+// 1420 in development, which is what src-tauri/tauri.conf.json expects.
+// Electron Forge itself keeps working as before.
+const { fromForge } = require('tauri-electron/${bundler}')
+
+module.exports = (env, argv) => fromForge(${forgeConfig ? `'./${forgeConfig}'` : 'undefined'}, { mode: argv.mode })
+`
+  }
+  const quote = (value, what) => (value ? `'./${value}'` : `'./TODO' /* ${what} */`)
+  const typescript = [sources.main, sources.renderer, sources.preload].some((f) => /\.tsx?$/.test(f ?? '')) || Boolean(deps.typescript)
+  const extensions = typescript ? `['.ts', '.tsx', '.js', '.jsx', '.json']` : `['.js', '.jsx', '.json']`
+  const page = [`name: 'index'`]
+  if (sources.html) page.push(`html: ${quote(sources.html)}`, `filename: '${sources.html.replace(/\.\w+$/, '.html')}'`)
+  else page.push(`html: './TODO' /* your renderer's HTML page (template) */`, `filename: 'index.html'`)
+  page.push(`js: ${quote(sources.renderer, "your renderer's entry script")}`)
+  if (sources.preload) page.push(`preload: ${quote(sources.preload)}`)
+  return `// Tauri build of this Electron app (tauri-electron). One web build for
+// the main process (a hidden page, electron-main.html), the preload and the
+// renderer pages; output in dist/, dev server on port 1420, as
+// src-tauri/tauri.conf.json expects. Your Electron build is not affected.
+//
+// Check the paths below and copy anything else your renderer config needs
+// (loaders, aliases, DefinePlugin values). Docs:
+// https://github.com/${REPO}/blob/main/docs/MIGRATING.md#webpack-and-rspack
+const path = require('node:path')
+const { TauriElectronPlugin } = require('tauri-electron/${bundler}')
+
+module.exports = {
+  entry: {},
+  module: {
+    rules: [
+      ${loaderRules(deps, bundler).join(',\n      ')},
+    ],
+  },
+  resolve: { extensions: ${extensions} },
+  output: { path: path.resolve(__dirname, 'dist'), publicPath: '/', clean: true },
+  plugins: [
+    new TauriElectronPlugin({
+      // Electron main-process entry (runs in the hidden electron-main window).
+      main: ${quote(sources.main, 'your Electron main script')},
+      // Renderer pages: an entry and an HTML page each, the preload loaded
+      // first. A page is served at \`filename\`, its project-relative source
+      // path, which is what win.loadFile(path.join(__dirname, ...)) and
+      // loadURL(\`file://\${__dirname}/...\`) resolve to here.
+      pages: [{ ${page.join(', ')} }],
+    }),
+  ],
+  devServer: { port: 1420 },
+}
+`
+}
+
+// --- mode 2: add Tauri to an existing Electron project -----------------------------------------------------
+
 function addToProject(dir, options) {
   const appDir = path.resolve(dir)
   const pkgFile = path.join(appDir, 'package.json')
@@ -252,8 +389,10 @@ function addToProject(dir, options) {
   const productName = options.productName ?? pkg.productName ?? pkg.build?.productName ?? name
   const identifier = options.identifier ?? pkg.build?.appId ?? toIdentifier(name)
   const specs = dependencySpecs(options, appDir)
-  const mainFile = (pkg.main ?? 'main.js').replace(/^\.\//, '')
-  const preload = findPreload(appDir, mainFile)
+  const detected = detectBundler(appDir, pkg)
+  if (options.bundler && !['vite', 'webpack', 'rspack'].includes(options.bundler)) fail(`--bundler must be vite, webpack or rspack`)
+  const bundler = options.bundler ?? detected.bundler
+  const forge = detected.forge && bundler !== 'vite' ? detected : null
   const templatePkg = readJson(path.join(template, 'package.json'))
   const written = []
   const skipped = []
@@ -275,18 +414,28 @@ function addToProject(dir, options) {
     configureTauri(appDir, { name, productName, identifier, version: pkg.version, specs })
   }
 
-  // The hidden window that runs the Electron main process.
-  write(
-    'electron-main.html',
-    fs
-      .readFileSync(path.join(template, 'electron-main.html'), 'utf8')
-      .replace('src="/src/main.js"', `src="/${mainFile.split(path.sep).join('/')}"`),
-  )
+  pkg.dependencies = { ...(pkg.dependencies ?? {}), 'tauri-electron': specs.npm }
+  pkg.devDependencies = { ...(pkg.devDependencies ?? {}) }
+  pkg.devDependencies['@tauri-apps/cli'] ??= templatePkg.devDependencies['@tauri-apps/cli']
+  pkg.scripts = { ...(pkg.scripts ?? {}) }
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+  let summary
 
-  // Vite config (.mjs so it is ESM whatever package.json#type says).
-  write(
-    'vite.config.mjs',
-    `import { defineConfig } from 'vite'
+  if (bundler === 'vite') {
+    const mainFile = (pkg.main ?? 'main.js').replace(/^\.\//, '')
+    const preload = findPreload(appDir, mainFile)
+    // The hidden window that runs the Electron main process.
+    write(
+      'electron-main.html',
+      fs
+        .readFileSync(path.join(template, 'electron-main.html'), 'utf8')
+        .replace('src="/src/main.js"', `src="/${mainFile.split(path.sep).join('/')}"`),
+    )
+
+    // Vite config (.mjs so it is ESM whatever package.json#type says).
+    write(
+      'vite.config.mjs',
+      `import { defineConfig } from 'vite'
 import tauriElectron from 'tauri-electron/vite'
 
 export default defineConfig({
@@ -298,25 +447,65 @@ export default defineConfig({
   server: { port: 1420, strictPort: true },
 })
 `,
-  )
+    )
+    pkg.devDependencies.vite ??= templatePkg.devDependencies.vite
+    const scripts = { 'tauri:dev': 'tauri dev', 'tauri:build': 'tauri build', 'dev:web': 'vite', 'build:web': 'vite build', tauri: 'tauri' }
+    for (const [key, value] of Object.entries(scripts)) pkg.scripts[key] ??= value
+    summary = `Bundler:      Vite (vite.config.mjs)
+Main process: ${mainFile} (loaded by electron-main.html)
+Preload:      ${preload ?? 'not found - set `preload` in vite.config.mjs'}`
+  } else {
+    const configFile = `${bundler}.tauri.config.cjs`
+    const sources = forge ? null : guessSources(appDir, pkg)
+    write(configFile, bundlerConfig({ bundler, forge: Boolean(forge), forgeConfig: forge?.forgeConfig, sources, deps }))
+    for (const [dep, version] of Object.entries(BUNDLER_DEV_DEPENDENCIES[bundler])) pkg.devDependencies[dep] ??= version
+    // Forge 8 loads its (TypeScript / ES module) configs with jiti; so does fromForge().
+    if (forge) pkg.devDependencies.jiti ??= '^2.4.0'
+    const cli = bundler === 'rspack' ? 'rspack' : 'webpack'
+    const scripts = {
+      'tauri:dev': 'tauri dev',
+      'tauri:build': 'tauri build',
+      'dev:web': `${cli} serve --config ${configFile} --mode development`,
+      'build:web': `${cli} ${bundler === 'rspack' ? 'build ' : ''}--config ${configFile} --mode production`,
+      tauri: 'tauri',
+    }
+    for (const [key, value] of Object.entries(scripts)) pkg.scripts[key] ??= value
+    // Forge's templates pin css-loader 6 / style-loader 3, whose peer ranges stop at rspack 1.
+    const outdated = bundler === 'rspack' ? Object.entries({ 'css-loader': 7, 'style-loader': 4 }).filter(([dep, major]) => deps[dep] && Number(/\d+/.exec(deps[dep])?.[0]) < major) : []
+    const peerNote = outdated.length
+      ? `\nNote:         ${outdated.map(([dep]) => dep).join(' and ')} predate rspack 2 (npm reports a peer conflict):\n              npm install -D ${outdated.map(([dep, major]) => `${dep}@${major}`).join(' ')}`
+      : ''
+    const missing = sources ? Object.entries(sources).filter(([key, value]) => !value && key !== 'preload').map(([key]) => key) : []
+    summary = forge
+      ? `Bundler:      ${bundler} (${configFile}), from ${forge.forgeConfig ?? 'the Forge config'}
+              main, preloads and pages come from @electron-forge/plugin-webpack's options${peerNote}`
+      : `Bundler:      ${bundler} (${configFile})
+Main process: ${sources.main ?? 'not found - set `main` in ' + configFile}
+Preload:      ${sources.preload ?? 'not found - set `preload` on the page in ' + configFile + ' if you have one'}
+Page:         ${sources.html ?? '?'} + ${sources.renderer ?? '?'}${missing.length ? `\n              fill in the TODOs in ${configFile}` : ''}${peerNote}`
+  }
 
-  // package.json: dependencies and scripts, nothing removed.
-  pkg.dependencies = { ...(pkg.dependencies ?? {}), 'tauri-electron': specs.npm }
-  pkg.devDependencies = { ...(pkg.devDependencies ?? {}) }
-  for (const dep of ['@tauri-apps/cli', 'vite']) pkg.devDependencies[dep] ??= templatePkg.devDependencies[dep]
-  pkg.scripts = { ...(pkg.scripts ?? {}) }
-  const scripts = { 'tauri:dev': 'tauri dev', 'tauri:build': 'tauri build', 'dev:web': 'vite', 'build:web': 'vite build', tauri: 'tauri' }
-  for (const [key, value] of Object.entries(scripts)) pkg.scripts[key] ??= value
   writeJson(pkgFile, pkg)
   ensureGitignore(appDir)
 
   const list = (items) => items.map((i) => `  ${i}`).join('\n')
+  const pageNote =
+    bundler === 'vite'
+      ? `  - Pages: every root-level *.html is built. <script src> tags without
+    type="module" are bundled as modules; add type="module" yourself if you
+    prefer to be explicit.`
+      : forge
+        ? `  - Pages: each Forge entry point is served at <name>/index.html, where
+    MAIN_WINDOW_WEBPACK_ENTRY & co. point.`
+        : `  - Pages: served at their project-relative source path (\`filename\` in
+    ${bundler}.tauri.config.cjs): win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    finds them. A dev-server URL (http://localhost:<port>/...) does not: use
+    loadFile, or the path relative to the project.`
   console.log(`
 Added Tauri to ${appDir}
 ${written.length ? `\nWritten:\n${list(written)}` : ''}${skipped.length ? `\nKept (already there; --force overwrites):\n${list(skipped)}` : ''}
 
-Main process: ${mainFile} (loaded by electron-main.html)
-Preload:      ${preload ?? 'not found - set `preload` in vite.config.mjs'}
+${summary}
 
 Next:
   npm install
@@ -324,9 +513,7 @@ Next:
   npm run tauri:build    # tauri build
 
 Check:
-  - Pages: every root-level *.html is built. <script src> tags without
-    type="module" are bundled as modules; add type="module" yourself if you
-    prefer to be explicit.
+${pageNote}
   - require('electron'), require('path') work in main and preload scripts.
     Other Node built-ins (fs, child_process, ...) do not exist in a webview:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md

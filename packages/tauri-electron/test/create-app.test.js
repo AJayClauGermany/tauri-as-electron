@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 const script = path.join(repo, 'scripts/create-app.mjs')
-const { toPackageName, toIdentifier, dependencySpecs, findPreload } = await import(script)
+const { toPackageName, toIdentifier, dependencySpecs, findPreload, detectBundler, guessSources, bundlerConfig } = await import(script)
 
 const read = (dir, file) => fs.readFileSync(path.join(dir, file), 'utf8')
 const json = (dir, file) => JSON.parse(read(dir, file))
@@ -98,5 +98,69 @@ describe('create-tauri-electron-app', () => {
     const out = execFileSync('node', [script, '--into', dir], { encoding: 'utf8' })
     expect(read(dir, 'vite.config.mjs')).toBe('// mine')
     expect(out).toMatch(/Kept/)
+  })
+
+  it('keeps an Electron Forge webpack project on webpack, reading forge.config.*', () => {
+    const dir = tmp()
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'forged', main: '.webpack/main/index.cjs', devDependencies: { '@electron-forge/plugin-webpack': '^8.0.0', 'css-loader': '^6.0.0' } }))
+    fs.writeFileSync(path.join(dir, 'forge.config.mjs'), 'export default {}')
+    execFileSync('node', [script, '--into', dir], { stdio: 'pipe' })
+
+    const pkg = json(dir, 'package.json')
+    expect(pkg.scripts).toMatchObject({
+      'dev:web': 'webpack serve --config webpack.tauri.config.cjs --mode development',
+      'build:web': 'webpack --config webpack.tauri.config.cjs --mode production',
+    })
+    expect(Object.keys(pkg.devDependencies)).toEqual(expect.arrayContaining(['webpack', 'webpack-cli', 'webpack-dev-server', 'html-webpack-plugin', 'jiti']))
+    expect(pkg.devDependencies.vite).toBeUndefined()
+    expect(read(dir, 'webpack.tauri.config.cjs')).toContain("fromForge('./forge.config.mjs', { mode: argv.mode })")
+    // The plugin emits electron-main.html; Forge's built main (pkg.main) is not a source.
+    expect(fs.existsSync(path.join(dir, 'electron-main.html'))).toBe(false)
+    expect(fs.existsSync(path.join(dir, 'vite.config.mjs'))).toBe(false)
+
+    // --bundler rspack: same Forge config, rspack's CLI, and a hint about Forge's old css-loader.
+    const out = execFileSync('node', [script, '--into', dir, '--bundler', 'rspack', '--force'], { encoding: 'utf8' })
+    expect(read(dir, 'rspack.tauri.config.cjs')).toContain("require('tauri-electron/rspack')")
+    expect(out).toMatch(/npm install -D css-loader@7/)
+  })
+
+  it('writes a webpack / rspack config for other projects from the files it finds', () => {
+    const dir = tmp()
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'rs', main: 'release/app/dist/main.js', devDependencies: { '@rspack/core': '^2.0.0', react: '^19.0.0' } }))
+    for (const file of ['src/main/main.ts', 'src/renderer/index.ejs', 'src/renderer/index.tsx']) {
+      fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true })
+      fs.writeFileSync(path.join(dir, file), '')
+    }
+    fs.writeFileSync(path.join(dir, 'src/main/main.ts'), "new BrowserWindow({ webPreferences: { preload: path.join(__dirname, 'preload.ts') } })")
+    fs.writeFileSync(path.join(dir, 'src/main/preload.ts'), '')
+    expect(detectBundler(dir, json(dir, 'package.json'))).toEqual({ bundler: 'rspack' })
+    expect(guessSources(dir, json(dir, 'package.json'))).toEqual({
+      main: 'src/main/main.ts',
+      html: 'src/renderer/index.ejs',
+      renderer: 'src/renderer/index.tsx',
+      preload: 'src/main/preload.ts',
+    })
+    execFileSync('node', [script, '--into', dir], { stdio: 'pipe' })
+
+    const config = read(dir, 'rspack.tauri.config.cjs')
+    expect(config).toContain("main: './src/main/main.ts'")
+    expect(config).toContain("html: './src/renderer/index.ejs', filename: 'src/renderer/index.html', js: './src/renderer/index.tsx', preload: './src/main/preload.ts'")
+    expect(config).toContain("loader: 'builtin:swc-loader'")
+    expect(config).toContain("runtime: 'automatic'")
+    expect(config).not.toContain('TODO')
+    expect(json(dir, 'package.json').scripts['build:web']).toBe('rspack build --config rspack.tauri.config.cjs --mode production')
+  })
+
+  it('detects the bundler from package.json and marks what it could not find', () => {
+    const detect = (devDependencies) => detectBundler(tmp(), { devDependencies }).bundler
+    expect(detect({})).toBe('vite')
+    expect(detect({ 'electron-vite': '1' })).toBe('vite')
+    expect(detect({ webpack: '5' })).toBe('webpack')
+    expect(detect({ webpack: '5', vite: '8' })).toBe('vite')
+    expect(detect({ '@rspack/cli': '2', webpack: '5' })).toBe('rspack')
+    const config = bundlerConfig({ bundler: 'webpack', sources: { main: null, html: null, renderer: null, preload: null }, deps: { 'ts-loader': '9', 'style-loader': '4', 'css-loader': '7' } })
+    expect(config).toContain("main: './TODO' /* your Electron main script */")
+    expect(config).toContain("loader: 'ts-loader'")
+    expect(config).toContain("use: ['style-loader', 'css-loader']")
   })
 })

@@ -11,6 +11,9 @@ describe('rewritePathGlobals', () => {
     expect(rewrite('`${__dirname}/x`')).toBe('`${"/src"}/x`')
     expect(rewrite('path.dirname(fileURLToPath(import.meta.url))')).toBe('path.dirname("/src/main.js")')
     expect(rewrite('new URL("./x", import.meta.url)')).toBe('new URL("./x", import.meta.url)')
+    expect(rewrite("loadURL(`file://${path.resolve(__dirname, '../r/', 'a.html')}`) // __dirname")).toBe(
+      "loadURL(`file://${path.resolve(\"/src\", '../r/', 'a.html')}`) // __dirname",
+    )
   })
 
   it('leaves strings, comments and member accesses alone', () => {

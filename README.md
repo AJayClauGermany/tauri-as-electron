@@ -23,18 +23,20 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 
 | Path | What it is |
 | --- | --- |
-| [`packages/tauri-electron`](packages/tauri-electron) | The library. `import … from 'electron'` resolves here. Includes a Vite plugin (`tauri-electron/vite`) that sets everything up. |
+| [`packages/tauri-electron`](packages/tauri-electron) | The library. `import … from 'electron'` resolves here. Includes a Vite plugin (`tauri-electron/vite`) that sets everything up, and a webpack / rspack plugin (`tauri-electron/webpack`) for projects that build with those. |
 | [`crates/tauri-plugin-electron`](crates/tauri-plugin-electron) | Small Rust plugin for what Tauri's JS API and official plugins cannot do: `sendSync`, `process.argv`/`env`, devtools, `shell.trashItem`, `protocol.handle`, navigation and macOS app events. |
 | [`templates/tauri-electron-app`](templates/tauri-electron-app) | Starter template: an Electron-shaped project (main / preload / renderer) that builds as a Tauri app. |
-| [`scripts/create-app.mjs`](scripts/create-app.mjs) | `npx github:AJayClauGermany/tauri-as-electron my-app` (new app from the template) or `--into <dir>` (add Tauri to an existing Electron project). |
+| [`scripts/create-app.mjs`](scripts/create-app.mjs) | `npx github:AJayClauGermany/tauri-as-electron my-app` (new app from the template) or `--into <dir>` (add Tauri to an existing Electron project; Vite, webpack, rspack or Electron Forge's webpack plugin). |
 | [`apps/kitchen-sink`](apps/kitchen-sink) | Exercises ~100 Electron APIs. Runs unchanged on **both** Tauri and real Electron, so you can compare behaviour side by side. |
 | [`docs/MIGRATING.md`](docs/MIGRATING.md) | Step-by-step guide for porting an Electron app, and how to read the errors you may hit. |
 | [`docs/API-COVERAGE.md`](docs/API-COVERAGE.md) | What is implemented, partial, or missing, and the behavioural differences. |
 | [`docs/TARGET-APPS.md`](docs/TARGET-APPS.md) | The Electron APIs VS Code and GitHub Desktop rely on, and where each one stands. |
 
 No UI framework is assumed: the template and kitchen sink are plain HTML,
-CSS and JavaScript. Vite is used only as the bundler (it is what lets
-`electron` be aliased).
+CSS and JavaScript. A bundler is needed only to alias `electron`: Vite by
+default; projects that already use webpack (including Electron Forge's
+webpack template) or rspack can keep it
+([guide](docs/MIGRATING.md#webpack-and-rspack)).
 
 ## How it works
 
@@ -49,7 +51,7 @@ runs JavaScript only inside webviews, so:
   structured-clone-like encoding (`Uint8Array`, `Date`, `Map`, `Error`, … survive).
   `MessagePort`s can be transferred, and `ipcRenderer.sendSync` blocks on a
   synchronous request to `tauri-plugin-electron`'s URI scheme.
-- **Preload scripts** are loaded by the Vite plugin at the top of every
+- **Preload scripts** are loaded by the bundler plugin at the top of every
   page, before your renderer code. `contextBridge.exposeInMainWorld` assigns
   to `window`. CommonJS code works: `require('electron')`, `require('path')`
   are provided; other Node built-ins throw a `NotImplementedError` that names
@@ -78,7 +80,8 @@ Nothing is published to npm or crates.io yet; both halves install from this
 repository. Requires Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-Add Tauri to an existing Electron project (your code is not touched):
+Add Tauri to an existing Electron project (your code is not touched; the
+bundler, Vite, webpack or rspack, is detected from `package.json`):
 
 ```bash
 npx github:AJayClauGermany/tauri-as-electron --into .

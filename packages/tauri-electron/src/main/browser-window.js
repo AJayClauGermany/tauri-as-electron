@@ -52,6 +52,17 @@ export function fileToUrl(filePath, options = {}) {
   return url
 }
 
+/**
+ * `loadURL('file:///…/index.html')` → the app page at that path. There are no
+ * local files to load in Tauri; with __dirname rewritten to project-relative
+ * paths, `file://${__dirname}/index.html` names the page in the build.
+ */
+export function fileUrlToAppUrl(url) {
+  if (!/^file:\/\//i.test(url)) return url
+  const parsed = new URL(url)
+  return fileToUrl(decodeURIComponent(parsed.pathname)) + parsed.search + parsed.hash
+}
+
 /** URLs served by our own frontend get the renderer bootstrap; remote pages do not. */
 function isAppUrl(url) {
   if (!SCHEME.test(url)) return true
@@ -1056,7 +1067,7 @@ export class BrowserWindow extends EventEmitter {
   // --- loading -------------------------------------------------------------
 
   loadURL(url, options) {
-    url = String(url)
+    url = fileUrlToAppUrl(String(url))
     if (options?.userAgent) this.webContents._userAgent = options.userAgent
     const { promise, resolve, reject } = deferred()
     this._loadWaiters.push({ resolve, reject })

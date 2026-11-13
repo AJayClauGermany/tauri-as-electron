@@ -15,6 +15,8 @@
     "./process": "./packages/tauri-electron/src/process.js",
     "./renderer-bootstrap": "./packages/tauri-electron/src/renderer/bootstrap.js",
     "./vite": "./packages/tauri-electron/vite.js",
+    "./webpack": "./packages/tauri-electron/webpack.cjs",
+    "./rspack": "./packages/tauri-electron/webpack.cjs",
     "./require": "./packages/tauri-electron/src/require.js",
     "./events": "./packages/tauri-electron/src/events.js",
     "./url": "./packages/tauri-electron/src/url.js"
@@ -25,6 +27,8 @@
   "files": [
     "packages/tauri-electron/src",
     "packages/tauri-electron/vite.js",
+    "packages/tauri-electron/webpack.cjs",
+    "packages/tauri-electron/bundler",
     "packages/tauri-electron/README.md",
     "templates/tauri-electron-app",
     "scripts/create-app.mjs",
