@@ -115,10 +115,14 @@ and Tauri commands (async variants). "Plugin" means an official Tauri plugin.
 | `http`, `https` (client) | JS over `plugin-http` | `net.request` in `src/main/net.js` already implements `ClientRequest` / `IncomingMessage`; `http.request` / `http.get` can wrap it. |
 | `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust, later | No official plugin. Each needs its own Rust implementation with handle tables and event channels. Defer until an app needs it. |
 | `readline` | JS, partial | Only `createInterface({ input: stream })` line splitting. No terminal. |
-| `worker_threads` | Unsupported | Web Workers have different semantics (no shared `require`, no `workerData` files). Keep the stub with its hint. |
+| `worker_threads` | JS, partial, late | A partial adapter over Web Workers (section 4.2). Different semantics: no shared `require`, no worker script loaded from a real file path. Until then keep the stub with its hint. |
 | `module` | JS, partial | `createRequire` returning `requireShim`, `builtinModules`. |
 | `constants` | JS | Static tables (`fs.constants`, `os.constants`). |
-| `vm`, `v8`, `cluster`, `repl`, `inspector`, `tty`, `wasi`, `domain`, `async_hooks`, `diagnostics_channel`, `trace_events`, `http2`, `sys` | Unsupported | Keep the stubs. `async_hooks.AsyncLocalStorage` and `diagnostics_channel` can get no-op-ish JS versions if a common dependency needs them. |
+| `vm` | JS, partial, late | A hidden iframe as the separate context (section 4.2). |
+| `v8` | JS, partial, late | Small stubs for commonly called functions (`getHeapStatistics`, `serialize` / `deserialize` via structured clone). |
+| `wasi` | JS, late | The webview runs WebAssembly; a JS WASI layer on top of `fs`. Low priority. |
+| `cluster`, `repl`, `inspector`, `trace_events` | Unsupported | Need Node or the engine itself (section 4.2). Keep the stubs. |
+| `tty`, `domain`, `async_hooks`, `diagnostics_channel`, `http2`, `sys` | See layers 3 and 4 | Minimal or partial JS versions (`async_hooks.AsyncLocalStorage`, `diagnostics_channel`) when a common dependency needs them. |
 | Native `.node` addons, `asar` | Unsupported | Cannot load in a webview. The escape hatch in section 7.4 lets a user map such a package to their own module. |
 
 ### 4.1 Layers and how much of Node they cover
@@ -134,7 +138,8 @@ Work proceeds in layers; each layer is shippable on its own.
 | 2. Major | `os`, `child_process`, `util`, `util/types`, `stream`, `stream/promises`, `crypto`, `http`, `https` (client side) | 9 | 18 / 54 (33 %) |
 | 3. Smaller, mostly pure JS | `assert`, `assert/strict`, `string_decoder`, `querystring`, `punycode`, `timers`, `timers/promises`, `perf_hooks`, `stream/web`, `stream/consumers`, `zlib`, `constants`, `console`, `sys`, `module` (partial), `readline`, `readline/promises` (partial), `async_hooks` (partial), `diagnostics_channel`, `tty` (minimal), `domain` (minimal) | 21 | 39 / 54 (72 %) |
 | 4. Networking in Rust, on demand | `net`, `tls`, `dns`, `dns/promises`, `dgram`, `http2`, and the server side of `http` / `https` | 6 | 45 / 54 (83 %) |
-| Not planned (need Node or V8 itself) | `cluster`, `inspector`, `inspector/promises`, `repl`, `trace_events`, `v8`, `vm`, `wasi`, `worker_threads` | 9 | |
+| 5. Approximations, late | `vm`, `v8`, `wasi`, `worker_threads` (section 4.2) | 4 | 49 / 54 (91 %) |
+| Not planned (need Node or the engine itself) | `cluster`, `inspector`, `inspector/promises`, `repl`, `trace_events` | 5 | |
 
 Read the percentages with care:
 
@@ -153,6 +158,52 @@ Read the percentages with care:
   and half of npm depend on them.
 - Native addons (`node-pty`, `sqlite3`, `keytar`) are outside all layers.
   The `modules` escape hatch (section 7) is the answer there.
+
+### 4.2 The engine-level modules, and why not embed V8
+
+Embedding V8 in Rust (the `v8` crate, "Rusty V8") was considered for the
+modules that look V8-bound. It is **not** the plan, for these reasons:
+
+- The app's JavaScript runs in the webview's engine (JavaScriptCore on macOS
+  and Linux, the V8 inside WebView2 on Windows). An embedded V8 is a second
+  engine with its own heap. Code run through `vm` there could not share
+  objects or functions with the app, only serialized copies, and that
+  sharing is what `vm` contexts are normally used for. `v8` and `inspector`
+  would describe the wrong engine.
+- `worker_threads`, `cluster` and `repl` do not need V8 so much as a second
+  *Node*: bare V8 has no `fs`, `require` or event loop. Providing those means
+  embedding a Node-compatible runtime (in Rust, effectively Deno's), which is
+  bundling Node in all but name and adds tens of megabytes.
+- `wasi` does not need V8 at all.
+
+What to do instead, all in the webview:
+
+| Module | Approach | Known limits |
+| --- | --- | --- |
+| `vm` | A hidden same-origin `<iframe>` per context; evaluate with the iframe's own `eval` / `Function`. Same engine, synchronous, objects shared by reference. | No `timeout`, no `breakOnSigint`, not a security boundary (neither is Node's). Needs `'unsafe-eval'` if the app sets a CSP. Objects from another context have different prototypes, as in Node. |
+| `v8` | Stubs: `getHeapStatistics()` from `performance.memory` where available (zeros elsewhere), `serialize` / `deserialize` with a structured-clone-compatible encoding, `setFlagsFromString` as a no-op. | Not the real wire format. |
+| `worker_threads` | Adapter over Web Workers: `Worker`, `parentPort`, `workerData`, `isMainThread`, `MessageChannel`. The worker script must be a bundler entry. | No native-backed modules inside the worker unless the bridge is reachable from it; no `SharedArrayBuffer` without cross-origin isolation. |
+| `wasi` | A JS WASI implementation over the `fs` shim. | Low priority. |
+
+An embedded runtime stays a possible **opt-in feature for later**, to be
+decided by the owner, only if `child_process.fork()`, real worker threads or
+native addons turn out to be must-haves. It would stretch the "no Node"
+constraint in section 1.
+
+### 4.3 Where Node support touches the Electron API
+
+This plan adds Node built-ins; it does not extend tauri-electron's Electron
+API. These are the points where the two meet, to be handled when the
+relevant layer lands:
+
+| Point | What to do |
+| --- | --- |
+| Electron APIs marked unavailable only because there is no `fs` (`protocol.registerFileProtocol`, `registerStreamProtocol`, `webContents.downloadURL`, `session` downloads; see [API-COVERAGE.md](API-COVERAGE.md)) | Become implementable after layer 1. Separate, Electron-side work; update API-COVERAGE when done. |
+| `original-fs` (Electron's `fs` without asar patching) | Alias it to the `fs` shim in `NODE_SHIMS` and `requireShim`. Do this with layer 1. |
+| Transparent reads inside `app.asar` | Covered by the resource mapping in section 8.1. |
+| `child_process.fork()`, `utilityProcess.fork()` | Both start another Node process from Electron's binary. Stay unsupported without an embedded runtime (section 4.2). |
+| Renderers created with `nodeIntegration: true` | Native-backed modules need an explicit per-window grant recorded in Rust (section 8.5). The wiring is not designed yet. |
+| `process` extras Electron adds (`resourcesPath`, `type`, `versions`) | Already provided by the `process` shim. |
 
 ## 5. Design
 
