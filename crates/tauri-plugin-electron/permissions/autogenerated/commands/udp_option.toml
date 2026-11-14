@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-udp-option"
+description = "Enables the udp_option command without any pre-configured scope."
+commands.allow = ["udp_option"]
+
+[[permission]]
+identifier = "deny-udp-option"
+description = "Denies the udp_option command without any pre-configured scope."
+commands.deny = ["udp_option"]

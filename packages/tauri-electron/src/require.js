@@ -58,19 +58,20 @@ const MAIN_ONLY = {
   diagnostics_channel: null,
   tty: null,
   domain: null,
+  net: 'node-net',
+  dgram: 'node-net',
+  dns: 'node-net',
+  'dns/promises': 'node-net',
+  tls: 'node-tls',
 }
 
 /** Node built-ins that cannot exist in a webview, with the nearest replacement. */
 export const NODE_BUILTINS = {
   ...Object.fromEntries(Object.keys(MAIN_ONLY).map((name) => [name, null])),
-  net: '@tauri-apps/plugin-http or a Rust command',
   worker_threads: 'Web Workers',
   v8: 'nothing',
   vm: 'nothing',
-  dns: '@tauri-apps/plugin-http or a Rust command',
-  dgram: 'a Rust command',
-  tls: 'net.fetch / https, or a Rust command',
-  http2: 'net.fetch / https, or a Rust command',
+  http2: 'net.fetch / https (HTTP/2 is negotiated there), or a Rust command',
   cluster: 'nothing (there is one webview process)',
 }
 

@@ -66,7 +66,7 @@ describe('create-tauri-electron-app', () => {
     expect(cargo).toContain('name = "hello_world_lib"')
     expect(cargo).toMatch(/^tauri-plugin-electron = \{ git = "https:\/\/github.com\/AJayClauGermany\/tauri-as-electron", features = \[$/m)
     // The native access the app has, one line each.
-    for (const feature of ['node-fs', 'node-os', 'node-child-process']) expect(cargo).toMatch(new RegExp(`^ {2}"${feature}", +# `, 'm'))
+    for (const feature of ['node-fs', 'node-os', 'node-child-process', 'node-net', 'node-tls']) expect(cargo).toMatch(new RegExp(`^ {2}"${feature}", +# `, 'm'))
     expect(cargo).not.toContain('path = "../../../crates')
     // App files fs reads in a build are staged here and shipped as resources.
     expect(fs.existsSync(path.join(dir, 'src-tauri/electron-resources/.gitignore'))).toBe(true)

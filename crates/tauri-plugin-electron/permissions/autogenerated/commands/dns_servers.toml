@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-dns-servers"
+description = "Enables the dns_servers command without any pre-configured scope."
+commands.allow = ["dns_servers"]
+
+[[permission]]
+identifier = "deny-dns-servers"
+description = "Denies the dns_servers command without any pre-configured scope."
+commands.deny = ["dns_servers"]

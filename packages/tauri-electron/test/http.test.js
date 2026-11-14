@@ -56,6 +56,5 @@ describe('http client', () => {
     expect(() => http.get('https://x.test/')).toThrow(expect.objectContaining({ code: 'ERR_INVALID_PROTOCOL' }))
     expect(http.STATUS_CODES[404]).toBe('Not Found')
     expect(http.METHODS).toContain('PATCH')
-    expect(() => http.createServer()).toThrow(/not implemented yet/)
   })
 })

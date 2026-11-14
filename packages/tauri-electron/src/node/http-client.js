@@ -5,12 +5,11 @@
  * `request()` / `get()` return a ClientRequest; the `'response'` is an
  * IncomingMessage, a Readable stream (`on('data')`, `setEncoding`, `pipe`,
  * async iteration). Like Node, redirects are not followed. The request body
- * is buffered and sent on `end()`. Servers (`createServer`) are not
- * implemented: they need sockets in Rust (layer 4 of the plan).
+ * is buffered and sent on `end()`. Servers (`createServer`) are in
+ * ./http-server.js, on node-net's sockets.
  */
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { EventEmitter } from '../internal/emitter.js'
-import { NotImplementedError } from '../internal/runtime.js'
 import { toNodeHeaders } from '../main/net.js'
 import { Buffer } from './buffer.js'
 import { Readable } from './stream.js'
@@ -60,9 +59,10 @@ export class Agent extends EventEmitter {
 export class IncomingMessage extends Readable {
   constructor(response) {
     super({ read() {} })
-    const { headers, rawHeaders } = toNodeHeaders(response.headers)
-    this.statusCode = response.status
-    this.statusMessage = response.statusText || STATUS_CODES[response.status] || ''
+    // `null` for a request a server received (./http-server.js fills it in).
+    const { headers, rawHeaders } = response ? toNodeHeaders(response.headers) : { headers: {}, rawHeaders: [] }
+    this.statusCode = response ? response.status : null
+    this.statusMessage = response ? response.statusText || STATUS_CODES[response.status] || '' : null
     this.headers = headers
     this.rawHeaders = rawHeaders
     this.trailers = {}
@@ -333,12 +333,6 @@ function abortError() {
   return error
 }
 
-function serverNotImplemented(name) {
-  return () => {
-    throw new NotImplementedError(name, { reason: 'unimplemented', hint: 'HTTP servers need sockets in Rust, not implemented yet. Use protocol.handle() for app-internal endpoints.' })
-  }
-}
-
 export function validateHeaderName(name) {
   if (typeof name !== 'string' || !/^[\^_`a-zA-Z\-0-9!#$%&'*+.|~]+$/.test(name)) {
     const error = new TypeError(`Header name must be a valid HTTP token ["${name}"]`)
@@ -381,10 +375,6 @@ export function createHttpModule(protocol) {
     validateHeaderName,
     validateHeaderValue,
     maxHeaderSize: 16384,
-    createServer: serverNotImplemented(`${protocol.slice(0, -1)}.createServer`),
-    Server: serverNotImplemented(`${protocol.slice(0, -1)}.Server`),
-    ServerResponse: serverNotImplemented(`${protocol.slice(0, -1)}.ServerResponse`),
-    OutgoingMessage: serverNotImplemented(`${protocol.slice(0, -1)}.OutgoingMessage`),
     setMaxIdleHTTPParsers() {},
   }
 }

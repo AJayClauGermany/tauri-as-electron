@@ -215,6 +215,7 @@ fn millis(time: io::Result<SystemTime>) -> Option<f64> {
     })
 }
 
+#[cfg(any(unix, test))]
 const S_IFMT: u32 = 0o170000;
 #[cfg(any(test, not(unix)))]
 const S_IFREG: u32 = 0o100000;

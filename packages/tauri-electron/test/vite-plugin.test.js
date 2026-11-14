@@ -123,15 +123,15 @@ describe('Node built-ins', () => {
   it('resolve to a stub module instead of failing the build', () => {
     const build = plugin({})
     const dev = plugin({}, { dev: true })
-    for (const id of ['net', 'node:net', 'vm', 'node:dns/promises']) {
+    for (const id of ['vm', 'node:vm', 'worker_threads', 'node:http2']) {
       const resolved = build.resolveId(id)
       expect(resolved).toContain(id.replace(/^node:/, ''))
       const stub = `nodeBuiltin(${JSON.stringify(id.replace(/^node:/, ''))})`
       expect(build.load(resolved)).toBe(`module.exports = require('tauri-electron/require').${stub}\n`)
       expect(dev.load(resolved)).toContain(`export default ${stub}`)
     }
-    expect(NODE_BUILTINS).toContain('net')
-    for (const id of ['child_process', 'zlib', 'assert', 'timers']) expect(NODE_BUILTINS).not.toContain(id)
+    expect(NODE_BUILTINS).toContain('vm')
+    for (const id of ['child_process', 'zlib', 'assert', 'timers', 'net', 'dns/promises', 'tls', 'dgram']) expect(NODE_BUILTINS).not.toContain(id)
   })
 
   it('leaves the shimmed built-ins to the aliases and unknown ids to Vite', () => {
@@ -139,6 +139,7 @@ describe('Node built-ins', () => {
     const shimmed = [
       'path', 'node:path', 'path/win32', 'process', 'node:events', 'url', 'fs', 'node:fs/promises', 'original-fs', 'buffer',
       'util', 'node:util/types', 'sys', 'stream', 'stream/promises', 'string_decoder', 'os', 'child_process', 'crypto', 'http', 'node:https',
+      'net', 'node:tls', 'dgram', 'dns', 'node:dns/promises',
     ]
     for (const id of [...shimmed, 'electron', './local.js']) expect(p.resolveId(id), id).toBeNull()
     expect(plugin({ aliasPath: false }).resolveId('node:path')).not.toBeNull()

@@ -13,9 +13,10 @@
 //! - **`protocol.handle()`**: schemes declared with [`Builder::protocol`]
 //!   are forwarded to the JavaScript handler registered in the main process.
 //! - **Node built-ins** that need the operating system (`fs`, `os` and
-//!   `child_process`, each behind a `node-*` feature): the synchronous
-//!   variants over the bridge (`node/<module>/<op>`), the asynchronous ones
-//!   over commands (`node_fs`, `child_spawn` & co.).
+//!   `child_process`, `net`, `dgram`, `dns`, `tls`, each behind a `node-*`
+//!   feature): the synchronous variants over the bridge
+//!   (`node/<module>/<op>`), the asynchronous ones over commands (`node_fs`,
+//!   `child_spawn`, `net_connect` & co.).
 //! - **DevTools** (`webContents.openDevTools()` and friends) and
 //!   **`shell.trashItem()`**.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
@@ -42,13 +43,21 @@ mod node_child_process;
 #[cfg(any(
     feature = "node-fs",
     feature = "node-os",
-    feature = "node-child-process"
+    feature = "node-child-process",
+    feature = "node-net"
 ))]
 mod node_common;
+#[cfg(feature = "node-net")]
+mod node_dns;
 #[cfg(feature = "node-fs")]
 mod node_fs;
+#[cfg(feature = "node-net")]
+mod node_net;
+mod node_net_commands;
 #[cfg(feature = "node-os")]
 mod node_os;
+#[cfg(feature = "node-tls")]
+mod node_tls;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -479,6 +488,26 @@ fn handle_node<R: Runtime>(
                 );
             }
         }
+        // dns.getServers() is synchronous in Node.
+        "dns" => {
+            #[cfg(feature = "node-net")]
+            {
+                let _ = (args, body);
+                if op == "servers" {
+                    return respond_json(responder, 200, &node_dns::system_servers());
+                }
+                respond(responder, 404, "text/plain", Vec::new());
+            }
+            #[cfg(not(feature = "node-net"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-net" }),
+                );
+            }
+        }
         "child_process" => {
             #[cfg(feature = "node-child-process")]
             {
@@ -889,12 +918,29 @@ impl Builder {
                 child_spawn,
                 child_write,
                 child_end,
-                child_kill
+                child_kill,
+                node_net_commands::net_connect,
+                node_net_commands::net_listen,
+                node_net_commands::net_write,
+                node_net_commands::net_end,
+                node_net_commands::net_destroy,
+                node_net_commands::net_pause,
+                node_net_commands::net_set_option,
+                node_net_commands::udp_bind,
+                node_net_commands::udp_send,
+                node_net_commands::udp_option,
+                node_net_commands::udp_membership,
+                node_net_commands::dns_lookup,
+                node_net_commands::dns_resolve,
+                node_net_commands::dns_reverse,
+                node_net_commands::dns_servers
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
                 #[cfg(feature = "node-child-process")]
                 app.manage(SharedChildren::default());
+                #[cfg(feature = "node-net")]
+                app.manage(Arc::new(node_net::Net::default()));
                 if default_capabilities {
                     for capability in features::capabilities() {
                         app.add_capability(capability)?;

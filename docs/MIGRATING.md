@@ -77,7 +77,7 @@ webviews, so `tauri-electron/webpack` (the same plugin is exported as
 - `electron-*` / `node` targets switched to `web`,
 - `electron` and the Node built-ins tauri-electron implements (`fs`, `os`,
   `child_process`, `util`, `stream`, `crypto`, `http`, …) redirected to
-  tauri-electron, the others (`net`, `vm`, …, with or without `node:`) to
+  tauri-electron, the others (`vm`, `worker_threads`, …, with or without `node:`) to
   stubs that throw a [`NotImplementedError`](#6-reading-errors) when used,
 - `__dirname`, `__filename`, `import.meta.dirname|filename` and
   `fileURLToPath(import.meta.url)` in your source rewritten to
@@ -268,14 +268,16 @@ Node.js is shipped. tauri-electron implements some Node built-ins itself
 | `child_process` | Rust, behind `node-child-process` (main process only). |
 | `util`, `util/types`, `events`, `stream`, `stream/promises`, `string_decoder` | Pure JavaScript (`util` in-house; `stream` is readable-stream, Node's own streams). |
 | `crypto` | Hashes, HMAC, PBKDF2, HKDF, scrypt (@noble/hashes), random values and `webcrypto` / `subtle` (Web Crypto). No ciphers, signatures or key pairs yet. |
-| `http`, `https` | The client (`request`, `get`) over tauri-plugin-http; no servers yet. |
+| `http`, `https` | The client (`request`, `get`) over tauri-plugin-http; servers (`createServer`) over `net` / `tls`, see [Sockets](#sockets-net-tls-dgram-dns-http-servers). |
+| `net`, `dgram`, `dns`, `dns/promises` | Rust, behind `node-net` (main process only): TCP and IPC sockets and servers, UDP, name lookup and DNS queries. |
+| `tls` | Rust (rustls), behind `node-tls` (main process only). |
 | `assert`, `assert/strict`, `querystring`, `punycode`, `timers`, `timers/promises`, `perf_hooks`, `stream/web`, `stream/consumers`, `constants`, `console`, `diagnostics_channel` | Pure JavaScript (`punycode` npm package for `punycode`). |
 | `zlib` | gzip, deflate and raw deflate (fflate): sync, callback and stream forms, interoperable with real Node. No Brotli. |
 | `readline`, `readline/promises` | Lines from any stream, `question()`, async iteration; no terminal. |
 | `module` | `createRequire`, `builtinModules`, `isBuiltin`; code is bundled, so there is no file loader. |
 | `async_hooks` | `AsyncLocalStorage` keeps its store for the synchronous part of `run()` only (lost after an `await`); `AsyncResource`; hooks never fire. |
 | `tty`, `domain` | `isatty()` is false; `domain` catches synchronous errors only. |
-| `net`, `tls`, `dns`, `dgram`, `http2`, HTTP servers, `vm`, `v8`, `worker_threads`, `wasi`, `cluster`, `repl`, `inspector` | Not yet: they load, and throw `NotImplementedError` when used. |
+| `http2`, `vm`, `v8`, `worker_threads`, `wasi`, `cluster`, `repl`, `inspector` | Not yet: they load, and throw `NotImplementedError` when used. |
 
 On the main page the globals are Node's too: `Buffer`, `global`,
 `setImmediate` / `clearImmediate`, and `setTimeout` / `setInterval`
@@ -291,6 +293,8 @@ tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-ele
   "node-fs",            # fs, fs/promises: file access from the main process
   "node-os",            # os: host, user, memory, CPUs, network interfaces
   "node-child-process", # child_process: runs arbitrary commands; delete to disable
+  "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
+  "node-tls",           # tls, https servers (rustls); implies node-net
 ] }
 ```
 
@@ -386,17 +390,50 @@ elsewhere), `totalmem`, `freemem`, `uptime`, `loadavg`, `networkInterfaces`,
 - `http` / `https`: the client side. Like Node, redirects are not followed;
   the request body is sent on `end()`. Connection errors carry a Node `code`,
   but plugin-http does not always say why a connection failed: a refused
-  connection can arrive as `ECONNRESET` rather than `ECONNREFUSED`. `createServer` throws: use
-  `protocol.handle()` for endpoints inside the app.
+  connection can arrive as `ECONNRESET` rather than `ECONNREFUSED`.
+  `createServer` is covered under [Sockets](#sockets-net-tls-dgram-dns-http-servers); for
+  endpoints only the app's own pages call, `protocol.handle()` needs no port.
+
+### Sockets: `net`, `tls`, `dgram`, `dns`, HTTP servers
+
+Features `node-net` and `node-tls`. Sockets live in Rust (tokio); the main
+page holds handles and gets data over a channel.
+
+- `net`: `connect` / `createServer` for TCP and IPC (`path`: a Unix socket,
+  or `\\.\pipe\name` on Windows), `setNoDelay`, `setKeepAlive`,
+  `setTimeout`, half-open sockets (`allowHalfOpen`). Writes complete when
+  Rust has handed the bytes to the kernel, and a paused socket stops
+  reading in Rust, so back-pressure works both ways. Errors are Node's
+  (`connect ECONNREFUSED 127.0.0.1:9`, `listen EADDRINUSE …`). No
+  `net.BlockList`, no `autoSelectFamily` racing.
+- `tls`: rustls with Mozilla's root store (what Node bundles) or the `ca`
+  you pass; SNI, ALPN, client certificates, `rejectUnauthorized: false`
+  (still reporting `authorized` / `authorizationError`). Failures carry
+  OpenSSL's codes (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, `CERT_HAS_EXPIRED`,
+  `ERR_TLS_CERT_ALTNAME_INVALID`). TLS 1.2 and 1.3 only. Not yet: upgrading
+  an existing socket (`tls.connect({ socket })`, STARTTLS), session
+  resumption, `getPeerCertificate()` details beyond the raw DER and
+  fingerprints.
+- `dgram`: bind, send, receive, `connect`, broadcast, multicast
+  membership, TTLs and buffer sizes.
+- `dns`: `lookup` asks the operating system, like Node (`/etc/hosts`
+  included); `resolve*`, `reverse` and `Resolver` query DNS servers
+  directly (the system's, or those from `setServers`). `lookupService` is
+  not implemented.
+- `http.createServer` / `https.createServer`: an HTTP/1.1 server written on
+  these sockets: keep-alive, pipelining, chunked bodies both ways,
+  `Expect: 100-continue`, `'upgrade'` and `'connect'` (what WebSocket
+  servers build on), `closeAllConnections()`. No HTTP/2.
+- The HTTP *client* still goes through tauri-plugin-http, so `http.get`
+  does not hand out a socket (`req.socket` is null).
 
 ### Everything else
 
-- `require('net')` / `import vm from 'vm'` & co. do not fail the
-  build and do not throw by themselves; every member throws a
+- `require('vm')` / `import { Worker } from 'worker_threads'` & co. do
+  not fail the build and do not throw by themselves; every member throws a
   `NotImplementedError` (reason `unsupported`) naming the replacement when
-  it is called (`net.connect is not supported on Tauri … Use
-  @tauri-apps/plugin-http or a Rust command`). Use the error messages as a
-  to-do list.
+  it is called (`vm.runInNewContext is not supported on Tauri …`). Use the
+  error messages as a to-do list.
 - Replacements: `@tauri-apps/plugin-http` or `net.fetch` (HTTP), Web
   Workers, or a Rust command in `src-tauri/src/lib.rs` invoked with
   `@tauri-apps/api/core`.

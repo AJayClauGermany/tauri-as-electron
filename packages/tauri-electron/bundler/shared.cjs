@@ -12,8 +12,8 @@ const path = require('node:path')
 
 /** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
 const NODE_BUILTINS = [
-  'cluster', 'dgram', 'dns', 'dns/promises', 'http2', 'inspector', 'inspector/promises', 'net', 'repl',
-  'tls', 'trace_events', 'v8', 'vm', 'wasi', 'worker_threads',
+  'cluster', 'http2', 'inspector', 'inspector/promises', 'repl', 'trace_events', 'v8', 'vm', 'wasi',
+  'worker_threads',
 ]
 
 /** Node built-ins tauri-electron implements (aliased, like `electron` itself). */
@@ -59,6 +59,11 @@ const NODE_SHIMS = {
   diagnostics_channel: 'tauri-electron/diagnostics_channel',
   tty: 'tauri-electron/tty',
   domain: 'tauri-electron/domain',
+  net: 'tauri-electron/net',
+  tls: 'tauri-electron/tls',
+  dgram: 'tauri-electron/dgram',
+  dns: 'tauri-electron/dns',
+  'dns/promises': 'tauri-electron/dns/promises',
 }
 
 /** Dev-server endpoint the hidden main window posts its console output to. */

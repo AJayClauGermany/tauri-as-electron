@@ -17,18 +17,19 @@ describe('require()', () => {
   })
 
   it('hands out a stub for Node built-ins that explains itself when used', () => {
-    const net = requireShim('node:net')
+    const vm = requireShim('node:vm')
     const error = (() => {
       try {
-        net.connect(80)
+        vm.runInNewContext('1')
       } catch (e) {
         return e
       }
     })()
     expect(error.name).toBe('NotImplementedError')
     expect(error.reason).toBe('unsupported')
-    expect(error.message).toMatch(/net\.connect is not supported on Tauri/)
-    expect(error.message).toMatch(/plugin-http or a Rust command/)
+    expect(error.message).toMatch(/vm\.runInNewContext is not supported on Tauri/)
+    expect(() => requireShim('net').connect(80)).toThrow(/Node net is available in the main process only .*"node-net"/)
+    expect(() => requireShim('tls').connect(443)).toThrow(/"node-tls"/)
     expect(() => requireShim('zlib').gzipSync('x')).toThrow(/Node zlib is available in the main process only:/)
     // Implemented for the main process: outside it, the stub says where they work.
     expect(() => requireShim('os').hostname()).toThrow(/Node os is available in the main process only .*"node-os"/)

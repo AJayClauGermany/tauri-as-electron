@@ -36,6 +36,11 @@ import asyncHooks from './async-hooks.js'
 import diagnosticsChannel from './diagnostics-channel.js'
 import tty from './tty.js'
 import domain from './domain.js'
+import net from './net.js'
+import tls from './tls.js'
+import dgram from './dgram.js'
+import dns from './dns.js'
+import dnsPromises from './dns-promises.js'
 import { registerNodeModule } from '../require.js'
 
 for (const [name, exports] of Object.entries({
@@ -73,6 +78,11 @@ for (const [name, exports] of Object.entries({
   diagnostics_channel: diagnosticsChannel,
   tty,
   domain,
+  net,
+  tls,
+  dgram,
+  dns,
+  'dns/promises': dnsPromises,
 })) {
   registerNodeModule(name, exports)
 }

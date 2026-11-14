@@ -180,6 +180,110 @@ Denies the close_devtools command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-dns-lookup`
+
+</td>
+<td>
+
+Enables the dns_lookup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-dns-lookup`
+
+</td>
+<td>
+
+Denies the dns_lookup command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-dns-resolve`
+
+</td>
+<td>
+
+Enables the dns_resolve command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-dns-resolve`
+
+</td>
+<td>
+
+Denies the dns_resolve command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-dns-reverse`
+
+</td>
+<td>
+
+Enables the dns_reverse command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-dns-reverse`
+
+</td>
+<td>
+
+Denies the dns_reverse command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-dns-servers`
+
+</td>
+<td>
+
+Enables the dns_servers command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-dns-servers`
+
+</td>
+<td>
+
+Denies the dns_servers command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-is-devtools-open`
 
 </td>
@@ -199,6 +303,188 @@ Enables the is_devtools_open command without any pre-configured scope.
 <td>
 
 Denies the is_devtools_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-connect`
+
+</td>
+<td>
+
+Enables the net_connect command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-connect`
+
+</td>
+<td>
+
+Denies the net_connect command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-destroy`
+
+</td>
+<td>
+
+Enables the net_destroy command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-destroy`
+
+</td>
+<td>
+
+Denies the net_destroy command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-end`
+
+</td>
+<td>
+
+Enables the net_end command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-end`
+
+</td>
+<td>
+
+Denies the net_end command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-listen`
+
+</td>
+<td>
+
+Enables the net_listen command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-listen`
+
+</td>
+<td>
+
+Denies the net_listen command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-pause`
+
+</td>
+<td>
+
+Enables the net_pause command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-pause`
+
+</td>
+<td>
+
+Denies the net_pause command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-set-option`
+
+</td>
+<td>
+
+Enables the net_set_option command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-set-option`
+
+</td>
+<td>
+
+Denies the net_set_option command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-net-write`
+
+</td>
+<td>
+
+Enables the net_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-net-write`
+
+</td>
+<td>
+
+Denies the net_write command without any pre-configured scope.
 
 </td>
 </tr>
@@ -336,6 +622,110 @@ Denies the trash_item command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-udp-bind`
+
+</td>
+<td>
+
+Enables the udp_bind command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-udp-bind`
+
+</td>
+<td>
+
+Denies the udp_bind command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-udp-membership`
+
+</td>
+<td>
+
+Enables the udp_membership command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-udp-membership`
+
+</td>
+<td>
+
+Denies the udp_membership command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-udp-option`
+
+</td>
+<td>
+
+Enables the udp_option command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-udp-option`
+
+</td>
+<td>
+
+Denies the udp_option command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-udp-send`
+
+</td>
+<td>
+
+Enables the udp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-udp-send`
+
+</td>
+<td>
+
+Denies the udp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:node-child-process`
 
 </td>
@@ -355,6 +745,19 @@ Node's `child_process` (Cargo feature `node-child-process`): start any program t
 <td>
 
 Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:node-net`
+
+</td>
+<td>
+
+Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
 
 </td>
 </tr>

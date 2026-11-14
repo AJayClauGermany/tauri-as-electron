@@ -53,7 +53,12 @@
     "./async_hooks": "./packages/tauri-electron/src/node/async-hooks.js",
     "./diagnostics_channel": "./packages/tauri-electron/src/node/diagnostics-channel.js",
     "./tty": "./packages/tauri-electron/src/node/tty.js",
-    "./domain": "./packages/tauri-electron/src/node/domain.js"
+    "./domain": "./packages/tauri-electron/src/node/domain.js",
+    "./net": "./packages/tauri-electron/src/node/net.js",
+    "./tls": "./packages/tauri-electron/src/node/tls.js",
+    "./dgram": "./packages/tauri-electron/src/node/dgram.js",
+    "./dns": "./packages/tauri-electron/src/node/dns.js",
+    "./dns/promises": "./packages/tauri-electron/src/node/dns-promises.js"
   },
   "bin": {
     "create-tauri-electron-app": "./scripts/create-app.mjs"

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-net-destroy"
+description = "Enables the net_destroy command without any pre-configured scope."
+commands.allow = ["net_destroy"]
+
+[[permission]]
+identifier = "deny-net-destroy"
+description = "Denies the net_destroy command without any pre-configured scope."
+commands.deny = ["net_destroy"]

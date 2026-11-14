@@ -102,6 +102,11 @@ const SHIM_FILES = {
   'tauri-electron/diagnostics_channel': path.join(SRC, 'node', 'diagnostics-channel.js'),
   'tauri-electron/tty': path.join(SRC, 'node', 'tty.js'),
   'tauri-electron/domain': path.join(SRC, 'node', 'domain.js'),
+  'tauri-electron/net': path.join(SRC, 'node', 'net.js'),
+  'tauri-electron/tls': path.join(SRC, 'node', 'tls.js'),
+  'tauri-electron/dgram': path.join(SRC, 'node', 'dgram.js'),
+  'tauri-electron/dns': path.join(SRC, 'node', 'dns.js'),
+  'tauri-electron/dns/promises': path.join(SRC, 'node', 'dns-promises.js'),
 }
 
 const SOURCE_FILE = /\.(m?[jt]sx?|c[jt]s)$/

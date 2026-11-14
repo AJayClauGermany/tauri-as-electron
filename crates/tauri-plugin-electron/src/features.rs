@@ -33,7 +33,9 @@ pub fn enabled() -> Vec<&'static str> {
         "devtools",
         "node-fs",
         "node-os",
-        "node-child-process"
+        "node-child-process",
+        "node-net",
+        "node-tls"
     );
     // Desktop-only plugins are not built on mobile.
     if !cfg!(desktop) {
@@ -212,6 +214,9 @@ fn main_permissions() -> Vec<Value> {
     }
     if cfg!(feature = "node-child-process") {
         add(&[json!("electron:node-child-process")]);
+    }
+    if cfg!(feature = "node-net") {
+        add(&[json!("electron:node-net")]);
     }
     permissions
 }

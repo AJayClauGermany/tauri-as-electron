@@ -50,13 +50,15 @@ half (`tauri-electron`) at the same ref.
 | `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process | none (`std::fs`, in this crate) |
 | `node-os` | off, listed by the template | Node's `os` | `sysinfo` crate |
 | `node-child-process` | off, listed by the template | Node's `child_process` | none (`std::process`, in this crate) |
+| `node-net` | off, listed by the template | Node's `net`, `dgram`, `dns`, and the HTTP servers | `tokio`, `socket2`, `hickory-resolver` |
+| `node-tls` | off, listed by the template (implies `node-net`) | Node's `tls`, `https` servers | `rustls` (ring), `tokio-rustls`, `webpki-roots` |
 
 The Node built-ins backed by Rust are not default features: the template and
 the scaffolder list them in the app's `src-tauri/Cargo.toml`, one line each,
 so the native access an app has is visible and an app that already depends
 on this crate does not gain it silently. Commands are granted to
 `electron-main` through a permission set per feature (`electron:node-fs`,
-`electron:node-child-process`; `os` uses the bridge only).
+`electron:node-child-process`, `electron:node-net`; `os` uses the bridge only).
 
 `tauri-plugin-os` and `tauri-plugin-process` are always registered.
 
@@ -85,6 +87,7 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | Node's `fs` (`node-fs` feature) | `fs.*Sync`: `node/fs/<op>` on the scheme, answered from a worker thread. `fs.promises` and callbacks: the `node_fs` command (raw body, off the main thread). One implementation (`src/node_fs.rs`) behind both. Refused unless the caller is `electron-main` showing the app's own page |
 | Node's `os` (`node-os` feature) | `node/os/<op>` on the scheme (`src/node_os.rs`) |
 | Node's `child_process` (`node-child-process` feature) | `spawnSync`: `node/child_process/spawnSync` on the scheme, stdin in the request body, both outputs in the answer. `spawn`: the `child_spawn` command with a Channel for output and exit, then `child_write`, `child_end`, `child_kill` (`src/node_child_process.rs`) |
+| Node's `net`, `tls`, `dgram`, `dns` (`node-net`, `node-tls` features) | A handle table of tokio sockets (`src/node_net.rs`). `net_connect`, `net_listen`, `udp_bind` take a Channel that carries data, end, errors and accepted connections; `net_write` resolves once the bytes are flushed; `net_pause` stops reading in Rust. TLS is rustls on the same sockets (`src/node_tls.rs`); `dns_lookup` is the OS resolver, `dns_resolve` / `dns_reverse` use hickory-resolver (`src/node_dns.rs`) |
 | `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` are forwarded to the main window's handler |
 | `webContents.openDevTools`, `closeDevTools`, `isDevToolsOpened` | `WebviewWindow::open_devtools` (debug builds, or the `devtools` feature) |
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |

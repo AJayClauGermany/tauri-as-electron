@@ -69,6 +69,14 @@ pub fn error_code(error: &io::Error) -> (&'static str, i64) {
         io::ErrorKind::AlreadyExists => uv("EEXIST"),
         io::ErrorKind::InvalidInput => uv("EINVAL"),
         io::ErrorKind::UnexpectedEof => uv("EOF"),
+        io::ErrorKind::ConnectionRefused => uv("ECONNREFUSED"),
+        io::ErrorKind::ConnectionReset => uv("ECONNRESET"),
+        io::ErrorKind::ConnectionAborted => uv("ECONNABORTED"),
+        io::ErrorKind::AddrInUse => uv("EADDRINUSE"),
+        io::ErrorKind::AddrNotAvailable => uv("EADDRNOTAVAIL"),
+        io::ErrorKind::BrokenPipe => uv("EPIPE"),
+        io::ErrorKind::TimedOut => uv("ETIMEDOUT"),
+        io::ErrorKind::NotConnected => uv("ENOTCONN"),
         _ => ("UNKNOWN", -4094),
     }
 }
@@ -98,6 +106,19 @@ fn from_raw(raw: i32) -> Option<(&'static str, i64)> {
         libc::ELOOP => "ELOOP",
         libc::ENOSYS => "ENOSYS",
         libc::ENOTSUP => "ENOTSUP",
+        libc::ECONNREFUSED => "ECONNREFUSED",
+        libc::ECONNRESET => "ECONNRESET",
+        libc::ECONNABORTED => "ECONNABORTED",
+        libc::EADDRINUSE => "EADDRINUSE",
+        libc::EADDRNOTAVAIL => "EADDRNOTAVAIL",
+        libc::EPIPE => "EPIPE",
+        libc::ETIMEDOUT => "ETIMEDOUT",
+        libc::EHOSTUNREACH => "EHOSTUNREACH",
+        libc::ENETUNREACH => "ENETUNREACH",
+        libc::ENOTCONN => "ENOTCONN",
+        libc::EAFNOSUPPORT => "EAFNOSUPPORT",
+        libc::ENOBUFS => "ENOBUFS",
+        libc::EAGAIN => "EAGAIN",
         _ => return None,
     };
     Some((code, -i64::from(raw)))
@@ -121,6 +142,21 @@ fn from_raw(raw: i32) -> Option<(&'static str, i64)> {
         206 => "ENAMETOOLONG",         // FILENAME_EXCED_RANGE
         267 => "ENOTDIR",              // DIRECTORY
         1921 => "ELOOP",               // CANT_RESOLVE_FILENAME
+        109 => "EOF",                  // BROKEN_PIPE
+        232 => "EPIPE",                // NO_DATA
+        231 => "EBUSY",                // PIPE_BUSY
+        10061 => "ECONNREFUSED",       // WSAECONNREFUSED
+        10054 => "ECONNRESET",         // WSAECONNRESET
+        10053 => "ECONNABORTED",       // WSAECONNABORTED
+        10048 => "EADDRINUSE",         // WSAEADDRINUSE
+        10049 => "EADDRNOTAVAIL",      // WSAEADDRNOTAVAIL
+        10060 => "ETIMEDOUT",          // WSAETIMEDOUT
+        10065 => "EHOSTUNREACH",       // WSAEHOSTUNREACH
+        10051 => "ENETUNREACH",        // WSAENETUNREACH
+        10057 => "ENOTCONN",           // WSAENOTCONN
+        10047 => "EAFNOSUPPORT",       // WSAEAFNOSUPPORT
+        10055 => "ENOBUFS",            // WSAENOBUFS
+        10035 => "EAGAIN",             // WSAEWOULDBLOCK
         _ => return None,
     };
     Some(uv(code))
@@ -142,6 +178,14 @@ pub fn uv(code: &'static str) -> (&'static str, i64) {
         "EISDIR" => libc::EISDIR,
         "ENOTDIR" => libc::ENOTDIR,
         "EROFS" => libc::EROFS,
+        "ECONNREFUSED" => libc::ECONNREFUSED,
+        "ECONNRESET" => libc::ECONNRESET,
+        "ECONNABORTED" => libc::ECONNABORTED,
+        "EADDRINUSE" => libc::EADDRINUSE,
+        "EADDRNOTAVAIL" => libc::EADDRNOTAVAIL,
+        "EPIPE" => libc::EPIPE,
+        "ETIMEDOUT" => libc::ETIMEDOUT,
+        "ENOTCONN" => libc::ENOTCONN,
         "EOF" => return (code, -4095),
         _ => 0,
     };
@@ -163,6 +207,19 @@ pub fn uv(code: &'static str) -> (&'static str, i64) {
         "EPERM" => 4048,
         "EROFS" => 4043,
         "EXDEV" => 4037,
+        "ECONNREFUSED" => 4078,
+        "ECONNRESET" => 4077,
+        "ECONNABORTED" => 4079,
+        "EADDRINUSE" => 4091,
+        "EADDRNOTAVAIL" => 4090,
+        "EPIPE" => 4047,
+        "ETIMEDOUT" => 4039,
+        "EHOSTUNREACH" => 4073,
+        "ENETUNREACH" => 4062,
+        "ENOTCONN" => 4053,
+        "EAFNOSUPPORT" => 4089,
+        "ENOBUFS" => 4060,
+        "EAGAIN" => 4088,
         _ => 0,
     };
     (code, -i64::from(errno))

@@ -526,10 +526,11 @@ Next:
 Check:
 ${pageNote}
   - require('electron'), require('path') work in main and preload scripts.
-    fs, os and child_process work in the main process (the "node-*"
-    features in src-tauri/Cargo.toml), as do util, stream, crypto, http;
-    app files fs reads through __dirname are staged in src-tauri/electron-resources/.
-    Sockets (net, tls, dns), vm and worker_threads do not exist yet:
+    fs, os, child_process and sockets (net, tls, dgram, dns, HTTP servers)
+    work in the main process (the "node-*" features in src-tauri/Cargo.toml),
+    as do util, stream, crypto, http, zlib; app files fs reads through
+    __dirname are staged in src-tauri/electron-resources/.
+    vm, worker_threads and http2 do not exist yet:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md
   - src-tauri/Cargo.toml: enable "single-instance" if you call
     app.requestSingleInstanceLock(), "updater" for autoUpdater.

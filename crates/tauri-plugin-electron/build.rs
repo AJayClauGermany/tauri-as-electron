@@ -11,6 +11,21 @@ const COMMANDS: &[&str] = &[
     "child_write",
     "child_end",
     "child_kill",
+    "net_connect",
+    "net_listen",
+    "net_write",
+    "net_end",
+    "net_destroy",
+    "net_pause",
+    "net_set_option",
+    "udp_bind",
+    "udp_send",
+    "udp_option",
+    "udp_membership",
+    "dns_lookup",
+    "dns_resolve",
+    "dns_reverse",
+    "dns_servers",
 ];
 
 fn main() {

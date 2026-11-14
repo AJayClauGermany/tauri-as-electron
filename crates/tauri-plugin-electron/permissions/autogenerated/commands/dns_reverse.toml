@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-dns-reverse"
+description = "Enables the dns_reverse command without any pre-configured scope."
+commands.allow = ["dns_reverse"]
+
+[[permission]]
+identifier = "deny-dns-reverse"
+description = "Denies the dns_reverse command without any pre-configured scope."
+commands.deny = ["dns_reverse"]

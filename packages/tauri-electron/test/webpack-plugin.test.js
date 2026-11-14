@@ -70,8 +70,10 @@ describe('redirect', () => {
   })
 
   it('stubs other Node built-ins, one module per built-in', () => {
-    expect(at('net')).toBe(`${nodeBuiltin}?net`)
-    expect(at('node:dns/promises')).toBe(`${nodeBuiltin}?dns/promises`)
+    expect(at('vm')).toBe(`${nodeBuiltin}?vm`)
+    expect(at('node:worker_threads')).toBe(`${nodeBuiltin}?worker_threads`)
+    expect(at('net')).toMatch(/src[\\/]node[\\/]net\.js$/)
+    expect(at('node:dns/promises')).toMatch(/src[\\/]node[\\/]dns-promises\.js$/)
     expect(at('path', { aliasPath: false })).toBe(`${nodeBuiltin}?path`)
   })
 
@@ -134,12 +136,12 @@ describe.each([
     expect(main).not.toMatch(/\bMAIN_WINDOW_WEBPACK_ENTRY\b/)
     expect(main).toContain(`path.join("/src", 'index.html')`)
     expect(main).toContain('"/src/main.js"')
-    // electron → tauri-electron; fs → tauri-electron's fs; net → the stub
+    // electron → tauri-electron; fs → tauri-electron's fs; vm → the stub
     // that explains itself; no Node require().
     expect(main).toContain(moduleId('src/index.js'))
     expect(main).toContain(moduleId('src/node/fs.js'))
     expect(main).not.toContain('node-builtin.cjs?fs"') // as a module id
-    expect(main).toContain('node-builtin.cjs?net')
+    expect(main).toContain('node-builtin.cjs?vm')
     expect(main).toContain('registerNodeModule(') // bundler/main-node.js: fs & co. for require()
     expect(main).toMatch(/__TAURI_ELECTRON_APP__ = .*"entries":\[/) // where the app's files are (DefinePlugin)
     expect(main).toMatch(/const \{ app, BrowserWindow \} = __webpack_require__\(/)

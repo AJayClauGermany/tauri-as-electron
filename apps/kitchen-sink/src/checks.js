@@ -31,6 +31,7 @@ import { moduleChecks } from './checks-modules.js'
 import { nodeChecks } from './checks-node.js'
 import { layer2Checks } from './checks-node-layer2.js'
 import { layer3Checks } from './checks-node-layer3.js'
+import { layer4Checks } from './checks-node-layer4.js'
 
 const isElectron = Boolean(process.versions.electron)
 
@@ -124,18 +125,18 @@ const coreChecks = [
     assert(require('url').fileURLToPath('file:///a/b%20c') === '/a/b c', "require('url')")
     return 'same modules as import'
   } },
-  { id: "require('fs') works, require('net') explains itself", run: () => {
+  { id: "require('fs') works, require('vm') explains itself", run: () => {
     if (typeof require !== 'function') return isElectron ? 'n/a: ESM main process on Electron' : 'no require()'
     // fs is implemented (tauri-plugin-electron's "node-fs" feature).
     assert(require('fs').existsSync(app.getPath('temp')) === true, "require('fs').existsSync")
     try {
       // Other built-ins load; their members throw when called (the same in dev
       // and in production builds, which turn require() into imports).
-      require('net').connect(80)
+      require('vm').runInNewContext('1')
     } catch (error) {
       if (isElectron) return 'n/a: Node is available on Electron'
       assert(error.name === 'NotImplementedError' && error.reason === 'unsupported', `${error.name} ${error.reason}`)
-      assert(/plugin-http or a Rust command/.test(error.message), error.message)
+      assert(/Node\.js built-ins are not available/.test(error.message), error.message)
       return error.message
     }
     if (isElectron) return 'n/a: Node is available on Electron'
@@ -570,7 +571,7 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
-export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks]
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

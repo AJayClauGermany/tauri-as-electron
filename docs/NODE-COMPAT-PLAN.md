@@ -4,9 +4,9 @@ Hand-off document for the agent that implements Node built-in support in
 tauri-electron. It records what was decided, what was measured, where each
 built-in should be implemented, the order of work, and the traps.
 
-Status: **layers 1 (the `fs` proof of concept), 2 (the major modules) and 3
-(the smaller modules) are implemented**; layers 4 and 5 are not started. See
-"Implementation status" below.
+Status: **layers 1 (the `fs` proof of concept), 2 (the major modules), 3
+(the smaller modules) and 4 (networking, without `http2`) are implemented**;
+layer 5 is not started. See "Implementation status" below.
 
 ## Implementation status
 
@@ -37,7 +37,7 @@ Layer 2 (section 7) followed, in the order planned:
 | `os` | `src/node/os.js`, `crates/…/src/node_os.rs` | Feature `node-os` (`sysinfo` with only `system` and `network`). Bridge only, no command: `os` is synchronous in Node. Static facts are fetched once and cached. `uname` / `getpwuid_r` on Unix; CPU `times` from `/proc/stat` on Linux, zeros elsewhere. |
 | `child_process` | `src/node/child-process.js`, `crates/…/src/node_child_process.rs` | Feature `node-child-process`, permission set `electron:node-child-process`. `spawnSync` over the bridge (stdin in the body, a framed answer with both outputs); after a `timeout` / `maxBuffer` kill it returns what was read instead of waiting for pipes a grandchild holds, as Node does. `spawn` over `child_spawn` + a Channel; stdin writes are queued to a writer thread so commands never block; exit is polled every 10 ms so `kill()` can reach the child. Error shapes (`Command failed: …`, `spawn x ENOENT`, `ETIMEDOUT`) checked against Node. Errors common to the Rust modules moved to `node_common.rs`. |
 | `crypto` | `src/node/crypto.js` | @noble/hashes 2 (no BigInt literals, so the `safari13` target builds). Hash and Hmac are Transform streams too. `test/stream-crypto.test.js` compares every hash, HMAC, PBKDF2, HKDF and scrypt with `node:crypto`. Ciphers, signatures, key pairs, DH: `unimplemented`. |
-| `http`, `https` | `src/node/http-client.js`, `http.js`, `https.js` | Client only, on plugin-http with `maxRedirections: 0` (Node does not follow redirects). `IncomingMessage` is a Readable. reqwest's error text is mapped to `ECONNREFUSED` / `ENOTFOUND` / `ETIMEDOUT`. `createServer` throws (layer 4). |
+| `http`, `https` | `src/node/http-client.js`, `http.js`, `https.js` | Client only, on plugin-http with `maxRedirections: 0` (Node does not follow redirects). `IncomingMessage` is a Readable. reqwest's error text is mapped to `ECONNREFUSED` / `ENOTFOUND` / `ETIMEDOUT`. Servers came with layer 4. |
 
 Measured after layer 2 (same machine): 127 unit tests and 7 Rust tests
 pass; kitchen-sink smoke 141 pass, 0 fail, 4 unsupported, 31 manual on
@@ -58,6 +58,56 @@ Layer 3 (section 7) is pure JavaScript throughout:
 Measured after layer 3: 145 unit tests pass; kitchen-sink smoke 151 pass,
 0 fail on Tauri (debug build and `tauri dev`), 155 pass, 0 fail on real
 Electron, with 10 new checks in `src/checks-node-layer3.js`.
+
+Layer 4 (section 7) puts sockets in Rust and keeps the protocols above them
+in JavaScript:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| Socket table | `crates/…/src/node_net.rs`, `node_net_commands.rs` | Features `node-net` (tokio, socket2, hickory-resolver) and `node-tls` (rustls with ring, as tauri-plugin-http; implies `node-net`); permission set `electron:node-net`. One `Net` state holds TCP / IPC sockets, servers and UDP sockets by id. `net_connect`, `net_listen`, `udp_bind` take a Channel; a server's channel also carries the events of the sockets it accepted (tagged `socket: id`), so one channel per server, not per connection. `net_write` resolves after the bytes are flushed (the JS stream's back-pressure), `net_pause` stops the reader task through a watch channel. Error codes for the socket errors were added to `node_common.rs` (libc on Unix, WSA codes mapped to libuv's numbers on Windows). |
+| `net` | `src/node/net.js` | `Socket` is a Duplex; `Server` hands accepted ids to `_createSocket()` (overridden by `tls`). IPC through `path`: Unix sockets, Windows named pipes. Not done: `BlockList`, `autoSelectFamily` racing (the OS order is used), `server.maxConnections` is enforced in JS after accept. |
+| `tls` | `src/node/tls.js`, `crates/…/src/node_tls.rs` | rustls; Mozilla's roots (webpki-roots) or `ca`. With `rejectUnauthorized: false` a recording verifier still runs WebPKI and reports the failure as `authorizationError`. rustls errors map to OpenSSL's codes. Not done: STARTTLS (`{ socket }`), sessions, parsed `getPeerCertificate()` (raw DER and fingerprints only), `rootCertificates` (empty), TLS < 1.2. |
+| `dgram` | `src/node/dgram.js` | Bind, send (all of Node's overloads), `connect` (filtered in JS), broadcast, TTLs, multicast membership, buffer sizes. |
+| `dns`, `dns/promises` | `src/node/dns.js`, `crates/…/src/node_dns.rs` | `lookup` is the OS resolver (`getaddrinfo` via tokio's `lookup_host`), like Node. `resolve*`, `reverse`, `Resolver` (servers, `timeout`, `tries`, `ttl`) use hickory-resolver; `getServers()` is answered synchronously over the bridge. Not done: `lookupService`. |
+| `http` / `https` servers | `src/node/http-server.js` | HTTP/1.1 written in JS on `net.Server` / `tls.Server`, so `'connection'`, `'upgrade'`, `'connect'` and `req.socket` are real sockets. Keep-alive with `keepAliveTimeout`, pipelining (answered in order), chunked and `Content-Length` bodies both ways, trailers, `Expect: 100-continue` / `'checkContinue'`, HEAD / 204 / 304, `'clientError'` with 400 / 431, `closeAllConnections` / `closeIdleConnections`, `close()` closing idle connections as Node 19+. `ServerResponse` is a Writable; `OutgoingMessage` is an alias of it. |
+| `http2` | stub | Not done: an HTTP/2 server or client needs HPACK and stream multiplexing; a Rust implementation (`h2` crate) is the likely route. The stub's hint points at `net.fetch` / `https`, which negotiate HTTP/2 through reqwest already. |
+| Wiring | `bundler/shared.cjs`, `webpack.cjs`, `src/require.js`, `src/node/index.js` | `net`, `tls`, `dgram`, `dns`, `dns/promises` moved from the stub list to the aliases; outside the main page their stub names the feature (`"node-net"`, `"node-tls"`). The tests that used `net` as the example stub now use `vm`. |
+
+Tests: `test/net.test.js` runs `net`, `tls`, `dgram`, `dns` and the HTTP
+server against an in-memory stand-in for the Rust socket table (the same
+commands and events); the Rust side has its own loopback test. The kitchen
+sink's 15 checks in `src/checks-node-layer4.js` use loopback only: a TCP
+echo, refused and in-use ports, IPC, back-pressure over 1 MiB, UDP, `lookup`,
+a DNS server written with `dgram` that `Resolver.resolve4` queries, TLS with
+a private CA (`src/fixtures/tls-test-cert.js`) including untrusted and
+mismatched certificates, and HTTP / HTTPS servers.
+
+Measured after layer 4: 162 unit tests and 9 Rust tests pass; kitchen-sink
+smoke 166 pass, 0 fail on Tauri (debug build), 170 pass, 0 fail on real
+Electron, with 15 new checks in `src/checks-node-layer4.js`.
+
+Two bugs only the real app found, both now covered by unit tests: a socket
+nobody reads did not emit `'end'` (so `server.close()` never finished; Node
+calls `read(0)` after EOF, now so does `net.js`), and `net_pause` calls
+could be handled out of order, leaving Rust paused while JavaScript waited
+for data (now one call in flight at a time, always sending the latest
+state). An HTTP server bug, a half-closed client losing its second pipelined
+request, came from the same run, and `tauri dev` showed a TLS peer closing
+without `close_notify` surfacing as an unhandled `read EOF` error (it is an
+`'end'` now, as in Node). Under `tauri dev` the same 166 checks pass.
+
+Open points from layer 4:
+
+- `http.get` / `https.get` still go through tauri-plugin-http, so client
+  requests have no `socket` and cannot use a custom `ca` or `agent`. Moving
+  the client onto `net` / `tls` would fix both, at the cost of redirects /
+  proxies / HTTP/2 that reqwest gives today.
+- `http2`, STARTTLS, `dns.lookupService`, `net.BlockList`.
+- Every chunk crosses the Tauri IPC as base64 in a Channel message, and
+  every write is a command call: throughput is bounded by the IPC, not the
+  socket. The kitchen sink's 1 MiB transfer with a pause per chunk takes
+  ~180 ms on Tauri (WebKitGTK, debug build) and ~4 ms on Electron; bulk
+  transfers may want a binary path.
 
 Open points from layer 3:
 
@@ -218,7 +268,7 @@ and Tauri commands (async variants). "Plugin" means an official Tauri plugin.
 | `fs`, `fs/promises` | Rust | The proof of concept. Section 6. Do not build it on `@tauri-apps/plugin-fs`: that plugin is async-only and scope-restricted, and one Rust implementation behind both the sync and async variants keeps their behaviour and errors identical. |
 | `child_process` | Rust | `execSync`, `spawnSync`, `execFileSync` over the bridge on a worker thread. `spawn` / `exec` / `execFile` over a command plus a Tauri `Channel` for stdout / stderr / exit. Do not build it on `plugin-shell`: its scope model requires every command to be declared ahead of time. `fork()` stays unsupported (it needs Node). |
 | `http`, `https` (client) | JS over `plugin-http` | `net.request` in `src/main/net.js` already implements `ClientRequest` / `IncomingMessage`; `http.request` / `http.get` can wrap it. |
-| `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust, later | No official plugin. Each needs its own Rust implementation with handle tables and event channels. Defer until an app needs it. |
+| `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust sockets, JS protocols | No official plugin. One handle table with event channels in Rust; the HTTP server is JavaScript on top of `net` (done in layer 4). |
 | `readline` | JS, partial | Only `createInterface({ input: stream })` line splitting. No terminal. |
 | `worker_threads` | JS, partial, late | A partial adapter over Web Workers (section 4.2). Different semantics: no shared `require`, no worker script loaded from a real file path. Until then keep the stub with its hint. |
 | `module` | JS, partial | `createRequire` returning `requireShim`, `builtinModules`. |
@@ -362,8 +412,8 @@ Extend `handle_bridge` with one route family, for example `node/<module>/<op>`:
 ### 5.3 Rust layout and features
 
 - New modules in `crates/tauri-plugin-electron/src/` (`node_fs.rs`, later
-  `node_os.rs`, `node_child_process.rs`), each behind a Cargo feature:
-  `node-fs`, `node-os`, `node-child-process`.
+  `node_os.rs`, `node_child_process.rs`, `node_net.rs`), each behind a Cargo
+  feature: `node-fs`, `node-os`, `node-child-process`, `node-net`, `node-tls`.
 - **Decided: enabled for every migrated app, as explicit switches.** The node
   features are *not* part of the crate's `default` feature set. Instead the
   scaffolder (`scripts/create-app.mjs`) and the template write them out in
@@ -374,6 +424,8 @@ Extend `handle_bridge` with one route family, for example `node/<module>/<op>`:
     "node-fs",             # fs, fs/promises
     "node-os",             # os
     "node-child-process",  # child_process: runs arbitrary commands; delete to disable
+    "node-net",            # net, dgram, dns, http/https servers
+    "node-tls",            # tls, https servers; implies node-net
   ] }
   ```
 
@@ -475,8 +527,8 @@ These follow the layers in section 4.1.
   lines, fixing the named-import failure in section 3 for modules that stay
   unsupported.
 
-**Layer 4** (`net`, `tls`, `dns`, `dgram`, `http2`, HTTP servers) waits until
-an app needs it.
+**Layer 4** (`net`, `tls`, `dns`, `dgram`, HTTP servers) is implemented, see
+"Implementation status"; `http2` is not.
 
 Notes for the pure-JS modules:
 

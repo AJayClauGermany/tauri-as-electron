@@ -52,7 +52,12 @@
     "./async_hooks": "./src/node/async-hooks.js",
     "./diagnostics_channel": "./src/node/diagnostics-channel.js",
     "./tty": "./src/node/tty.js",
-    "./domain": "./src/node/domain.js"
+    "./domain": "./src/node/domain.js",
+    "./net": "./src/node/net.js",
+    "./tls": "./src/node/tls.js",
+    "./dgram": "./src/node/dgram.js",
+    "./dns": "./src/node/dns.js",
+    "./dns/promises": "./src/node/dns-promises.js"
   },
   "files": [
     "src",
