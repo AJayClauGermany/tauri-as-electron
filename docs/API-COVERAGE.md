@@ -208,5 +208,8 @@ for more):
 | `require('stream')`, `stream/promises`, `string_decoder` | ✅ | readable-stream (Node's streams), `string_decoder` npm package. |
 | `require('crypto')` | 🟡 | Hashes, HMAC, PBKDF2, HKDF, scrypt, random values, `webcrypto` / `subtle`. No ciphers, signatures or key pairs yet. |
 | `require('http')`, `require('https')` | 🟡 | Client only (`request`, `get`) over plugin-http; redirects not followed, like Node. No servers. |
-| `zlib`, `net`, `dns`, `assert`, `readline`, `worker_threads`, `vm`, … | 🚫 | Not yet (see [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)). The import does not fail the build; using the module throws `NotImplementedError` (`reason: 'unsupported'`) naming the replacement. The error names the member (`zlib.gzipSync is not supported on Tauri …`). |
+| `require('assert')`, `assert/strict`, `querystring`, `punycode`, `timers`, `timers/promises`, `perf_hooks`, `stream/web`, `stream/consumers`, `constants`, `console`, `diagnostics_channel` | ✅ | Pure JavaScript; `assert` messages match Node's. |
+| `require('zlib')` | 🟡 | gzip / deflate / raw deflate (fflate), sync, callbacks and streams; no Brotli. |
+| `require('readline')`, `readline/promises`, `module`, `async_hooks`, `tty`, `domain` | 🟡 | Partial: no terminal; no module loader (`createRequire`, `builtinModules` only); `AsyncLocalStorage` is lost after `await`; `domain` catches synchronous errors only. |
+| `net`, `tls`, `dns`, `dgram`, `http2`, `vm`, `v8`, `worker_threads`, `wasi`, `cluster`, `repl`, `inspector` | 🚫 | Not yet (see [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)). The import does not fail the build; using the module throws `NotImplementedError` (`reason: 'unsupported'`) naming the replacement. The error names the member (`net.connect is not supported on Tauri …`). |
 | Native Node modules, `asar` | 🚫 | |

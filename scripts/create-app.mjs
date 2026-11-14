@@ -529,7 +529,7 @@ ${pageNote}
     fs, os and child_process work in the main process (the "node-*"
     features in src-tauri/Cargo.toml), as do util, stream, crypto, http;
     app files fs reads through __dirname are staged in src-tauri/electron-resources/.
-    Other Node built-ins (zlib, net, ...) do not exist yet:
+    Sockets (net, tls, dns), vm and worker_threads do not exist yet:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md
   - src-tauri/Cargo.toml: enable "single-instance" if you call
     app.requestSingleInstanceLock(), "updater" for autoUpdater.

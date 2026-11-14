@@ -123,15 +123,15 @@ describe('Node built-ins', () => {
   it('resolve to a stub module instead of failing the build', () => {
     const build = plugin({})
     const dev = plugin({}, { dev: true })
-    for (const id of ['zlib', 'node:zlib', 'net', 'node:timers/promises']) {
+    for (const id of ['net', 'node:net', 'vm', 'node:dns/promises']) {
       const resolved = build.resolveId(id)
       expect(resolved).toContain(id.replace(/^node:/, ''))
       const stub = `nodeBuiltin(${JSON.stringify(id.replace(/^node:/, ''))})`
       expect(build.load(resolved)).toBe(`module.exports = require('tauri-electron/require').${stub}\n`)
       expect(dev.load(resolved)).toContain(`export default ${stub}`)
     }
-    expect(NODE_BUILTINS).toContain('zlib')
-    expect(NODE_BUILTINS).not.toContain('child_process')
+    expect(NODE_BUILTINS).toContain('net')
+    for (const id of ['child_process', 'zlib', 'assert', 'timers']) expect(NODE_BUILTINS).not.toContain(id)
   })
 
   it('leaves the shimmed built-ins to the aliases and unknown ids to Vite', () => {

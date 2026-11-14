@@ -18,6 +18,24 @@ import childProcess from './child-process.js'
 import crypto from './crypto.js'
 import http from './http.js'
 import https from './https.js'
+import assert, { strict as assertStrict } from './assert.js'
+import querystring from './querystring.js'
+import punycode from './punycode.js'
+import timers, { installTimerGlobals } from './timers.js'
+import timersPromises from './timers-promises.js'
+import perfHooks from './perf-hooks.js'
+import streamWeb from './stream-web.js'
+import streamConsumers from './stream-consumers.js'
+import zlib from './zlib.js'
+import constants from './constants.js'
+import nodeConsole from './console.js'
+import Module from './module.js'
+import readline from './readline.js'
+import readlinePromises from './readline-promises.js'
+import asyncHooks from './async-hooks.js'
+import diagnosticsChannel from './diagnostics-channel.js'
+import tty from './tty.js'
+import domain from './domain.js'
 import { registerNodeModule } from '../require.js'
 
 for (const [name, exports] of Object.entries({
@@ -36,8 +54,32 @@ for (const [name, exports] of Object.entries({
   crypto,
   http,
   https,
+  assert,
+  'assert/strict': assertStrict,
+  querystring,
+  punycode,
+  timers,
+  'timers/promises': timersPromises,
+  perf_hooks: perfHooks,
+  'stream/web': streamWeb,
+  'stream/consumers': streamConsumers,
+  zlib,
+  constants,
+  console: nodeConsole,
+  module: Module,
+  readline,
+  'readline/promises': readlinePromises,
+  async_hooks: asyncHooks,
+  diagnostics_channel: diagnosticsChannel,
+  tty,
+  domain,
 })) {
   registerNodeModule(name, exports)
 }
+
+// The globals of Node's main process: `global`, setImmediate, and timers
+// returning Timeout objects (`setTimeout(...).unref()` is common in Node code).
+if (typeof globalThis.global === 'undefined') globalThis.global = globalThis
+installTimerGlobals(globalThis)
 
 if (typeof globalThis.Buffer === 'undefined') globalThis.Buffer = Buffer

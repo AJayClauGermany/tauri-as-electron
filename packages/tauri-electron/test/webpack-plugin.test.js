@@ -62,11 +62,16 @@ describe('redirect', () => {
     expect(at('stream')).toMatch(/bundler[\\/]stream\.cjs$/)
     expect(typeof require(at('stream'))).toBe('function')
     expect(require(at('stream')).Readable).toBeTypeOf('function')
+    // assert, console, constants, module: Node's require() gives the value itself.
+    expect(typeof require(at('assert'))).toBe('function')
+    expect(require(at('assert/strict')).equal).toBe(require(at('assert')).strictEqual)
+    expect(require(at('node:constants')).SIGTERM).toBe(15)
+    expect(typeof require(at('module')).createRequire).toBe('function')
   })
 
   it('stubs other Node built-ins, one module per built-in', () => {
-    expect(at('zlib')).toBe(`${nodeBuiltin}?zlib`)
-    expect(at('node:timers/promises')).toBe(`${nodeBuiltin}?timers/promises`)
+    expect(at('net')).toBe(`${nodeBuiltin}?net`)
+    expect(at('node:dns/promises')).toBe(`${nodeBuiltin}?dns/promises`)
     expect(at('path', { aliasPath: false })).toBe(`${nodeBuiltin}?path`)
   })
 
@@ -129,12 +134,12 @@ describe.each([
     expect(main).not.toMatch(/\bMAIN_WINDOW_WEBPACK_ENTRY\b/)
     expect(main).toContain(`path.join("/src", 'index.html')`)
     expect(main).toContain('"/src/main.js"')
-    // electron → tauri-electron; fs → tauri-electron's fs; zlib → the stub
+    // electron → tauri-electron; fs → tauri-electron's fs; net → the stub
     // that explains itself; no Node require().
     expect(main).toContain(moduleId('src/index.js'))
     expect(main).toContain(moduleId('src/node/fs.js'))
     expect(main).not.toContain('node-builtin.cjs?fs"') // as a module id
-    expect(main).toContain('node-builtin.cjs?zlib')
+    expect(main).toContain('node-builtin.cjs?net')
     expect(main).toContain('registerNodeModule(') // bundler/main-node.js: fs & co. for require()
     expect(main).toMatch(/__TAURI_ELECTRON_APP__ = .*"entries":\[/) // where the app's files are (DefinePlugin)
     expect(main).toMatch(/const \{ app, BrowserWindow \} = __webpack_require__\(/)

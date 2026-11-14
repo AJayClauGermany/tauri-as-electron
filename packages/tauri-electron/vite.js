@@ -39,8 +39,8 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, appFilesConfig, stageAppFiles } = shared
-export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals }
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles } = shared
+export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
 // also reports errors thrown while the rest of the module graph loads.
@@ -241,12 +241,18 @@ export default function tauriElectron(options = {}) {
 
     transform(code, id) {
       const file = id.split('?')[0]
-      if (!SOURCE_FILE.test(file) || file.includes('/node_modules/') || !file.startsWith(root)) return null
-      if (!mentionsPathGlobals(code)) return null
-      const relative = '/' + toPosix(path.relative(root, file))
-      const dirname = path.posix.dirname(relative)
-      const replaced = rewritePathGlobals(code, dirname, relative)
-      return replaced === code ? null : { code: replaced, map: null }
+      if (!SOURCE_FILE.test(file)) return null
+      let result = code
+      // Build: CommonJS require() of a shim gets the module, not its namespace
+      // (dependencies included). Dev needs nothing: require() is tauri-electron's there.
+      if (!isDev && mentionsRequire(result) && !file.includes('/tauri-electron/') && !file.includes('/packages/tauri-electron/')) {
+        result = rewriteBuiltinRequires(result)
+      }
+      if (!file.includes('/node_modules/') && file.startsWith(root) && mentionsPathGlobals(result)) {
+        const relative = '/' + toPosix(path.relative(root, file))
+        result = rewritePathGlobals(result, path.posix.dirname(relative), relative)
+      }
+      return result === code ? null : { code: result, map: null }
     },
 
     transformIndexHtml: {

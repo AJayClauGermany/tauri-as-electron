@@ -4,9 +4,9 @@ Hand-off document for the agent that implements Node built-in support in
 tauri-electron. It records what was decided, what was measured, where each
 built-in should be implemented, the order of work, and the traps.
 
-Status: **layers 1 (the `fs` proof of concept) and 2 (the major modules) are
-implemented**; layers 3 and later are not started. See "Implementation
-status" below.
+Status: **layers 1 (the `fs` proof of concept), 2 (the major modules) and 3
+(the smaller modules) are implemented**; layers 4 and 5 are not started. See
+"Implementation status" below.
 
 ## Implementation status
 
@@ -44,6 +44,28 @@ pass; kitchen-sink smoke 141 pass, 0 fail, 4 unsupported, 31 manual on
 Tauri, for a debug build and under `tauri dev`; 145 pass, 0 fail on real
 Electron, with the 17 new checks in `src/checks-node-layer2.js`.
 
+Layer 3 (section 7) is pure JavaScript throughout:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| `assert`, `assert/strict` | `src/node/assert.js` | In-house on `util.isDeepStrictEqual` / `inspect`; messages, `operator`, `generatedMessage` and the `+ actual - expected` diff match Node on the 21 cases in `test/layer3.test.js`. `assert.ok(false)` shows the value, not the source expression. |
+| `zlib` | `src/node/zlib.js` | fflate: gzip, zlib, raw deflate, `unzip`; sync, callback (deferred to a macrotask, not a thread pool) and Transform streams; `crc32`. Round-trips with `node:zlib` both ways; error codes (`Z_DATA_ERROR`, `Z_BUF_ERROR`) match. Brotli: `unsupported`. |
+| `timers`, `timers/promises` | `src/node/timers.js`, `timers-promises.js` | Timeout objects (`ref` / `unref` / `refresh`, convert to the numeric id); `setImmediate` over a MessageChannel; AbortSignal support; `setInterval` async iterator. The main page's global timers are replaced by these (`setTimeout(...).unref()` is common in Node code), and `global` is defined there. |
+| `querystring`, `punycode`, `stream/web`, `stream/consumers`, `perf_hooks`, `constants`, `console`, `diagnostics_channel` | `src/node/*.js` | `punycode` from the npm package; `perf_hooks` adds `timerify`, histograms and `monitorEventLoopDelay` to the webview's `performance`; `console.Console` writes to any `{ write }`; `diagnostics_channel` includes tracing channels. |
+| `module`, `readline`, `readline/promises`, `async_hooks`, `tty`, `domain` | `src/node/*.js` | Partial, as planned: no module loader; no terminal; `AsyncLocalStorage` is synchronous only (no async context in a webview); `isatty()` false; `domain` catches synchronous errors only. |
+| CommonJS shapes | `rewriteBuiltinRequires` in `bundler/shared.cjs`; `bundler/*.cjs` | A Vite (rolldown) build gives CommonJS code an ES namespace for `require()` of an ES module, so `require('assert')(x)` and `new (require('events'))()` failed. The Vite plugin now rewrites `require('<shim>')` (outside strings and comments, dependencies included, build only) to take the default export, which for every shim is the complete Node-shaped module. Webpack uses CommonJS wrappers for `assert`, `assert/strict`, `console`, `constants`, `module` (and `stream`, `events`, `process` as before). |
+
+Measured after layer 3: 145 unit tests pass; kitchen-sink smoke 151 pass,
+0 fail on Tauri (debug build and `tauri dev`), 155 pass, 0 fail on real
+Electron, with 10 new checks in `src/checks-node-layer3.js`.
+
+Open points from layer 3:
+
+- `AsyncLocalStorage` loses its store after `await`. Proper support needs
+  async context propagation, which webviews do not offer (TC39 AsyncContext
+  is not shipped).
+- zlib's callback forms and streams run on the main page's thread.
+
 Open points from layer 2:
 
 - `exec` / `spawn` buffer the request body of `http` and queue stdin writes;
@@ -52,7 +74,6 @@ Open points from layer 2:
   `EPIPE`).
 - `os.cpus()[i].times` are zeros outside Linux; `os.constants.errno` uses
   Linux numbers everywhere.
-- Calling `require('stream')` as a constructor works under webpack only.
 - `http` connection errors: plugin-http reports "error sending request"
   without the OS cause, so `ECONNREFUSED` often arrives as `ECONNRESET`.
   Fixing it needs the error chain from Rust (our own command, or upstream).

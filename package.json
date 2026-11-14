@@ -34,7 +34,26 @@
     "./child_process": "./packages/tauri-electron/src/node/child-process.js",
     "./crypto": "./packages/tauri-electron/src/node/crypto.js",
     "./http": "./packages/tauri-electron/src/node/http.js",
-    "./https": "./packages/tauri-electron/src/node/https.js"
+    "./https": "./packages/tauri-electron/src/node/https.js",
+    "./assert": "./packages/tauri-electron/src/node/assert.js",
+    "./assert/strict": "./packages/tauri-electron/src/node/assert-strict.js",
+    "./querystring": "./packages/tauri-electron/src/node/querystring.js",
+    "./punycode": "./packages/tauri-electron/src/node/punycode.js",
+    "./timers": "./packages/tauri-electron/src/node/timers.js",
+    "./timers/promises": "./packages/tauri-electron/src/node/timers-promises.js",
+    "./perf_hooks": "./packages/tauri-electron/src/node/perf-hooks.js",
+    "./stream/web": "./packages/tauri-electron/src/node/stream-web.js",
+    "./stream/consumers": "./packages/tauri-electron/src/node/stream-consumers.js",
+    "./zlib": "./packages/tauri-electron/src/node/zlib.js",
+    "./constants": "./packages/tauri-electron/src/node/constants.js",
+    "./console": "./packages/tauri-electron/src/node/console.js",
+    "./module": "./packages/tauri-electron/src/node/module.js",
+    "./readline": "./packages/tauri-electron/src/node/readline.js",
+    "./readline/promises": "./packages/tauri-electron/src/node/readline-promises.js",
+    "./async_hooks": "./packages/tauri-electron/src/node/async-hooks.js",
+    "./diagnostics_channel": "./packages/tauri-electron/src/node/diagnostics-channel.js",
+    "./tty": "./packages/tauri-electron/src/node/tty.js",
+    "./domain": "./packages/tauri-electron/src/node/domain.js"
   },
   "bin": {
     "create-tauri-electron-app": "./scripts/create-app.mjs"
@@ -78,6 +97,8 @@
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.1",
     "buffer": "^6.0.3",
+    "fflate": "^0.8.3",
+    "punycode": "^2.3.1",
     "readable-stream": "^4.8.0",
     "string_decoder": "^1.3.0"
   }

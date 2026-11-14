@@ -10,7 +10,7 @@ halves install straight from this GitHub repository.
 | `main.js` with `require('electron')` or `import … from 'electron'` | The same file, run by Tauri in a hidden window |
 | a preload script, renderer pages with `<script src>` | The same files, bundled by Vite (or [webpack / rspack](#webpack-and-rspack), if that is what the project uses) and loaded into Tauri windows |
 | `electron-builder` / Forge config | `src-tauri/tauri.conf.json` + `cargo`, via `tauri build` |
-| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values) and the `http` / `https` client work; native modules and the rarer built-ins do not yet. See [Node.js code](#4-nodejs-code) |
+| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline` and most smaller built-ins work; sockets (`net`, `tls`, `dns`), `vm`, `worker_threads` and native modules do not yet. See [Node.js code](#4-nodejs-code) |
 
 Requirements: Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
@@ -77,7 +77,7 @@ webviews, so `tauri-electron/webpack` (the same plugin is exported as
 - `electron-*` / `node` targets switched to `web`,
 - `electron` and the Node built-ins tauri-electron implements (`fs`, `os`,
   `child_process`, `util`, `stream`, `crypto`, `http`, …) redirected to
-  tauri-electron, the others (`zlib`, `net`, …, with or without `node:`) to
+  tauri-electron, the others (`net`, `vm`, …, with or without `node:`) to
   stubs that throw a [`NotImplementedError`](#6-reading-errors) when used,
 - `__dirname`, `__filename`, `import.meta.dirname|filename` and
   `fileURLToPath(import.meta.url)` in your source rewritten to
@@ -269,7 +269,18 @@ Node.js is shipped. tauri-electron implements some Node built-ins itself
 | `util`, `util/types`, `events`, `stream`, `stream/promises`, `string_decoder` | Pure JavaScript (`util` in-house; `stream` is readable-stream, Node's own streams). |
 | `crypto` | Hashes, HMAC, PBKDF2, HKDF, scrypt (@noble/hashes), random values and `webcrypto` / `subtle` (Web Crypto). No ciphers, signatures or key pairs yet. |
 | `http`, `https` | The client (`request`, `get`) over tauri-plugin-http; no servers yet. |
-| `zlib`, `net`, `dns`, `assert`, `readline`, `worker_threads`, … | Not yet: they load, and throw `NotImplementedError` when used. |
+| `assert`, `assert/strict`, `querystring`, `punycode`, `timers`, `timers/promises`, `perf_hooks`, `stream/web`, `stream/consumers`, `constants`, `console`, `diagnostics_channel` | Pure JavaScript (`punycode` npm package for `punycode`). |
+| `zlib` | gzip, deflate and raw deflate (fflate): sync, callback and stream forms, interoperable with real Node. No Brotli. |
+| `readline`, `readline/promises` | Lines from any stream, `question()`, async iteration; no terminal. |
+| `module` | `createRequire`, `builtinModules`, `isBuiltin`; code is bundled, so there is no file loader. |
+| `async_hooks` | `AsyncLocalStorage` keeps its store for the synchronous part of `run()` only (lost after an `await`); `AsyncResource`; hooks never fire. |
+| `tty`, `domain` | `isatty()` is false; `domain` catches synchronous errors only. |
+| `net`, `tls`, `dns`, `dgram`, `http2`, HTTP servers, `vm`, `v8`, `worker_threads`, `wasi`, `cluster`, `repl`, `inspector` | Not yet: they load, and throw `NotImplementedError` when used. |
+
+On the main page the globals are Node's too: `Buffer`, `global`,
+`setImmediate` / `clearImmediate`, and `setTimeout` / `setInterval`
+returning Timeout objects (`ref()`, `unref()`, `refresh()`) that convert to
+the numeric id, so `clearTimeout` and code expecting a number still work.
 
 The Rust-backed modules are switched on per app in `src-tauri/Cargo.toml`,
 one line each, so the native access the app has is visible and easy to turn
@@ -380,14 +391,19 @@ elsewhere), `totalmem`, `freemem`, `uptime`, `loadavg`, `networkInterfaces`,
 
 ### Everything else
 
-- `require('zlib')` / `import net from 'net'` & co. do not fail the
+- `require('net')` / `import vm from 'vm'` & co. do not fail the
   build and do not throw by themselves; every member throws a
   `NotImplementedError` (reason `unsupported`) naming the replacement when
-  it is called (`zlib.gzipSync is not supported on Tauri … Use
-  CompressionStream`). Use the error messages as a to-do list.
-- Replacements: `@tauri-apps/plugin-http` or `net.fetch` (HTTP),
-  `CompressionStream`, `URLSearchParams`, or a Rust command in
-  `src-tauri/src/lib.rs` invoked with `@tauri-apps/api/core`.
+  it is called (`net.connect is not supported on Tauri … Use
+  @tauri-apps/plugin-http or a Rust command`). Use the error messages as a
+  to-do list.
+- Replacements: `@tauri-apps/plugin-http` or `net.fetch` (HTTP), Web
+  Workers, or a Rust command in `src-tauri/src/lib.rs` invoked with
+  `@tauri-apps/api/core`.
+- CommonJS dependencies get the module Node would give them:
+  `require('assert')` is callable, `require('events')` and `require('stream')`
+  are constructors (webpack through wrappers, Vite builds by rewriting
+  those `require()` calls).
 - Install a Tauri plugin like in any Tauri app (`cargo add`, `.plugin(...)`
   in `lib.rs`, and a permission in `src-tauri/capabilities/` for the
   `electron-main` window). The main window is the only one that needs it.

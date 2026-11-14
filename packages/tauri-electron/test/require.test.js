@@ -17,18 +17,19 @@ describe('require()', () => {
   })
 
   it('hands out a stub for Node built-ins that explains itself when used', () => {
-    const zlib = requireShim('node:zlib')
+    const net = requireShim('node:net')
     const error = (() => {
       try {
-        zlib.gzipSync('x')
+        net.connect(80)
       } catch (e) {
         return e
       }
     })()
     expect(error.name).toBe('NotImplementedError')
     expect(error.reason).toBe('unsupported')
-    expect(error.message).toMatch(/zlib\.gzipSync is not supported on Tauri/)
-    expect(error.message).toMatch(/CompressionStream/)
+    expect(error.message).toMatch(/net\.connect is not supported on Tauri/)
+    expect(error.message).toMatch(/plugin-http or a Rust command/)
+    expect(() => requireShim('zlib').gzipSync('x')).toThrow(/Node zlib is available in the main process only:/)
     // Implemented for the main process: outside it, the stub says where they work.
     expect(() => requireShim('os').hostname()).toThrow(/Node os is available in the main process only .*"node-os"/)
     expect(() => requireShim('util').format('x')).toThrow(/Node util is available in the main process only:/)

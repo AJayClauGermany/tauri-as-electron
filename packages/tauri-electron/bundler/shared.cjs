@@ -12,10 +12,8 @@ const path = require('node:path')
 
 /** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
 const NODE_BUILTINS = [
-  'assert', 'async_hooks', 'cluster', 'constants', 'dgram', 'diagnostics_channel', 'dns', 'domain',
-  'http2', 'inspector', 'module', 'net', 'perf_hooks', 'punycode', 'querystring', 'readline',
-  'repl', 'stream/web', 'timers', 'timers/promises', 'tls', 'trace_events', 'tty', 'v8', 'vm',
-  'wasi', 'worker_threads', 'zlib',
+  'cluster', 'dgram', 'dns', 'dns/promises', 'http2', 'inspector', 'inspector/promises', 'net', 'repl',
+  'tls', 'trace_events', 'v8', 'vm', 'wasi', 'worker_threads',
 ]
 
 /** Node built-ins tauri-electron implements (aliased, like `electron` itself). */
@@ -42,6 +40,25 @@ const NODE_SHIMS = {
   crypto: 'tauri-electron/crypto',
   http: 'tauri-electron/http',
   https: 'tauri-electron/https',
+  assert: 'tauri-electron/assert',
+  'assert/strict': 'tauri-electron/assert/strict',
+  querystring: 'tauri-electron/querystring',
+  punycode: 'tauri-electron/punycode',
+  timers: 'tauri-electron/timers',
+  'timers/promises': 'tauri-electron/timers/promises',
+  perf_hooks: 'tauri-electron/perf_hooks',
+  'stream/web': 'tauri-electron/stream/web',
+  'stream/consumers': 'tauri-electron/stream/consumers',
+  zlib: 'tauri-electron/zlib',
+  constants: 'tauri-electron/constants',
+  console: 'tauri-electron/console',
+  module: 'tauri-electron/module',
+  readline: 'tauri-electron/readline',
+  'readline/promises': 'tauri-electron/readline/promises',
+  async_hooks: 'tauri-electron/async_hooks',
+  diagnostics_channel: 'tauri-electron/diagnostics_channel',
+  tty: 'tauri-electron/tty',
+  domain: 'tauri-electron/domain',
 }
 
 /** Dev-server endpoint the hidden main window posts its console output to. */
@@ -56,6 +73,28 @@ const LOG_ENDPOINT = '/__tauri-electron/log'
 // it yields the source file, not the URL of the bundled chunk.
 const PATH_GLOBALS =
   /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*")|(?<![.$\w])__(dirname|filename)(?![$\w])|\bimport\.meta\.(dirname|filename)\b|\bfileURLToPath\(\s*import\.meta\.url\s*\)/g
+
+// `require('x')` of a shimmed built-in, outside comments and strings.
+const BUILTIN_REQUIRE =
+  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|\brequire\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
+
+/**
+ * In a Vite (rolldown) build, CommonJS code that `require()`s an ES module
+ * gets its namespace object, so `require('assert')(x)`, `new (require('events'))()`
+ * or `require('console').log` would fail. Every shim's default export is the
+ * complete Node-shaped module (callable where Node's is), so take that.
+ */
+function rewriteBuiltinRequires(code) {
+  return code.replace(BUILTIN_REQUIRE, (match, skipped, _quote, id) => {
+    if (skipped || !NODE_SHIMS[id.replace(/^node:/, '')]) return match
+    return `((m) => (m && m.default) || m)(${match})`
+  })
+}
+
+/** Cheap pre-check before running the rewrite. */
+function mentionsRequire(code) {
+  return code.includes('require(')
+}
 
 /** Replace `__dirname` & co. in `code` with the given project-relative paths. */
 function rewritePathGlobals(code, dirname, filename) {
@@ -168,6 +207,8 @@ module.exports = {
   STAGING_DIR,
   rewritePathGlobals,
   mentionsPathGlobals,
+  rewriteBuiltinRequires,
+  mentionsRequire,
   appFilesConfig,
   stageAppFiles,
 }
