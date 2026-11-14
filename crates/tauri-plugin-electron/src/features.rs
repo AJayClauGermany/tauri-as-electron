@@ -30,7 +30,8 @@ pub fn enabled() -> Vec<&'static str> {
         "login-item",
         "single-instance",
         "updater",
-        "devtools"
+        "devtools",
+        "node-fs"
     );
     // Desktop-only plugins are not built on mobile.
     if !cfg!(desktop) {
@@ -195,6 +196,9 @@ fn main_permissions() -> Vec<Value> {
     }
     if cfg!(all(desktop, feature = "updater")) {
         add(&[json!("updater:default")]);
+    }
+    if cfg!(feature = "node-fs") {
+        add(&[json!("electron:node-fs")]);
     }
     permissions
 }

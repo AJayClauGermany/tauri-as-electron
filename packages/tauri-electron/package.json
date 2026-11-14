@@ -18,7 +18,12 @@
     "./rspack": "./webpack.cjs",
     "./require": "./src/require.js",
     "./events": "./src/events.js",
-    "./url": "./src/url.js"
+    "./url": "./src/url.js",
+    "./path/win32": "./src/node/path-win32.js",
+    "./buffer": "./src/node/buffer.js",
+    "./fs": "./src/node/fs.js",
+    "./fs/promises": "./src/node/fs-promises.js",
+    "./node": "./src/node/index.js"
   },
   "files": [
     "src",
@@ -42,7 +47,8 @@
     "@tauri-apps/plugin-opener": "^2.7.0",
     "@tauri-apps/plugin-os": "^2.4.0",
     "@tauri-apps/plugin-process": "^2.4.0",
-    "@tauri-apps/plugin-updater": "^2.14.1"
+    "@tauri-apps/plugin-updater": "^2.14.1",
+    "buffer": "^6.0.3"
   },
   "devDependencies": {
     "@rspack/core": "^2.3.2",

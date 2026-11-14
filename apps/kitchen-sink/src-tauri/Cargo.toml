@@ -25,4 +25,6 @@ tauri = { version = "2", features = [] }
 # Until tauri-electron is published, a copy outside this repository should use
 # `git = "https://github.com/AJayClauGermany/tauri-as-electron"` instead of `path`
 # (the scaffolder, `npx github:AJayClauGermany/tauri-as-electron my-app`, does that).
-tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron" }
+tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron", features = [
+  "node-fs", # fs, fs/promises: file access from the main process; delete to disable
+] }

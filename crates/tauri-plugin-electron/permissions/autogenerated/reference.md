@@ -102,6 +102,32 @@ Denies the is_devtools_open command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-node-fs`
+
+</td>
+<td>
+
+Enables the node_fs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-node-fs`
+
+</td>
+<td>
+
+Denies the node_fs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-open-devtools`
 
 </td>
@@ -199,6 +225,19 @@ Enables the trash_item command without any pre-configured scope.
 <td>
 
 Denies the trash_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:node-fs`
+
+</td>
+<td>
+
+Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
 
 </td>
 </tr>

@@ -47,6 +47,14 @@ half (`tauri-electron`) at the same ref.
 | `single-instance` | off | `app.requestSingleInstanceLock`, `second-instance` | `tauri-plugin-single-instance` |
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |
+| `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process | none (`std::fs`, in this crate) |
+
+The Node built-ins backed by Rust (`node-fs`, later `node-os` and
+`node-child-process`) are not default features: the template and the
+scaffolder list them in the app's `src-tauri/Cargo.toml`, one line each, so
+the native access an app has is visible and an app that already depends on
+this crate does not gain it silently. Each is granted to `electron-main`
+through its own permission set (`electron:node-fs`).
 
 `tauri-plugin-os` and `tauri-plugin-process` are always registered.
 
@@ -72,6 +80,7 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `ipcRenderer.sendSync` + `event.returnValue` | A blocking `XMLHttpRequest` to the `tauri-electron://` scheme, forwarded to the main window, which answers with `bridge_respond` |
 | `webPreferences.additionalArguments` (renderer `process.argv`) | `set_window_config` before the window is created; the renderer reads it synchronously from the scheme |
 | `dialog.showOpenDialogSync`, `showSaveDialogSync`, `showMessageBoxSync` | Blocking `tauri-plugin-dialog` calls behind the scheme (main window only; `dialog` feature) |
+| Node's `fs` (`node-fs` feature) | `fs.*Sync`: `node/fs/<op>` on the scheme, answered from a worker thread. `fs.promises` and callbacks: the `node_fs` command (raw body, off the main thread). One implementation (`src/node_fs.rs`) behind both. Refused unless the caller is `electron-main` showing the app's own page |
 | `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` are forwarded to the main window's handler |
 | `webContents.openDevTools`, `closeDevTools`, `isDevToolsOpened` | `WebviewWindow::open_devtools` (debug builds, or the `devtools` feature) |
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |

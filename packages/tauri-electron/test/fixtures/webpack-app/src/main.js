@@ -2,6 +2,7 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('node:path')
 const fs = require('fs')
+const childProcess = require('child_process')
 import { readFileSync } from 'node:fs'
 
 export const seen = {
@@ -11,6 +12,7 @@ export const seen = {
   file: __filename,
   fsType: typeof fs.readFileSync,
   namedType: typeof readFileSync,
+  stubType: typeof childProcess.exec,
 }
 
 app.whenReady().then(() => new BrowserWindow().loadURL(MAIN_WINDOW_WEBPACK_ENTRY))

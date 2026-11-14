@@ -51,9 +51,17 @@ describe('redirect', () => {
     expect(EventEmitter.EventEmitter).toBe(EventEmitter)
   })
 
+  it('redirects fs, buffer and path/win32 to their implementations', () => {
+    expect(at('fs')).toMatch(/src[\\/]node[\\/]fs\.js$/)
+    expect(at('original-fs')).toBe(at('node:fs'))
+    expect(at('node:fs/promises')).toMatch(/src[\\/]node[\\/]fs-promises\.js$/)
+    expect(at('buffer')).toMatch(/src[\\/]node[\\/]buffer\.js$/)
+    expect(at('node:path/win32')).toMatch(/src[\\/]node[\\/]path-win32\.js$/)
+  })
+
   it('stubs other Node built-ins, one module per built-in', () => {
-    expect(at('fs')).toBe(`${nodeBuiltin}?fs`)
-    expect(at('node:fs/promises')).toBe(`${nodeBuiltin}?fs/promises`)
+    expect(at('child_process')).toBe(`${nodeBuiltin}?child_process`)
+    expect(at('node:stream/promises')).toBe(`${nodeBuiltin}?stream/promises`)
     expect(at('path', { aliasPath: false })).toBe(`${nodeBuiltin}?path`)
   })
 
@@ -116,9 +124,14 @@ describe.each([
     expect(main).not.toMatch(/\bMAIN_WINDOW_WEBPACK_ENTRY\b/)
     expect(main).toContain(`path.join("/src", 'index.html')`)
     expect(main).toContain('"/src/main.js"')
-    // electron → tauri-electron; fs → the stub that explains itself; no Node require().
+    // electron → tauri-electron; fs → tauri-electron's fs; child_process → the stub
+    // that explains itself; no Node require().
     expect(main).toContain(moduleId('src/index.js'))
-    expect(main).toContain('node-builtin.cjs?fs')
+    expect(main).toContain(moduleId('src/node/fs.js'))
+    expect(main).not.toContain('node-builtin.cjs?fs"') // as a module id
+    expect(main).toContain('node-builtin.cjs?child_process')
+    expect(main).toContain('registerNodeModule(') // bundler/main-node.js: fs & co. for require()
+    expect(main).toMatch(/__TAURI_ELECTRON_APP__ = .*"entries":\[/) // where the app's files are (DefinePlugin)
     expect(main).toMatch(/const \{ app, BrowserWindow \} = __webpack_require__\(/)
     expect(main).toMatch(/installRequire\)?\(\{ moduleGlobals: true \}\)/) // bundler/main-entry.js
     expect(main).toContain('meta[name="tauri-electron-log"]') // dev: bundler/console-forwarder.js

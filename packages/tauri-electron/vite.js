@@ -8,10 +8,16 @@
  *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron
  *    and `path` / `node:path` to a browser-safe implementation,
  *  - aliases the Node built-ins it implements (`path`, `process`, `events`,
- *    `url`) and turns the others (`fs`, `child_process`, …) into a clear
- *    runtime error instead of a build error,
+ *    `url`, `buffer`, and `fs` / `fs/promises` backed by tauri-plugin-electron's
+ *    `node-fs` feature) and turns the others (`child_process`, `os`, …) into a
+ *    clear runtime error instead of a build error,
+ *  - tells `fs` where the app's own files are and, in a build, stages them
+ *    in `src-tauri/electron-resources/app/` (Electron's `resources/app`
+ *    layout) when that folder exists, so
+ *    `fs.readFileSync(path.join(__dirname, 'data.json'))` works in both,
  *  - provides `require('electron')`, `require('path')` and friends for
- *    CommonJS main / preload scripts (`tauri-electron/require`),
+ *    CommonJS main / preload scripts (`tauri-electron/require`), and the
+ *    `Buffer` global in the main process,
  *  - rewrites `__dirname`, `__filename`, `import.meta.dirname`,
  *    `import.meta.filename` and `fileURLToPath(import.meta.url)` in your
  *    source to project-relative paths, so
@@ -32,7 +38,7 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, appFilesConfig, stageAppFiles } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -62,7 +68,7 @@ addEventListener('unhandledrejection', (e) => send('error', ['Unhandled rejectio
  */
 const VIRTUAL = {
   console: 'virtual:tauri-electron/console', // dev only: main window console → terminal
-  main: 'virtual:tauri-electron/main', // require() for the main process
+  main: 'virtual:tauri-electron/main', // Node built-ins, app files and require() for the main process
   renderer: 'virtual:tauri-electron/renderer', // require(), bootstrap, preload(s)
 }
 const RESOLVED = '\0'
@@ -108,6 +114,10 @@ function virtualSrc(id, isDev) {
  * @param {boolean} [options.require=true] Provide a global `require()` for CommonJS Electron code.
  * @param {boolean} [options.moduleScripts=true] Give classic `<script src>` tags `type="module"`.
  * @param {boolean} [options.forwardMainConsole=true] Print the main window's console in the terminal during dev.
+ * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
+ *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
+ *   Default: every project file except dependencies, src-tauri, build output, dot-files and
+ *   the sources the bundler compiles.
  */
 export default function tauriElectron(options = {}) {
   const mainHtml = options.mainHtml ?? 'electron-main.html'
@@ -115,6 +125,7 @@ export default function tauriElectron(options = {}) {
   const withRequire = options.require !== false
   let root = process.cwd()
   let isDev = false
+  let outDir = 'dist'
 
   return {
     name: 'tauri-electron',
@@ -159,6 +170,13 @@ export default function tauriElectron(options = {}) {
     configResolved(resolved) {
       root = resolved.root
       isDev = resolved.command === 'serve'
+      outDir = resolved.build?.outDir ?? 'dist'
+    },
+
+    buildStart() {
+      if (isDev) return
+      const staged = stageAppFiles(root, { resources: options.resources, exclude: [outDir] })
+      if (staged !== null) this.info?.(`staged ${staged} app file(s) for fs in src-tauri/electron-resources/app`)
     },
 
     configureServer(server) {
@@ -207,8 +225,10 @@ export default function tauriElectron(options = {}) {
       if (!Object.values(VIRTUAL).includes(name)) return null
       const lines = []
       if (name === VIRTUAL.console) lines.push(CONSOLE_FORWARDER)
-      if (name === VIRTUAL.main && withRequire) {
-        lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
+      if (name === VIRTUAL.main) {
+        lines.push(`import 'tauri-electron/node'`)
+        if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
+        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev }))}`)
       }
       if (name === VIRTUAL.renderer) {
         if (withRequire) lines.push(`import 'tauri-electron/require'`)
@@ -235,7 +255,7 @@ export default function tauriElectron(options = {}) {
         const script = (id) => ({ tag: 'script', attrs: { type: 'module', src: virtualSrc(id, isDev) }, injectTo: 'head-prepend' })
         const tags = []
         if (page === mainHtml) {
-          if (withRequire) tags.push(script(VIRTUAL.main))
+          tags.push(script(VIRTUAL.main))
           if (isDev && options.forwardMainConsole !== false) tags.unshift(script(VIRTUAL.console))
           return { html, tags }
         }

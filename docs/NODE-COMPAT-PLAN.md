@@ -4,7 +4,43 @@ Hand-off document for the agent that implements Node built-in support in
 tauri-electron. It records what was decided, what was measured, where each
 built-in should be implemented, the order of work, and the traps.
 
-Status: research only. Nothing described here is implemented yet.
+Status: **layer 1 (the `fs` proof of concept) is implemented**; layers 2 and
+later are not started. See "Implementation status" below.
+
+## Implementation status
+
+Layer 1 (section 6) landed as planned, with these specifics:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| `fs`, `fs/promises`, `original-fs` | `src/node/fs.js`, `src/node/fs-promises.js`; Rust in `crates/tauri-plugin-electron/src/node_fs.rs` | Feature `node-fs`, permission set `electron:node-fs`. Sync over `node/fs/<op>` on the bridge (always answered from a spawned thread), async over the `node_fs` command with a framed raw body (`u32` LE header length, JSON `{ op, args }`, data), so no custom headers are needed. All operations from step 2, plus `exists` and `readdir` `recursive`. Errors map raw OS codes per platform (libc on Unix, libuv's table on Windows), `ErrorKind` as fallback. |
+| Caller check | `node_refusal` in `lib.rs` | `electron-main` only, and its webview must show the app's own page (`tauri:` / `tauri.localhost`, or the dev URL in debug builds). |
+| `buffer`, global `Buffer` | `src/node/buffer.js` | The `buffer` npm package, imported as `buffer/index.js` so the `buffer` alias does not apply to it. The global is installed on the main page only. |
+| `path.win32` | `src/node/path-win32.js` | Compared against Node's `path.win32` in `test/path.test.js`; differs only for `\\?\` verbatim paths. `path` itself stays POSIX. |
+| Registry for `require()` | `registerNodeModule` in `src/require.js`, `src/node/index.js` | The main page's first module (`virtual:tauri-electron/main`, `bundler/main-node.js`) imports `tauri-electron/node`, which registers `fs`, `fs/promises`, `original-fs`, `buffer`. Renderer pages keep the stub, whose hint now says fs is main-process only. |
+| App-relative paths (8.1) | `src/internal/app-files.js`, `appFilesConfig` / `stageAppFiles` in `bundler/shared.cjs` | The plugins publish `{ root, entries }` (top-level project entries minus dot-files, `src-tauri` and names such as `tmp`, `home`, `Users`) as `globalThis.__TAURI_ELECTRON_APP__`. An absolute path whose first segment is an entry, and that is not under a known real root, maps to the project (dev) or `<resource_dir>/app` (build; asked from Rust via `node/fs/resourceDir` if `process.resourcesPath` is not known yet). Writes there fail with `EROFS` in a build. `app.getAppPath()` returns the same root and `loadFile` maps paths under it back to project paths. Staging runs in production builds only, and only when `src-tauri/electron-resources/` exists; the `resources` plugin option overrides the default selection. |
+| Template, scaffolder, kitchen sink | | `node-fs` line, `bundle.resources: { "electron-resources/": "" }`, the staging folder with its `.gitignore`. Kitchen sink: 12 `fs` / `Buffer` checks in `src/checks-node.js`. |
+
+Measured after the change (Linux, WebKitGTK 2.52.6): 102 unit tests pass;
+kitchen-sink smoke 124 pass, 0 fail, 4 unsupported, 30 manual on Tauri, both
+for a debug build and under `tauri dev`; 128 pass, 0 fail on real Electron
+with the same 12 checks.
+
+Open points from layer 1:
+
+- Not verified on macOS (WKWebView) or Windows (WebView2): section 8.3 still applies.
+- The staging folder's `.gitignore` is copied to the resource directory
+  root as well (Tauri copies dot-files). Harmless; avoid it with a narrower
+  resource mapping if it matters.
+- electron-builder `files` / `extraResources` and Forge `extraResource` are
+  not read yet (section 8.1, step 2); only the default selection and the
+  `resources` option exist.
+- Staging is unit-tested for both plugins' shared code and end-to-end for
+  Vite; the webpack / rspack path (`beforeRun`) is not exercised by an
+  end-to-end build.
+- `nodeIntegration: true` renderers still cannot use `fs` (section 8.5).
+- `path` is not switched to `win32` on Windows (section 8.2).
+- Strict `connect-src` CSPs are untested with the bridge (section 8.3).
 
 ## 1. Goal and hard constraints
 
@@ -35,7 +71,7 @@ Constraints set by the project owner:
 
 | Piece | File | Role |
 | --- | --- | --- |
-| Built-in lists | `packages/tauri-electron/bundler/shared.cjs` | `NODE_SHIMS` (aliased to real implementations: `path`, `process`, `events`, `url`) and `NODE_BUILTINS` (stubbed) |
+| Built-in lists | `packages/tauri-electron/bundler/shared.cjs` | `NODE_SHIMS` (aliased to real implementations: `path`, `process`, `events`, `url`; since layer 1 also `fs`, `fs/promises`, `original-fs`, `buffer`, `path/win32`) and `NODE_BUILTINS` (stubbed) |
 | Vite plugin | `packages/tauri-electron/vite.js` | `resolve.alias` for `NODE_SHIMS`; `resolveId` + `load` produce the stub module for `NODE_BUILTINS` |
 | webpack / rspack plugin | `packages/tauri-electron/webpack.cjs`, `bundler/node-builtin.cjs` | Same, through `NormalModuleReplacementPlugin`-style redirects |
 | Runtime `require()` | `packages/tauri-electron/src/require.js` | `requireShim(id)` for CommonJS code in dev; `nodeBuiltin(name)` builds the throwing proxy |

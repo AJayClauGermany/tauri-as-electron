@@ -19,10 +19,14 @@ import { NotImplementedError } from './internal/runtime.js'
 
 const ELECTRON_IDS = new Set(['electron', 'electron/main', 'electron/renderer', 'electron/common'])
 
+/** Built-ins tauri-electron implements for the main process only (registered by ./node/index.js). */
+const MAIN_ONLY_FS = 'main-process-only'
+
 /** Node built-ins that cannot exist in a webview, with the nearest replacement. */
 export const NODE_BUILTINS = {
-  fs: '@tauri-apps/plugin-fs',
-  'fs/promises': '@tauri-apps/plugin-fs',
+  fs: MAIN_ONLY_FS,
+  'fs/promises': MAIN_ONLY_FS,
+  'original-fs': MAIN_ONLY_FS,
   child_process: '@tauri-apps/plugin-shell (sidecars) or a Rust command',
   os: '@tauri-apps/plugin-os',
   crypto: 'the Web Crypto API (globalThis.crypto)',
@@ -31,7 +35,7 @@ export const NODE_BUILTINS = {
   net: '@tauri-apps/plugin-http or a Rust command',
   util: 'plain JavaScript',
   stream: 'Web Streams (ReadableStream)',
-  buffer: 'Uint8Array / TextEncoder',
+  buffer: 'Uint8Array / TextEncoder, or Buffer in the main process',
   worker_threads: 'Web Workers',
   readline: 'nothing (no terminal in a webview)',
   module: 'nothing',
@@ -53,7 +57,10 @@ export const NODE_BUILTINS = {
 function unavailable(api, replacement) {
   return new NotImplementedError(api, {
     reason: 'unsupported',
-    hint: `Node.js built-ins are not available: Electron's main process is a webview here. Use ${replacement}.`,
+    hint:
+      replacement === MAIN_ONLY_FS
+        ? 'Node fs is available in the main process only (tauri-plugin-electron\'s "node-fs" feature): reach it from renderer windows over ipcMain.handle, as with a sandboxed Electron renderer.'
+        : `Node.js built-ins are not available: Electron's main process is a webview here. Use ${replacement}.`,
   })
 }
 
@@ -84,18 +91,31 @@ export function nodeBuiltin(name) {
   return proxy
 }
 
+/**
+ * Node built-ins implemented by tauri-electron that are too large to load in
+ * every page: the main page registers them (./node/index.js), and require()
+ * serves them from here.
+ */
+const registered = new Map()
+
+export function registerNodeModule(name, exports) {
+  registered.set(name, exports)
+}
+
 export function requireShim(id) {
   const name = String(id)
   if (ELECTRON_IDS.has(name)) return electron
   const bare = name.replace(/^node:/, '')
+  if (registered.has(bare)) return registered.get(bare)
   if (bare === 'path' || bare === 'path/posix') return nodePath
+  if (bare === 'path/win32') return nodePath.win32
   if (bare === 'process') return processShim
   if (bare === 'events') return nodeEvents.default
   if (bare === 'url') return nodeUrl
   if (bare in NODE_BUILTINS) return nodeBuiltin(bare)
   throw new NotImplementedError(`require('${name}')`, {
     reason: 'unsupported',
-    hint: 'tauri-electron provides require() only for electron and the Node built-ins it shims (path, process, events, url). Use import for other modules (Vite bundles them).',
+    hint: 'tauri-electron provides require() only for electron and the Node built-ins it shims (path, process, events, url, and in the main process fs, fs/promises and buffer). Use import for other modules (Vite bundles them).',
   })
 }
 

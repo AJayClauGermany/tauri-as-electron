@@ -1,0 +1,5 @@
+# Filled by tauri-electron's bundler plugin on every build with the app's own
+# files (Electron's resources/app layout), so fs can read them in a build.
+# tauri.conf.json maps this folder to the resource directory.
+*
+!.gitignore

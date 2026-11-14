@@ -6,6 +6,7 @@ const COMMANDS: &[&str] = &[
     "is_devtools_open",
     "trash_item",
     "bridge_respond",
+    "node_fs",
 ];
 
 fn main() {

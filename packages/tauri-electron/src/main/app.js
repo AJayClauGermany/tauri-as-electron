@@ -20,6 +20,7 @@ import { deferred, isMainProcess, isPackagedBuild, report, warnOnce, NotImplemen
 import { join as joinPath } from '../path.js'
 import { applyProcessInfo, platform } from '../process.js'
 import { loadProcessInfo, processInfo, hasFeature, hasNativePlugin } from '../internal/native.js'
+import { addRealRoots, appRoot } from '../internal/app-files.js'
 import { BrowserWindow, onPageLoad } from './browser-window.js'
 import { Menu } from './menu.js'
 import { startMainBridge } from './ipc-main.js'
@@ -146,6 +147,8 @@ class App extends EventEmitter {
     for (const [key, folder] of Object.entries(HOME_FALLBACKS)) {
       if (home && !(key in this._paths)) this._paths[key] = joinPath(home, folder)
     }
+    // Paths under these are real ones, never app-relative (see fs).
+    addRealRoots([...Object.values(this._paths), info?.resourcesPath, info?.cwd])
 
     this.emit('will-finish-launching')
     // macOS delivers the URL that launched the app before 'ready', as open-url.
@@ -281,8 +284,14 @@ class App extends EventEmitter {
     return this._locale.split(/[-_]/)[1] ?? ''
   }
 
+  /**
+   * The app's own files, as `fs` sees them: the project folder in
+   * development, `<resources>/app` in a build (Electron: the project folder,
+   * or `resources/app.asar`). Paths built from it work with `fs` and
+   * BrowserWindow#loadFile alike.
+   */
   getAppPath() {
-    return this._appPath
+    return appRoot() ?? this._appPath
   }
 
   getPath(name) {
@@ -295,6 +304,7 @@ class App extends EventEmitter {
 
   setPath(name, value) {
     this._paths[name] = value
+    addRealRoots([value])
   }
 
   getGPUFeatureStatus() {

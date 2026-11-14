@@ -148,7 +148,7 @@ function replaceInFile(file, replacements) {
 }
 
 /** Lines a Tauri + Vite project should ignore (appended if missing). */
-const GITIGNORE = ['node_modules/', 'dist/', 'src-tauri/target/', 'src-tauri/gen/schemas/']
+const GITIGNORE = ['node_modules/', 'dist/', 'src-tauri/target/', 'src-tauri/gen/schemas/', 'src-tauri/electron-resources/app/']
 
 function ensureGitignore(dir) {
   const file = path.join(dir, '.gitignore')
@@ -170,10 +170,21 @@ function configureTauri(appDir, { name, productName, identifier, version, specs 
     [/^name = "tauri-electron-app"$/m, `name = "${name}"`],
     [/^name = "tauri_electron_app_lib"$/m, `name = "${crate}_lib"`],
     [/^description = .*$/m, `description = "${productName}"`],
-    [/^tauri-plugin-electron = .*$/m, `tauri-plugin-electron = ${specs.cargo}`],
+    // Keeps the rest of the entry (the explicit `features = [...]` list).
+    [/^tauri-plugin-electron = \{ path = "[^"]*"/m, `tauri-plugin-electron = { ${specs.cargo.slice(2, -2)}`],
     [/^# Until tauri-electron is published.*\n(#.*\n)*/m, ''],
   ])
   replaceInFile(path.join(tauriDir, 'src/main.rs'), [[/tauri_electron_app_lib::run\(\)/, `${crate}_lib::run()`]])
+
+  // Where the bundler plugin stages the app files fs reads in a build
+  // (tauri.conf.json ships it as resources). Written here too because npm
+  // may drop a package's .gitignore files.
+  const staging = path.join(tauriDir, 'electron-resources')
+  fs.mkdirSync(staging, { recursive: true })
+  const stagingIgnore = path.join(template, 'src-tauri/electron-resources/.gitignore')
+  if (!fs.existsSync(path.join(staging, '.gitignore')) && fs.existsSync(stagingIgnore)) {
+    fs.copyFileSync(stagingIgnore, path.join(staging, '.gitignore'))
+  }
 
   const confFile = path.join(tauriDir, 'tauri.conf.json')
   const conf = readJson(confFile)
@@ -515,7 +526,9 @@ Next:
 Check:
 ${pageNote}
   - require('electron'), require('path') work in main and preload scripts.
-    Other Node built-ins (fs, child_process, ...) do not exist in a webview:
+    fs works in the main process (feature "node-fs" in src-tauri/Cargo.toml);
+    app files it reads through __dirname are staged in src-tauri/electron-resources/.
+    Other Node built-ins (child_process, os, ...) do not exist yet:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md
   - src-tauri/Cargo.toml: enable "single-instance" if you call
     app.requestSingleInstanceLock(), "updater" for autoUpdater.
