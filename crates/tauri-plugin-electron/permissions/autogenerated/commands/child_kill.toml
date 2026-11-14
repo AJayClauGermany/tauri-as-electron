@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-child-kill"
+description = "Enables the child_kill command without any pre-configured scope."
+commands.allow = ["child_kill"]
+
+[[permission]]
+identifier = "deny-child-kill"
+description = "Denies the child_kill command without any pre-configured scope."
+commands.deny = ["child_kill"]

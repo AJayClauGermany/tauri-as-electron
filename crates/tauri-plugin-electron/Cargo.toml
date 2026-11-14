@@ -58,6 +58,10 @@ devtools = ["tauri/devtools"]
 # and a dependent app does not gain it silently on update.
 # fs, fs/promises (and original-fs): file system access from the main process.
 node-fs = []
+# os: host, user, memory, CPUs, network interfaces.
+node-os = ["dep:sysinfo"]
+# child_process: runs arbitrary commands, like Electron's main process can.
+node-child-process = []
 
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
@@ -76,6 +80,8 @@ tauri-plugin-deep-link = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.23"
+# os.cpus(), totalmem(), freemem(), loadavg(), uptime(), networkInterfaces() (feature node-os).
+sysinfo = { version = "0.40", optional = true, default-features = false, features = ["system", "network"] }
 
 [target.'cfg(unix)'.dependencies]
 # access(2) and errno constants for the Node `fs` error codes (feature node-fs).

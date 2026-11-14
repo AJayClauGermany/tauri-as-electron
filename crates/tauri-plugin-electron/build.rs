@@ -7,6 +7,10 @@ const COMMANDS: &[&str] = &[
     "trash_item",
     "bridge_respond",
     "node_fs",
+    "child_spawn",
+    "child_write",
+    "child_end",
+    "child_kill",
 ];
 
 fn main() {

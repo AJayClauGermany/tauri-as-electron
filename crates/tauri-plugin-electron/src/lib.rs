@@ -12,9 +12,10 @@
 //!   `dialog.show*Sync` and `webPreferences.additionalArguments`.
 //! - **`protocol.handle()`**: schemes declared with [`Builder::protocol`]
 //!   are forwarded to the JavaScript handler registered in the main process.
-//! - **Node built-ins** that need the operating system (`fs` with the
-//!   `node-fs` feature): the synchronous variants over the bridge
-//!   (`node/<module>/<op>`), the asynchronous ones over the `node_fs` command.
+//! - **Node built-ins** that need the operating system (`fs`, `os` and
+//!   `child_process`, each behind a `node-*` feature): the synchronous
+//!   variants over the bridge (`node/<module>/<op>`), the asynchronous ones
+//!   over commands (`node_fs`, `child_spawn` & co.).
 //! - **DevTools** (`webContents.openDevTools()` and friends) and
 //!   **`shell.trashItem()`**.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
@@ -36,8 +37,18 @@ use std::{
 };
 
 mod features;
+#[cfg(feature = "node-child-process")]
+mod node_child_process;
+#[cfg(any(
+    feature = "node-fs",
+    feature = "node-os",
+    feature = "node-child-process"
+))]
+mod node_common;
 #[cfg(feature = "node-fs")]
 mod node_fs;
+#[cfg(feature = "node-os")]
+mod node_os;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -449,6 +460,58 @@ fn handle_node<R: Runtime>(
                 );
             }
         }
+        "os" => {
+            #[cfg(feature = "node-os")]
+            {
+                let op = op.to_string();
+                thread::spawn(move || match node_os::run(&op, &args) {
+                    Ok(value) => respond_json(responder, 200, &value),
+                    Err(error) => respond_json(responder, 400, &json!(error)),
+                });
+            }
+            #[cfg(not(feature = "node-os"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-os" }),
+                );
+            }
+        }
+        "child_process" => {
+            #[cfg(feature = "node-child-process")]
+            {
+                if op != "spawnSync" {
+                    return respond(responder, 404, "text/plain", Vec::new());
+                }
+                // A blocking execSync only blocks the main window, like Node's.
+                thread::spawn(move || {
+                    match serde_json::from_value::<node_child_process::SpawnOptions>(args) {
+                        Ok(options) => respond(
+                            responder,
+                            200,
+                            "application/octet-stream",
+                            node_child_process::spawn_sync(&options, &body),
+                        ),
+                        Err(error) => respond_json(
+                            responder,
+                            400,
+                            &json!({ "code": "ERR_INVALID_ARG_VALUE", "message": error.to_string() }),
+                        ),
+                    }
+                });
+            }
+            #[cfg(not(feature = "node-child-process"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-child-process" }),
+                );
+            }
+        }
         _ => respond(responder, 404, "text/plain", Vec::new()),
     }
 }
@@ -573,6 +636,95 @@ async fn trash_item(path: String) -> Result<(), String> {
     {
         let _ = path;
         Err("not supported on this platform".into())
+    }
+}
+
+#[cfg(feature = "node-child-process")]
+type SharedChildren = Arc<node_child_process::Children>;
+
+/// Whether `child_process` may run for this caller.
+fn children<R: Runtime>(webview: &tauri::Webview<R>) -> Result<(), Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
+    if cfg!(feature = "node-child-process") {
+        Ok(())
+    } else {
+        Err(json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-child-process" }))
+    }
+}
+
+/// `child_process.spawn` / `exec` / `execFile`: start a child whose output
+/// and exit are streamed to `on_event`. Returns `{ id, pid }`.
+#[tauri::command]
+fn child_spawn<R: Runtime>(
+    webview: tauri::Webview<R>,
+    options: Value,
+    on_event: tauri::ipc::Channel<Value>,
+) -> Result<Value, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        let options: node_child_process::SpawnOptions = serde_json::from_value(options)
+            .map_err(|e| json!({ "code": "ERR_INVALID_ARG_VALUE", "message": e.to_string() }))?;
+        let table = webview.state::<SharedChildren>();
+        table.spawn(&options, on_event).map_err(|e| json!(e))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (options, on_event);
+        Ok(Value::Null)
+    }
+}
+
+/// Bytes (base64) for a child's stdin. False once stdin is closed.
+#[tauri::command]
+fn child_write<R: Runtime>(
+    webview: tauri::Webview<R>,
+    id: u32,
+    data: String,
+) -> Result<bool, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        let bytes = BASE64
+            .decode(data.as_bytes())
+            .map_err(|e| json!({ "message": e.to_string() }))?;
+        Ok(webview.state::<SharedChildren>().write(id, bytes))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (id, data);
+        Ok(false)
+    }
+}
+
+/// Close a child's stdin.
+#[tauri::command]
+fn child_end<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<(), Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    webview.state::<SharedChildren>().end(id);
+    #[cfg(not(feature = "node-child-process"))]
+    let _ = id;
+    Ok(())
+}
+
+/// `subprocess.kill(signal)`: false when the child is gone.
+#[tauri::command]
+fn child_kill<R: Runtime>(webview: tauri::Webview<R>, id: u32, signal: i32) -> Result<bool, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        webview
+            .state::<SharedChildren>()
+            .kill(id, signal)
+            .map_err(|e| json!(e))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (id, signal);
+        Ok(false)
     }
 }
 
@@ -733,10 +885,16 @@ impl Builder {
                 is_devtools_open,
                 trash_item,
                 bridge_respond,
-                node_fs
+                node_fs,
+                child_spawn,
+                child_write,
+                child_end,
+                child_kill
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                #[cfg(feature = "node-child-process")]
+                app.manage(SharedChildren::default());
                 if default_capabilities {
                     for capability in features::capabilities() {
                         app.add_capability(capability)?;
