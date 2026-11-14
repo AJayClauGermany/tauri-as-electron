@@ -25,9 +25,13 @@
  *    `MAIN_WINDOW_WEBPACK_ENTRY` / `..._PRELOAD_WEBPACK_ENTRY` globals),
  *  - switches `electron-*` / `node` targets to `web`,
  *  - redirects `electron` (and `electron/main|renderer|common`) to
- *    tauri-electron, `path` / `process` / `events` / `url` to its shims and
+ *    tauri-electron, the Node built-ins it implements (`path`, `fs`, `os`,
+ *    `child_process`, `util`, `stream`, `crypto`, `http`, …) to its shims and
  *    other Node built-ins to stubs that throw a NotImplementedError naming the
  *    Tauri replacement when used (with or without `node:`),
+ *  - tells `fs` where the app's own files are and, in production builds,
+ *    stages them in `src-tauri/electron-resources/app/` when that folder
+ *    exists (see the Vite plugin),
  *  - rewrites `__dirname`, `__filename`, `import.meta.dirname|filename` and
  *    `fileURLToPath(import.meta.url)` in your source to project-relative paths,
  *  - in development (watch mode), prints the hidden main window's console in
@@ -42,7 +46,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -53,6 +57,7 @@ const MODULES = {
   require: path.join(SRC, 'require.js'),
   bootstrap: path.join(SRC, 'renderer', 'bootstrap.js'),
   mainEntry: path.join(BUNDLER, 'main-entry.js'),
+  mainNode: path.join(BUNDLER, 'main-node.js'),
   consoleForwarder: path.join(BUNDLER, 'console-forwarder.js'),
   nodeBuiltin: path.join(BUNDLER, 'node-builtin.cjs'),
   pathGlobalsLoader: path.join(BUNDLER, 'path-globals-loader.cjs'),
@@ -63,6 +68,40 @@ const SHIM_FILES = {
   'tauri-electron/process': path.join(BUNDLER, 'process.cjs'),
   'tauri-electron/events': path.join(BUNDLER, 'events.cjs'),
   'tauri-electron/url': path.join(SRC, 'url.js'),
+  'tauri-electron/path/win32': path.join(SRC, 'node', 'path-win32.js'),
+  'tauri-electron/buffer': path.join(SRC, 'node', 'buffer.js'),
+  'tauri-electron/fs': path.join(SRC, 'node', 'fs.js'),
+  'tauri-electron/fs/promises': path.join(SRC, 'node', 'fs-promises.js'),
+  'tauri-electron/util': path.join(SRC, 'node', 'util.js'),
+  'tauri-electron/util/types': path.join(SRC, 'node', 'util-types.js'),
+  'tauri-electron/string_decoder': path.join(SRC, 'node', 'string-decoder.js'),
+  // Node's require('stream') is the Stream constructor itself.
+  'tauri-electron/stream': path.join(BUNDLER, 'stream.cjs'),
+  'tauri-electron/stream/promises': path.join(SRC, 'node', 'stream-promises.js'),
+  'tauri-electron/os': path.join(SRC, 'node', 'os.js'),
+  'tauri-electron/child_process': path.join(SRC, 'node', 'child-process.js'),
+  'tauri-electron/crypto': path.join(SRC, 'node', 'crypto.js'),
+  'tauri-electron/http': path.join(SRC, 'node', 'http.js'),
+  'tauri-electron/https': path.join(SRC, 'node', 'https.js'),
+  'tauri-electron/assert': path.join(BUNDLER, 'assert.cjs'),
+  'tauri-electron/assert/strict': path.join(BUNDLER, 'assert-strict.cjs'),
+  'tauri-electron/querystring': path.join(SRC, 'node', 'querystring.js'),
+  'tauri-electron/punycode': path.join(SRC, 'node', 'punycode.js'),
+  'tauri-electron/timers': path.join(SRC, 'node', 'timers.js'),
+  'tauri-electron/timers/promises': path.join(SRC, 'node', 'timers-promises.js'),
+  'tauri-electron/perf_hooks': path.join(SRC, 'node', 'perf-hooks.js'),
+  'tauri-electron/stream/web': path.join(SRC, 'node', 'stream-web.js'),
+  'tauri-electron/stream/consumers': path.join(SRC, 'node', 'stream-consumers.js'),
+  'tauri-electron/zlib': path.join(SRC, 'node', 'zlib.js'),
+  'tauri-electron/constants': path.join(BUNDLER, 'constants.cjs'),
+  'tauri-electron/console': path.join(BUNDLER, 'console.cjs'),
+  'tauri-electron/module': path.join(BUNDLER, 'module.cjs'),
+  'tauri-electron/readline': path.join(SRC, 'node', 'readline.js'),
+  'tauri-electron/readline/promises': path.join(SRC, 'node', 'readline-promises.js'),
+  'tauri-electron/async_hooks': path.join(SRC, 'node', 'async-hooks.js'),
+  'tauri-electron/diagnostics_channel': path.join(SRC, 'node', 'diagnostics-channel.js'),
+  'tauri-electron/tty': path.join(SRC, 'node', 'tty.js'),
+  'tauri-electron/domain': path.join(SRC, 'node', 'domain.js'),
 }
 
 const SOURCE_FILE = /\.(m?[jt]sx?|c[jt]s)$/
@@ -157,6 +196,7 @@ class TauriElectronPlugin {
    * @param {boolean} [options.require=true] Install a global `require()` for CommonJS Electron code.
    * @param {boolean} [options.forwardMainConsole=true] Print the main window's console in the dev-server terminal.
    * @param {boolean} [options.forgeGlobals=true] Define Forge's `<NAME>_WEBPACK_ENTRY` globals for `pages`.
+   * @param {false|string[]} [options.resources] App files `fs` can read in a build (see the Vite plugin).
    */
   constructor(options = {}) {
     if (!options.main) throw new Error(`${NAME}: the \`main\` option (your Electron main script) is required`)
@@ -189,7 +229,7 @@ class TauriElectronPlugin {
     // rejects `node:` requests on web targets.
     const userResolved = userResolvedNames(config.resolve)
     const aliasPath = options.aliasPath
-    new bundler.NormalModuleReplacementPlugin(/^(node:)?[a-z_/]+$/, (resource) => {
+    new bundler.NormalModuleReplacementPlugin(/^(node:)?[a-z_/-]+$/, (resource) => {
       if (typeof resource.request !== 'string') return
       const target = redirect(resource.request, { aliasPath, userResolved })
       if (target) resource.request = target
@@ -221,6 +261,7 @@ class TauriElectronPlugin {
     ]
     const mainImports = [
       ...(dev && options.forwardMainConsole !== false ? [MODULES.consoleForwarder] : []),
+      MODULES.mainNode,
       ...(withRequire ? [MODULES.mainEntry] : []),
       ...toArray(options.main).map(fromContext),
     ]
@@ -247,7 +288,8 @@ class TauriElectronPlugin {
     config.entry = typeof entry === 'function' ? async () => rewriteEntries(await entry()) : rewriteEntries(entry ?? {})
 
     // --- renderer pages from `pages` (Electron Forge entry points) ---------------------------
-    const definitions = {}
+    // Where the app's own files are, for fs (read by bundler/main-node.js).
+    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appFilesConfig(context, { dev })) }
     const pageFile = (page) => page.filename ?? `${page.name}/index.html`
     for (const page of pages) {
       if (options.forgeGlobals !== false) {
@@ -273,7 +315,14 @@ class TauriElectronPlugin {
         chunks: [page.name, ...(page.additionalChunks ?? [])],
       }).apply(compiler)
     }
-    if (Object.keys(definitions).length) new bundler.DefinePlugin(definitions).apply(compiler)
+    new bundler.DefinePlugin(definitions).apply(compiler)
+
+    // --- app files for fs, in production builds -------------------------------------------------
+    if (!dev) {
+      compiler.hooks.beforeRun.tap(NAME, () => {
+        stageAppFiles(context, { resources: options.resources, exclude: [config.output?.path ?? 'dist'] })
+      })
+    }
 
     // --- electron-main.html ---------------------------------------------------------------------------
     compiler.hooks.thisCompilation.tap(NAME, (compilation) => {

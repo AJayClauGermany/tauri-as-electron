@@ -1,0 +1,1 @@
+{ "name": "kitchen-sink", "purpose": "read through fs.readFileSync(path.join(__dirname, ...)) by checks-node.js" }

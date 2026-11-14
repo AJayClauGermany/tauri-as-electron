@@ -51,9 +51,27 @@ describe('redirect', () => {
     expect(EventEmitter.EventEmitter).toBe(EventEmitter)
   })
 
+  it('redirects fs, buffer and path/win32 to their implementations', () => {
+    expect(at('fs')).toMatch(/src[\\/]node[\\/]fs\.js$/)
+    expect(at('original-fs')).toBe(at('node:fs'))
+    expect(at('node:fs/promises')).toMatch(/src[\\/]node[\\/]fs-promises\.js$/)
+    expect(at('buffer')).toMatch(/src[\\/]node[\\/]buffer\.js$/)
+    expect(at('node:path/win32')).toMatch(/src[\\/]node[\\/]path-win32\.js$/)
+    expect(at('child_process')).toMatch(/src[\\/]node[\\/]child-process\.js$/)
+    // require('stream') is the Stream constructor, as in Node.
+    expect(at('stream')).toMatch(/bundler[\\/]stream\.cjs$/)
+    expect(typeof require(at('stream'))).toBe('function')
+    expect(require(at('stream')).Readable).toBeTypeOf('function')
+    // assert, console, constants, module: Node's require() gives the value itself.
+    expect(typeof require(at('assert'))).toBe('function')
+    expect(require(at('assert/strict')).equal).toBe(require(at('assert')).strictEqual)
+    expect(require(at('node:constants')).SIGTERM).toBe(15)
+    expect(typeof require(at('module')).createRequire).toBe('function')
+  })
+
   it('stubs other Node built-ins, one module per built-in', () => {
-    expect(at('fs')).toBe(`${nodeBuiltin}?fs`)
-    expect(at('node:fs/promises')).toBe(`${nodeBuiltin}?fs/promises`)
+    expect(at('net')).toBe(`${nodeBuiltin}?net`)
+    expect(at('node:dns/promises')).toBe(`${nodeBuiltin}?dns/promises`)
     expect(at('path', { aliasPath: false })).toBe(`${nodeBuiltin}?path`)
   })
 
@@ -116,9 +134,14 @@ describe.each([
     expect(main).not.toMatch(/\bMAIN_WINDOW_WEBPACK_ENTRY\b/)
     expect(main).toContain(`path.join("/src", 'index.html')`)
     expect(main).toContain('"/src/main.js"')
-    // electron → tauri-electron; fs → the stub that explains itself; no Node require().
+    // electron → tauri-electron; fs → tauri-electron's fs; net → the stub
+    // that explains itself; no Node require().
     expect(main).toContain(moduleId('src/index.js'))
-    expect(main).toContain('node-builtin.cjs?fs')
+    expect(main).toContain(moduleId('src/node/fs.js'))
+    expect(main).not.toContain('node-builtin.cjs?fs"') // as a module id
+    expect(main).toContain('node-builtin.cjs?net')
+    expect(main).toContain('registerNodeModule(') // bundler/main-node.js: fs & co. for require()
+    expect(main).toMatch(/__TAURI_ELECTRON_APP__ = .*"entries":\[/) // where the app's files are (DefinePlugin)
     expect(main).toMatch(/const \{ app, BrowserWindow \} = __webpack_require__\(/)
     expect(main).toMatch(/installRequire\)?\(\{ moduleGlobals: true \}\)/) // bundler/main-entry.js
     expect(main).toContain('meta[name="tauri-electron-log"]') // dev: bundler/console-forwarder.js

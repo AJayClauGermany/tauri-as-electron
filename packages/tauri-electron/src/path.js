@@ -6,7 +6,13 @@
  * with the module's directory relative to the project root (for example
  * `/src`), and BrowserWindow#loadFile resolves the result against the app's
  * own URL, so this pure-string implementation is all that is needed.
+ *
+ * `path.win32` is a real Windows implementation (./node/path-win32.js), for
+ * taking apart the Windows paths `app.getPath()` and `fs` return. `path`
+ * itself stays POSIX on every platform.
  */
+import win32Path from './node/path-win32.js'
+
 export const sep = '/'
 export const delimiter = ':'
 
@@ -121,8 +127,9 @@ const path = {
   toNamespacedPath,
 }
 path.posix = path
-path.win32 = path
+path.win32 = win32Path
+win32Path.posix = path
 
 export const posix = path
-export const win32 = path
+export const win32 = win32Path
 export default path

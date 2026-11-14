@@ -50,6 +50,110 @@ Denies the bridge_respond command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-child-end`
+
+</td>
+<td>
+
+Enables the child_end command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-end`
+
+</td>
+<td>
+
+Denies the child_end command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-child-kill`
+
+</td>
+<td>
+
+Enables the child_kill command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-kill`
+
+</td>
+<td>
+
+Denies the child_kill command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-child-spawn`
+
+</td>
+<td>
+
+Enables the child_spawn command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-spawn`
+
+</td>
+<td>
+
+Denies the child_spawn command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-child-write`
+
+</td>
+<td>
+
+Enables the child_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-write`
+
+</td>
+<td>
+
+Denies the child_write command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-close-devtools`
 
 </td>
@@ -95,6 +199,32 @@ Enables the is_devtools_open command without any pre-configured scope.
 <td>
 
 Denies the is_devtools_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-node-fs`
+
+</td>
+<td>
+
+Enables the node_fs command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-node-fs`
+
+</td>
+<td>
+
+Denies the node_fs command without any pre-configured scope.
 
 </td>
 </tr>
@@ -199,6 +329,32 @@ Enables the trash_item command without any pre-configured scope.
 <td>
 
 Denies the trash_item command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:node-child-process`
+
+</td>
+<td>
+
+Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:node-fs`
+
+</td>
+<td>
+
+Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
 
 </td>
 </tr>

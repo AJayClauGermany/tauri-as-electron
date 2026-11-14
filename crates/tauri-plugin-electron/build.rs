@@ -6,6 +6,11 @@ const COMMANDS: &[&str] = &[
     "is_devtools_open",
     "trash_item",
     "bridge_respond",
+    "node_fs",
+    "child_spawn",
+    "child_write",
+    "child_end",
+    "child_kill",
 ];
 
 fn main() {

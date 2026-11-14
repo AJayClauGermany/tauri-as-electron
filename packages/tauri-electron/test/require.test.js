@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 // The electron module pulls in every Tauri plugin; a stand-in is enough here.
 vi.mock('../src/index.js', () => ({ app: { name: 'stub' }, BrowserWindow: class {} }))
 
-const { requireShim, nodeBuiltin, installRequire } = await import('../src/require.js')
+const { requireShim, nodeBuiltin, installRequire, registerNodeModule } = await import('../src/require.js')
 
 describe('require()', () => {
   it('serves electron, path and process', () => {
@@ -17,19 +17,32 @@ describe('require()', () => {
   })
 
   it('hands out a stub for Node built-ins that explains itself when used', () => {
-    const fs = requireShim('node:fs')
+    const net = requireShim('node:net')
     const error = (() => {
       try {
-        fs.readFileSync('/x')
+        net.connect(80)
       } catch (e) {
         return e
       }
     })()
     expect(error.name).toBe('NotImplementedError')
     expect(error.reason).toBe('unsupported')
-    expect(error.message).toMatch(/fs\.readFileSync is not supported on Tauri/)
-    expect(error.message).toMatch(/@tauri-apps\/plugin-fs/)
+    expect(error.message).toMatch(/net\.connect is not supported on Tauri/)
+    expect(error.message).toMatch(/plugin-http or a Rust command/)
+    expect(() => requireShim('zlib').gzipSync('x')).toThrow(/Node zlib is available in the main process only:/)
+    // Implemented for the main process: outside it, the stub says where they work.
+    expect(() => requireShim('os').hostname()).toThrow(/Node os is available in the main process only .*"node-os"/)
+    expect(() => requireShim('util').format('x')).toThrow(/Node util is available in the main process only:/)
     expect(() => requireShim('left-pad')).toThrow(/Use import/)
+  })
+
+  it('serves fs only where it was registered (the main page), a stub that says so elsewhere', () => {
+    // Renderer pages: fs is the main process's.
+    expect(() => requireShim('fs').readFileSync('/x')).toThrow(/fs\.readFileSync is not supported on Tauri.*main process only.*node-fs/)
+    const fs = { readFileSync: () => 'real' }
+    registerNodeModule('fs', fs)
+    expect(requireShim('node:fs')).toBe(fs)
+    expect(requireShim('path/win32').sep).toBe('\\')
   })
 
   it('installs a global require once, and module/exports only on request', () => {
@@ -60,8 +73,8 @@ describe('nodeBuiltin()', () => {
     expect(fs.default).toBe(fs)
     const { readFileSync } = fs // a named import after CommonJS interop
     expect(readFileSync).toBeTypeOf('function')
-    expect(() => readFileSync('x')).toThrow(/fs\.readFileSync is not supported on Tauri .*plugin-fs/)
+    expect(() => readFileSync('x')).toThrow(/fs\.readFileSync is not supported on Tauri.*ipcMain\.handle/)
     expect(() => fs()).toThrow(/fs\(\) is not supported/)
-    expect(() => new (nodeBuiltin('child_process'))()).toThrow(/new child_process\(\) .*plugin-shell/)
+    expect(() => new (nodeBuiltin('child_process'))()).toThrow(/new child_process\(\) .*main process only .*"node-child-process"/)
   })
 })

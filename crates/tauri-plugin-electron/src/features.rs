@@ -30,7 +30,10 @@ pub fn enabled() -> Vec<&'static str> {
         "login-item",
         "single-instance",
         "updater",
-        "devtools"
+        "devtools",
+        "node-fs",
+        "node-os",
+        "node-child-process"
     );
     // Desktop-only plugins are not built on mobile.
     if !cfg!(desktop) {
@@ -169,10 +172,18 @@ fn main_permissions() -> Vec<Value> {
         ]);
     }
     if cfg!(feature = "net") {
-        // Electron's main process has unrestricted network access.
-        add(&[
-            json!({ "identifier": "http:default", "allow": [{ "url": "https://**" }, { "url": "http://**" }] }),
-        ]);
+        // Electron's main process has unrestricted network access. Scopes are
+        // URLPatterns, where a pattern without a port only matches the default
+        // one: `*:*` lets requests reach any port (dev servers, localhost APIs).
+        add(&[json!({
+            "identifier": "http:default",
+            "allow": [
+                { "url": "https://**" },
+                { "url": "http://**" },
+                { "url": "https://*:*" },
+                { "url": "http://*:*" },
+            ],
+        })]);
     }
     if cfg!(feature = "protocol-client") {
         add(&[
@@ -195,6 +206,12 @@ fn main_permissions() -> Vec<Value> {
     }
     if cfg!(all(desktop, feature = "updater")) {
         add(&[json!("updater:default")]);
+    }
+    if cfg!(feature = "node-fs") {
+        add(&[json!("electron:node-fs")]);
+    }
+    if cfg!(feature = "node-child-process") {
+        add(&[json!("electron:node-child-process")]);
     }
     permissions
 }

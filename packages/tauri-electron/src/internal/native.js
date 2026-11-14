@@ -34,6 +34,24 @@ export function syncRequest(path, body) {
   return { status: xhr.status, text: xhr.responseText }
 }
 
+/**
+ * Synchronous request to the bridge with a binary answer. `query` is appended
+ * after `bridgeUrl()` (which percent-encodes its whole argument); `body`
+ * must be a Uint8Array (a Blob arrives empty on WebKitGTK). The response is
+ * read as raw bytes through `x-user-defined`: `responseType` is not allowed
+ * on synchronous requests. Returns { status, bytes }.
+ */
+export function syncRequestBytes(path, { query, body } = {}) {
+  const xhr = new XMLHttpRequest()
+  xhr.open(body === undefined ? 'GET' : 'POST', bridgeUrl(path) + (query ? `?${query}` : ''), false)
+  xhr.overrideMimeType('text/plain; charset=x-user-defined')
+  xhr.send(body === undefined ? null : body)
+  const text = xhr.responseText ?? ''
+  const bytes = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff
+  return { status: xhr.status, bytes }
+}
+
 let info = null
 let infoPromise = null
 

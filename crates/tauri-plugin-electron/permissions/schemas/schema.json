@@ -307,6 +307,54 @@
           "markdownDescription": "Denies the bridge_respond command without any pre-configured scope."
         },
         {
+          "description": "Enables the child_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-end",
+          "markdownDescription": "Enables the child_end command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-end",
+          "markdownDescription": "Denies the child_end command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_kill command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-kill",
+          "markdownDescription": "Enables the child_kill command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_kill command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-kill",
+          "markdownDescription": "Denies the child_kill command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_spawn command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-spawn",
+          "markdownDescription": "Enables the child_spawn command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_spawn command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-spawn",
+          "markdownDescription": "Denies the child_spawn command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-write",
+          "markdownDescription": "Enables the child_write command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-write",
+          "markdownDescription": "Denies the child_write command without any pre-configured scope."
+        },
+        {
           "description": "Enables the close_devtools command without any pre-configured scope.",
           "type": "string",
           "const": "allow-close-devtools",
@@ -329,6 +377,18 @@
           "type": "string",
           "const": "deny-is-devtools-open",
           "markdownDescription": "Denies the is_devtools_open command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the node_fs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-node-fs",
+          "markdownDescription": "Enables the node_fs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the node_fs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-node-fs",
+          "markdownDescription": "Denies the node_fs command without any pre-configured scope."
         },
         {
           "description": "Enables the open_devtools command without any pre-configured scope.",
@@ -383,6 +443,18 @@
           "type": "string",
           "const": "default",
           "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`"
+        },
+        {
+          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
+          "type": "string",
+          "const": "node-child-process",
+          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
+        },
+        {
+          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`",
+          "type": "string",
+          "const": "node-fs",
+          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`"
         }
       ]
     }

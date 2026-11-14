@@ -64,8 +64,13 @@ describe('create-tauri-electron-app', () => {
     const cargo = read(dir, 'src-tauri/Cargo.toml')
     expect(cargo).toContain('name = "hello-world"')
     expect(cargo).toContain('name = "hello_world_lib"')
-    expect(cargo).toMatch(/^tauri-plugin-electron = \{ git = "https:\/\/github.com\/AJayClauGermany\/tauri-as-electron" \}$/m)
+    expect(cargo).toMatch(/^tauri-plugin-electron = \{ git = "https:\/\/github.com\/AJayClauGermany\/tauri-as-electron", features = \[$/m)
+    // The native access the app has, one line each.
+    for (const feature of ['node-fs', 'node-os', 'node-child-process']) expect(cargo).toMatch(new RegExp(`^ {2}"${feature}", +# `, 'm'))
     expect(cargo).not.toContain('path = "../../../crates')
+    // App files fs reads in a build are staged here and shipped as resources.
+    expect(fs.existsSync(path.join(dir, 'src-tauri/electron-resources/.gitignore'))).toBe(true)
+    expect(json(dir, 'src-tauri/tauri.conf.json').bundle.resources).toEqual({ 'electron-resources/': '' })
     expect(read(dir, 'src-tauri/src/main.rs')).toContain('hello_world_lib::run()')
     expect(read(dir, 'README.md')).not.toContain('](../../')
     expect(read(dir, '.gitignore')).toContain('src-tauri/target/')
@@ -89,7 +94,7 @@ describe('create-tauri-electron-app', () => {
     expect(read(dir, 'src/index.js')).toContain("require('electron')")
     expect(read(dir, 'electron-main.html')).toContain('src="/src/index.js"')
     expect(read(dir, 'vite.config.mjs')).toContain("preload: 'src/preload.js'")
-    expect(read(dir, 'src-tauri/Cargo.toml')).toContain('tag = "v1.0.0"')
+    expect(read(dir, 'src-tauri/Cargo.toml')).toContain('tag = "v1.0.0", features = [')
     expect(json(dir, 'src-tauri/tauri.conf.json')).toMatchObject({ productName: 'Legacy', identifier: 'com.legacy.app', version: '2.0.0' })
     expect(read(dir, '.gitignore').split('\n')).toEqual(expect.arrayContaining(['node_modules', 'dist/', 'src-tauri/target/']))
 
