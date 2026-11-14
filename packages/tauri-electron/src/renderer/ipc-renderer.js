@@ -25,6 +25,14 @@ let nextPortId = 1
 
 /** Renderer-side ends of ports shared with the main process, by port id. */
 const relays = new Map()
+/**
+ * Port traffic that arrived before the message that transfers the port.
+ * The main process sends the two as separate Tauri events, and their order
+ * is not guaranteed, so they are kept until the port is known.
+ */
+const early = new Map()
+/** Ids of ports this page has already been given (late traffic for a closed one is dropped). */
+const known = new Set()
 
 export function postToMain(message) {
   return emitTo(MAIN_LABEL, TO_MAIN, { ...message, from: label })
@@ -32,6 +40,7 @@ export function postToMain(message) {
 
 function relay(id, port) {
   relays.set(id, port)
+  known.add(id)
   port.onmessage = (event) => {
     let data
     try {
@@ -40,6 +49,28 @@ function relay(id, port) {
       return report('MessagePort message')(error)
     }
     postToMain({ type: 'port-message', port: id, data }).catch(report('MessagePort relay'))
+  }
+  const queued = early.get(id)
+  if (queued) {
+    early.delete(id)
+    for (const message of queued) onPortTraffic(message)
+  }
+}
+
+/** A `port-message` / `port-close` from the main process for one of this page's ports. */
+function onPortTraffic(message) {
+  const port = relays.get(message.port)
+  if (!port) {
+    if (known.has(message.port)) return
+    if (!early.has(message.port)) early.set(message.port, [])
+    early.get(message.port).push(message)
+    return
+  }
+  if (message.type === 'port-close') {
+    port.close()
+    relays.delete(message.port)
+  } else {
+    port.postMessage(decode(message.data))
   }
 }
 
@@ -131,7 +162,8 @@ export const commandHandlers = {
   },
 }
 
-function onMessage(message) {
+/** Handle one message from the main process (exported for tests). */
+export function onMessage(message) {
   if (!message || (message.to && message.to !== label)) return
   switch (message.type) {
     case 'send':
@@ -151,11 +183,8 @@ function onMessage(message) {
       break
     }
     case 'port-message':
-      relays.get(message.port)?.postMessage(decode(message.data))
-      break
     case 'port-close':
-      relays.get(message.port)?.close()
-      relays.delete(message.port)
+      onPortTraffic(message)
       break
     case 'command':
       commandHandlers[message.name]?.(message)
