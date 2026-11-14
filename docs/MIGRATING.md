@@ -10,7 +10,7 @@ halves install straight from this GitHub repository.
 | `main.js` with `require('electron')` or `import … from 'electron'` | The same file, run by Tauri in a hidden window |
 | a preload script, renderer pages with `<script src>` | The same files, bundled by Vite (or [webpack / rspack](#webpack-and-rspack), if that is what the project uses) and loaded into Tauri windows |
 | `electron-builder` / Forge config | `src-tauri/tauri.conf.json` + `cargo`, via `tauri build` |
-| Node.js in the main process | `fs`, `fs/promises` and `Buffer` work (backed by Rust); `child_process`, `os`, native modules and most other built-ins do not yet. See [Node.js code](#4-nodejs-code) |
+| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values) and the `http` / `https` client work; native modules and the rarer built-ins do not yet. See [Node.js code](#4-nodejs-code) |
 
 Requirements: Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
@@ -75,10 +75,10 @@ webviews, so `tauri-electron/webpack` (the same plugin is exported as
   `electron-main.html` page Tauri opens first (emitted by the plugin),
 - the renderer bootstrap and your preload prepended to every renderer entry,
 - `electron-*` / `node` targets switched to `web`,
-- `electron`, `path`, `process`, `events`, `url`, `buffer`, `fs`,
-  `fs/promises` redirected to tauri-electron, other Node built-ins
-  (`child_process`, `os`, …, with or without `node:`) to stubs that throw a
-  [`NotImplementedError`](#6-reading-errors) when used,
+- `electron` and the Node built-ins tauri-electron implements (`fs`, `os`,
+  `child_process`, `util`, `stream`, `crypto`, `http`, …) redirected to
+  tauri-electron, the others (`zlib`, `net`, …, with or without `node:`) to
+  stubs that throw a [`NotImplementedError`](#6-reading-errors) when used,
 - `__dirname`, `__filename`, `import.meta.dirname|filename` and
   `fileURLToPath(import.meta.url)` in your source rewritten to
   project-relative paths,
@@ -248,8 +248,8 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `webContents.on('before-input-event')` + `preventDefault()` | Reported after the page saw the key; block keys with a `keydown` listener in the page. |
 | Renderer calls to privileged Tauri APIs | Renderers only get IPC permissions (like context-isolated, sandboxed Electron renderers). Route through the main process, or add a capability file in `src-tauri/capabilities/`. |
 | `webPreferences.nodeIntegration: true` | No Node.js in any webview. `process.env` is filled in for such renderers, nothing else. |
-| `utilityProcess.fork()`, `child_process` | Not available yet. Run Node code as a sidecar (`@tauri-apps/plugin-shell`) or move it to Rust. |
-| `fs` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
+| `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
+| `fs`, `os`, `child_process` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
 
@@ -264,18 +264,29 @@ Node.js is shipped. tauri-electron implements some Node built-ins itself
 | `path` (POSIX; `path.win32` is a real Windows implementation), `process`, `events`, `url` | Pure JavaScript, always on. |
 | `buffer` and the global `Buffer` (main process) | The `buffer` npm package: a `Uint8Array` subclass. |
 | `fs`, `fs/promises`, `original-fs` | Rust, behind the `node-fs` feature of `tauri-plugin-electron` (main process only). |
-| `child_process`, `os`, `crypto`, `util`, `stream`, `http`, … | Not yet: they load, and throw `NotImplementedError` when used. |
+| `os` | Rust, behind `node-os` (main process only). |
+| `child_process` | Rust, behind `node-child-process` (main process only). |
+| `util`, `util/types`, `events`, `stream`, `stream/promises`, `string_decoder` | Pure JavaScript (`util` in-house; `stream` is readable-stream, Node's own streams). |
+| `crypto` | Hashes, HMAC, PBKDF2, HKDF, scrypt (@noble/hashes), random values and `webcrypto` / `subtle` (Web Crypto). No ciphers, signatures or key pairs yet. |
+| `http`, `https` | The client (`request`, `get`) over tauri-plugin-http; no servers yet. |
+| `zlib`, `net`, `dns`, `assert`, `readline`, `worker_threads`, … | Not yet: they load, and throw `NotImplementedError` when used. |
 
-### `fs`
-
-Enable it in `src-tauri/Cargo.toml` (the template and the scaffolder write
-this for you; delete the line to turn file access off):
+The Rust-backed modules are switched on per app in `src-tauri/Cargo.toml`,
+one line each, so the native access the app has is visible and easy to turn
+off (the template and the scaffolder write this for you):
 
 ```toml
 tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-electron", features = [
-  "node-fs", # fs, fs/promises: file access from the main process; delete to disable
+  "node-fs",            # fs, fs/promises: file access from the main process
+  "node-os",            # os: host, user, memory, CPUs, network interfaces
+  "node-child-process", # child_process: runs arbitrary commands; delete to disable
 ] }
 ```
+
+A module whose feature is off throws `NotImplementedError` (reason
+`feature`) naming the line to add.
+
+### `fs`
 
 - `*Sync` functions block the main window until Rust answers, like in Node
   (renderer windows keep running). `fs.promises.*` and the callback API do
@@ -325,16 +336,58 @@ yourself, pass `resources` to the plugin: `tauriElectron({ resources: ['assets',
 or `resources: false` for none. Electron-builder's `extraResources` and
 Forge's `extraResource` are not read yet.
 
+### `child_process`
+
+- `execSync`, `execFileSync`, `spawnSync` block the main window until the
+  command ends, as they block Node (renderer windows keep running). `input`,
+  `timeout`, `maxBuffer`, `killSignal`, `cwd`, `env`, `shell`, `encoding`
+  and `stdio` (`'pipe'`, `'inherit'`, `'ignore'`) work; failures throw
+  Node's errors (`Command failed: …` with `status`, `stdout`, `stderr`;
+  `spawnSync … ENOENT`; `ETIMEDOUT`).
+- `spawn`, `exec`, `execFile` return a ChildProcess: `stdout` / `stderr`
+  are Readable streams, `stdin` a Writable one, with `'spawn'`, `'exit'`,
+  `'close'`, `'error'`, `pid` and `kill(signal)`. `util.promisify(exec)`
+  resolves to `{ stdout, stderr }`.
+- Shells are Node's: `/bin/sh -c` on Unix, `cmd.exe /d /s /c` on Windows.
+  `stdio: 'inherit'` means the app's own stdout / stderr (the terminal of
+  `tauri dev`).
+- Not available: `fork()` and the `'ipc'` stdio channel (they need a
+  Node.js child), and streams or descriptors beyond 0–2 in `stdio`.
+
+### `os`
+
+Everything `os` has: `hostname`, `homedir`, `tmpdir`, `type`, `release`,
+`version`, `machine`, `userInfo`, `cpus` (with `times` on Linux; zeros
+elsewhere), `totalmem`, `freemem`, `uptime`, `loadavg`, `networkInterfaces`,
+`getPriority` / `setPriority`, and `platform`, `arch`, `EOL`, `endianness`,
+`availableParallelism`, `constants` (which need no native code).
+
+### `util`, `stream`, `crypto`, `http`
+
+- `util.inspect` / `util.format` print like Node's; `promisify`,
+  `callbackify`, `inherits`, `deprecate`, `debuglog`, `isDeepStrictEqual`,
+  `types` are there. `events.EventEmitter` can also be called the pre-class
+  way (`EventEmitter.call(this)` with `util.inherits`).
+- `stream` is Node's own implementation (readable-stream). Its streams
+  carry tauri-electron's `Buffer` and `EventEmitter`.
+- `crypto`: no `createCipheriv`, `sign` / `verify`, key pairs or
+  Diffie-Hellman yet; use `crypto.subtle` meanwhile.
+- `http` / `https`: the client side. Like Node, redirects are not followed;
+  the request body is sent on `end()`. Connection errors carry a Node `code`,
+  but plugin-http does not always say why a connection failed: a refused
+  connection can arrive as `ECONNRESET` rather than `ECONNREFUSED`. `createServer` throws: use
+  `protocol.handle()` for endpoints inside the app.
+
 ### Everything else
 
-- `require('child_process')` / `import os from 'os'` & co. do not fail the
+- `require('zlib')` / `import net from 'net'` & co. do not fail the
   build and do not throw by themselves; every member throws a
   `NotImplementedError` (reason `unsupported`) naming the replacement when
-  it is called (`child_process.exec is not supported on Tauri … Use
-  @tauri-apps/plugin-shell`). Use the error messages as a to-do list.
-- Replacements: `@tauri-apps/plugin-shell` (processes, sidecars),
-  `@tauri-apps/plugin-http` or `net.fetch` (HTTP), Web Crypto, `URL`, or a
-  Rust command in `src-tauri/src/lib.rs` invoked with `@tauri-apps/api/core`.
+  it is called (`zlib.gzipSync is not supported on Tauri … Use
+  CompressionStream`). Use the error messages as a to-do list.
+- Replacements: `@tauri-apps/plugin-http` or `net.fetch` (HTTP),
+  `CompressionStream`, `URLSearchParams`, or a Rust command in
+  `src-tauri/src/lib.rs` invoked with `@tauri-apps/api/core`.
 - Install a Tauri plugin like in any Tauri app (`cargo add`, `.plugin(...)`
   in `lib.rs`, and a permission in `src-tauri/capabilities/` for the
   `electron-main` window). The main window is the only one that needs it.

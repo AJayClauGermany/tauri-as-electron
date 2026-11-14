@@ -202,5 +202,11 @@ for more):
 | `require('fs')`, `import fs from 'fs'`, `fs/promises`, `original-fs` | 🟡 | [native] Main process, with the `node-fs` feature of tauri-plugin-electron. Sync functions over the synchronous bridge, `fs.promises` and callbacks over a command; Node-shaped errors. Paths built from `__dirname` / `app.getAppPath()` read the app's own files (project folder in dev, `<resources>/app` in a build). No file descriptors, streams, `watch`, `cp`, `opendir` yet. See [MIGRATING.md](MIGRATING.md#fs). |
 | `require('buffer')`, global `Buffer` | ✅ | The `buffer` npm package (a `Uint8Array` subclass); the global is installed in the main process. |
 | `path.win32` | ✅ | A real Windows implementation (`path` itself stays POSIX). |
-| `child_process`, `os`, `crypto`, `http`, `util`, `stream`, … | 🚫 | Not yet (see [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)). The import does not fail the build; using the module throws `NotImplementedError` (`reason: 'unsupported'`) naming the replacement: `plugin-shell`, `plugin-http`, Web Crypto, or a Rust command. The error names the member (`child_process.exec is not supported on Tauri …`). |
+| `require('os')` | ✅ | [native] Main process, feature `node-os`. Every `os` function; CPU `times` are zeros outside Linux. |
+| `require('child_process')` | 🟡 | [native] Main process, feature `node-child-process`. `spawn`, `exec`, `execFile` and their `*Sync` forms, with Node's errors and shells. No `fork()`, no `'ipc'` stdio. |
+| `require('util')`, `util/types`, `events` | ✅ | Pure JavaScript; `util.inspect` / `format` print like Node's. `EventEmitter` can be called the pre-class way. |
+| `require('stream')`, `stream/promises`, `string_decoder` | ✅ | readable-stream (Node's streams), `string_decoder` npm package. |
+| `require('crypto')` | 🟡 | Hashes, HMAC, PBKDF2, HKDF, scrypt, random values, `webcrypto` / `subtle`. No ciphers, signatures or key pairs yet. |
+| `require('http')`, `require('https')` | 🟡 | Client only (`request`, `get`) over plugin-http; redirects not followed, like Node. No servers. |
+| `zlib`, `net`, `dns`, `assert`, `readline`, `worker_threads`, `vm`, … | 🚫 | Not yet (see [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)). The import does not fail the build; using the module throws `NotImplementedError` (`reason: 'unsupported'`) naming the replacement. The error names the member (`zlib.gzipSync is not supported on Tauri …`). |
 | Native Node modules, `asar` | 🚫 | |

@@ -526,9 +526,10 @@ Next:
 Check:
 ${pageNote}
   - require('electron'), require('path') work in main and preload scripts.
-    fs works in the main process (feature "node-fs" in src-tauri/Cargo.toml);
-    app files it reads through __dirname are staged in src-tauri/electron-resources/.
-    Other Node built-ins (child_process, os, ...) do not exist yet:
+    fs, os and child_process work in the main process (the "node-*"
+    features in src-tauri/Cargo.toml), as do util, stream, crypto, http;
+    app files fs reads through __dirname are staged in src-tauri/electron-resources/.
+    Other Node built-ins (zlib, net, ...) do not exist yet:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md
   - src-tauri/Cargo.toml: enable "single-instance" if you call
     app.requestSingleInstanceLock(), "updater" for autoUpdater.

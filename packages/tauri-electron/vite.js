@@ -8,9 +8,10 @@
  *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron
  *    and `path` / `node:path` to a browser-safe implementation,
  *  - aliases the Node built-ins it implements (`path`, `process`, `events`,
- *    `url`, `buffer`, and `fs` / `fs/promises` backed by tauri-plugin-electron's
- *    `node-fs` feature) and turns the others (`child_process`, `os`, …) into a
- *    clear runtime error instead of a build error,
+ *    `url`, `buffer`, `util`, `stream`, `string_decoder`, `crypto`, `http`,
+ *    `https`, and `fs`, `os`, `child_process` backed by tauri-plugin-electron's
+ *    `node-*` features) and turns the others (`zlib`, `net`, …) into a clear
+ *    runtime error instead of a build error,
  *  - tells `fs` where the app's own files are and, in a build, stages them
  *    in `src-tauri/electron-resources/app/` (Electron's `resources/app`
  *    layout) when that folder exists, so

@@ -19,23 +19,32 @@ import { NotImplementedError } from './internal/runtime.js'
 
 const ELECTRON_IDS = new Set(['electron', 'electron/main', 'electron/renderer', 'electron/common'])
 
-/** Built-ins tauri-electron implements for the main process only (registered by ./node/index.js). */
-const MAIN_ONLY_FS = 'main-process-only'
+/**
+ * Built-ins tauri-electron implements, registered on the main page only
+ * (./node/index.js), with the Cargo feature the native ones need.
+ */
+const MAIN_ONLY = {
+  fs: 'node-fs',
+  'fs/promises': 'node-fs',
+  'original-fs': 'node-fs',
+  os: 'node-os',
+  child_process: 'node-child-process',
+  buffer: null,
+  util: null,
+  'util/types': null,
+  sys: null,
+  stream: null,
+  'stream/promises': null,
+  string_decoder: null,
+  crypto: null,
+  http: null,
+  https: null,
+}
 
 /** Node built-ins that cannot exist in a webview, with the nearest replacement. */
 export const NODE_BUILTINS = {
-  fs: MAIN_ONLY_FS,
-  'fs/promises': MAIN_ONLY_FS,
-  'original-fs': MAIN_ONLY_FS,
-  child_process: '@tauri-apps/plugin-shell (sidecars) or a Rust command',
-  os: '@tauri-apps/plugin-os',
-  crypto: 'the Web Crypto API (globalThis.crypto)',
-  http: 'net.fetch / net.request from electron, or the fetch API',
-  https: 'net.fetch / net.request from electron, or the fetch API',
+  ...Object.fromEntries(Object.keys(MAIN_ONLY).map((name) => [name, null])),
   net: '@tauri-apps/plugin-http or a Rust command',
-  util: 'plain JavaScript',
-  stream: 'Web Streams (ReadableStream)',
-  buffer: 'Uint8Array / TextEncoder, or Buffer in the main process',
   worker_threads: 'Web Workers',
   readline: 'nothing (no terminal in a webview)',
   module: 'nothing',
@@ -48,19 +57,22 @@ export const NODE_BUILTINS = {
   timers: 'globalThis.setTimeout & co.',
   'timers/promises': 'a Promise around setTimeout',
   querystring: 'URLSearchParams',
-  string_decoder: 'TextDecoder',
   dns: '@tauri-apps/plugin-http or a Rust command',
   dgram: 'a Rust command',
   cluster: 'nothing',
 }
 
-function unavailable(api, replacement) {
+function unavailable(api, name, replacement) {
+  if (name in MAIN_ONLY) {
+    const feature = MAIN_ONLY[name] ? ` (tauri-plugin-electron's "${MAIN_ONLY[name]}" feature)` : ''
+    return new NotImplementedError(api, {
+      reason: 'unsupported',
+      hint: `Node ${name} is available in the main process only${feature}: reach it from renderer windows over ipcMain.handle, as with a sandboxed Electron renderer.`,
+    })
+  }
   return new NotImplementedError(api, {
     reason: 'unsupported',
-    hint:
-      replacement === MAIN_ONLY_FS
-        ? 'Node fs is available in the main process only (tauri-plugin-electron\'s "node-fs" feature): reach it from renderer windows over ipcMain.handle, as with a sandboxed Electron renderer.'
-        : `Node.js built-ins are not available: Electron's main process is a webview here. Use ${replacement}.`,
+    hint: `Node.js built-ins are not available: Electron's main process is a webview here. Use ${replacement}.`,
   })
 }
 
@@ -74,7 +86,7 @@ function unavailable(api, replacement) {
 export function nodeBuiltin(name) {
   const replacement = NODE_BUILTINS[name] ?? 'a Tauri plugin or a Rust command'
   const fail = (api) => {
-    throw unavailable(api, replacement)
+    throw unavailable(api, name, replacement)
   }
   const target = function nodeBuiltinStub() {}
   const proxy = new Proxy(target, {
@@ -115,7 +127,7 @@ export function requireShim(id) {
   if (bare in NODE_BUILTINS) return nodeBuiltin(bare)
   throw new NotImplementedError(`require('${name}')`, {
     reason: 'unsupported',
-    hint: 'tauri-electron provides require() only for electron and the Node built-ins it shims (path, process, events, url, and in the main process fs, fs/promises and buffer). Use import for other modules (Vite bundles them).',
+    hint: `tauri-electron provides require() only for electron and the Node built-ins it shims (path, process, events, url, and in the main process ${Object.keys(MAIN_ONLY).join(', ')}). Use import for other modules (Vite bundles them).`,
   })
 }
 

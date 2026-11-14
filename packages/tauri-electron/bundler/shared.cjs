@@ -12,11 +12,9 @@ const path = require('node:path')
 
 /** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
 const NODE_BUILTINS = [
-  'assert', 'async_hooks', 'child_process', 'cluster', 'constants', 'crypto', 'dgram',
-  'diagnostics_channel', 'dns', 'domain', 'http', 'http2', 'https',
-  'inspector', 'module', 'net', 'os', 'perf_hooks', 'punycode', 'querystring', 'readline',
-  'repl', 'stream', 'stream/promises', 'stream/web', 'string_decoder', 'sys', 'timers',
-  'timers/promises', 'tls', 'trace_events', 'tty', 'util', 'util/types', 'v8', 'vm',
+  'assert', 'async_hooks', 'cluster', 'constants', 'dgram', 'diagnostics_channel', 'dns', 'domain',
+  'http2', 'inspector', 'module', 'net', 'perf_hooks', 'punycode', 'querystring', 'readline',
+  'repl', 'stream/web', 'timers', 'timers/promises', 'tls', 'trace_events', 'tty', 'v8', 'vm',
   'wasi', 'worker_threads', 'zlib',
 ]
 
@@ -33,6 +31,17 @@ const NODE_SHIMS = {
   'fs/promises': 'tauri-electron/fs/promises',
   // Electron's fs without asar support: the same thing here.
   'original-fs': 'tauri-electron/fs',
+  util: 'tauri-electron/util',
+  'util/types': 'tauri-electron/util/types',
+  sys: 'tauri-electron/util',
+  string_decoder: 'tauri-electron/string_decoder',
+  stream: 'tauri-electron/stream',
+  'stream/promises': 'tauri-electron/stream/promises',
+  os: 'tauri-electron/os',
+  child_process: 'tauri-electron/child_process',
+  crypto: 'tauri-electron/crypto',
+  http: 'tauri-electron/http',
+  https: 'tauri-electron/https',
 }
 
 /** Dev-server endpoint the hidden main window posts its console output to. */

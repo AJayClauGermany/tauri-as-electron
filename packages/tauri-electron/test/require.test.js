@@ -17,18 +17,21 @@ describe('require()', () => {
   })
 
   it('hands out a stub for Node built-ins that explains itself when used', () => {
-    const os = requireShim('node:os')
+    const zlib = requireShim('node:zlib')
     const error = (() => {
       try {
-        os.hostname()
+        zlib.gzipSync('x')
       } catch (e) {
         return e
       }
     })()
     expect(error.name).toBe('NotImplementedError')
     expect(error.reason).toBe('unsupported')
-    expect(error.message).toMatch(/os\.hostname is not supported on Tauri/)
-    expect(error.message).toMatch(/@tauri-apps\/plugin-os/)
+    expect(error.message).toMatch(/zlib\.gzipSync is not supported on Tauri/)
+    expect(error.message).toMatch(/CompressionStream/)
+    // Implemented for the main process: outside it, the stub says where they work.
+    expect(() => requireShim('os').hostname()).toThrow(/Node os is available in the main process only .*"node-os"/)
+    expect(() => requireShim('util').format('x')).toThrow(/Node util is available in the main process only:/)
     expect(() => requireShim('left-pad')).toThrow(/Use import/)
   })
 
@@ -71,6 +74,6 @@ describe('nodeBuiltin()', () => {
     expect(readFileSync).toBeTypeOf('function')
     expect(() => readFileSync('x')).toThrow(/fs\.readFileSync is not supported on Tauri.*ipcMain\.handle/)
     expect(() => fs()).toThrow(/fs\(\) is not supported/)
-    expect(() => new (nodeBuiltin('child_process'))()).toThrow(/new child_process\(\) .*plugin-shell/)
+    expect(() => new (nodeBuiltin('child_process'))()).toThrow(/new child_process\(\) .*main process only .*"node-child-process"/)
   })
 })

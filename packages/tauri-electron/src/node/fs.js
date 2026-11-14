@@ -21,7 +21,8 @@
  * `watchFile`, `cp`, `opendir`, `link`, `chown`.
  */
 import { Buffer } from './buffer.js'
-import { native, syncRequestBytes, hasFeature, featureError } from '../internal/native.js'
+import { native, hasFeature, featureError } from '../internal/native.js'
+import { nodeCallSync, nodeFailure, noTauri, parseJson, plainBytes } from '../internal/node-bridge.js'
 import { inTauri, isPackagedBuild, explainError, NotImplementedError } from '../internal/runtime.js'
 import { resolveAppPath } from '../internal/app-files.js'
 import { platform } from '../process.js'
@@ -131,17 +132,7 @@ function unavailable(api, reason, hint) {
 
 /** Turn a failed bridge or command call into what the caller should see. */
 function failure(api, status, body) {
-  if (body?.code === 'ERR_FEATURE_DISABLED') return featureError(api, FEATURE)
-  if (body?.code === 'ERR_ACCESS_DENIED') {
-    return unavailable(api, 'permission', `${body.message}. Use fs in the main process and reach it from renderer windows over ipcMain.handle, as with a sandboxed Electron renderer.`)
-  }
-  if (body && typeof body === 'object' && 'syscall' in body) return nodeError(body)
-  if (status === 404) return unavailable(api, 'plugin', 'This tauri-plugin-electron predates Node fs support: update it and enable its "node-fs" feature.')
-  return new Error(`${api} failed (${status}): ${typeof body === 'string' ? body : JSON.stringify(body)}`)
-}
-
-function noTauri(api) {
-  return unavailable(api, 'unsupported', 'Node fs needs the Tauri runtime (tauri-plugin-electron with its "node-fs" feature).')
+  return nodeFailure({ api, module: 'fs', feature: FEATURE, status, body, toError: nodeError })
 }
 
 // --- transport ----------------------------------------------------------------------------------------
@@ -149,35 +140,10 @@ function noTauri(api) {
 const utf8 = new TextDecoder()
 const encoder = new TextEncoder()
 
-function parseJson(bytes) {
-  const text = utf8.decode(bytes)
-  try {
-    return text ? JSON.parse(text) : null
-  } catch {
-    return text
-  }
-}
-
-function plainBytes(view) {
-  return new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
-}
-
 /** Blocking call over the synchronous bridge. */
 function callSync(api, op, args, data) {
-  if (!inTauri) throw noTauri(api)
-  let response
-  try {
-    response = syncRequestBytes(`node/fs/${op}`, {
-      query: `a=${encodeURIComponent(JSON.stringify(args))}`,
-      body: data === undefined ? undefined : plainBytes(data),
-    })
-  } catch (error) {
-    const explained = unavailable(api, 'plugin', 'The tauri-electron:// bridge did not answer: register tauri-plugin-electron in src-tauri/src/lib.rs.')
-    explained.cause = error
-    throw explained
-  }
-  if (response.status === 200) return op === 'read' ? response.bytes : parseJson(response.bytes)
-  throw failure(api, response.status, parseJson(response.bytes))
+  const bytes = nodeCallSync({ api, module: 'fs', feature: FEATURE, op, args, body: data, toError: nodeError })
+  return op === 'read' ? bytes : parseJson(bytes)
 }
 
 /** `node_fs` command body: u32 LE header length, JSON `{ op, args }`, then the data. */
@@ -199,7 +165,7 @@ function responseBytes(value) {
 
 /** Non-blocking call over the `node_fs` command. */
 async function callAsync(api, op, args, data) {
-  if (!inTauri) throw noTauri(api)
+  if (!inTauri) throw noTauri(api, 'fs', FEATURE)
   if (!hasFeature(FEATURE)) throw featureError(api, FEATURE)
   let result
   try {

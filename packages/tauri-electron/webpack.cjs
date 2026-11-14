@@ -25,8 +25,8 @@
  *    `MAIN_WINDOW_WEBPACK_ENTRY` / `..._PRELOAD_WEBPACK_ENTRY` globals),
  *  - switches `electron-*` / `node` targets to `web`,
  *  - redirects `electron` (and `electron/main|renderer|common`) to
- *    tauri-electron, `path` / `process` / `events` / `url` / `buffer` / `fs`
- *    to its shims (`fs` needs tauri-plugin-electron's `node-fs` feature) and
+ *    tauri-electron, the Node built-ins it implements (`path`, `fs`, `os`,
+ *    `child_process`, `util`, `stream`, `crypto`, `http`, …) to its shims and
  *    other Node built-ins to stubs that throw a NotImplementedError naming the
  *    Tauri replacement when used (with or without `node:`),
  *  - tells `fs` where the app's own files are and, in production builds,
@@ -72,6 +72,17 @@ const SHIM_FILES = {
   'tauri-electron/buffer': path.join(SRC, 'node', 'buffer.js'),
   'tauri-electron/fs': path.join(SRC, 'node', 'fs.js'),
   'tauri-electron/fs/promises': path.join(SRC, 'node', 'fs-promises.js'),
+  'tauri-electron/util': path.join(SRC, 'node', 'util.js'),
+  'tauri-electron/util/types': path.join(SRC, 'node', 'util-types.js'),
+  'tauri-electron/string_decoder': path.join(SRC, 'node', 'string-decoder.js'),
+  // Node's require('stream') is the Stream constructor itself.
+  'tauri-electron/stream': path.join(BUNDLER, 'stream.cjs'),
+  'tauri-electron/stream/promises': path.join(SRC, 'node', 'stream-promises.js'),
+  'tauri-electron/os': path.join(SRC, 'node', 'os.js'),
+  'tauri-electron/child_process': path.join(SRC, 'node', 'child-process.js'),
+  'tauri-electron/crypto': path.join(SRC, 'node', 'crypto.js'),
+  'tauri-electron/http': path.join(SRC, 'node', 'http.js'),
+  'tauri-electron/https': path.join(SRC, 'node', 'https.js'),
 }
 
 const SOURCE_FILE = /\.(m?[jt]sx?|c[jt]s)$/

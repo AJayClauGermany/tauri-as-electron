@@ -4,8 +4,9 @@ Hand-off document for the agent that implements Node built-in support in
 tauri-electron. It records what was decided, what was measured, where each
 built-in should be implemented, the order of work, and the traps.
 
-Status: **layer 1 (the `fs` proof of concept) is implemented**; layers 2 and
-later are not started. See "Implementation status" below.
+Status: **layers 1 (the `fs` proof of concept) and 2 (the major modules) are
+implemented**; layers 3 and later are not started. See "Implementation
+status" below.
 
 ## Implementation status
 
@@ -21,10 +22,46 @@ Layer 1 (section 6) landed as planned, with these specifics:
 | App-relative paths (8.1) | `src/internal/app-files.js`, `appFilesConfig` / `stageAppFiles` in `bundler/shared.cjs` | The plugins publish `{ root, entries }` (top-level project entries minus dot-files, `src-tauri` and names such as `tmp`, `home`, `Users`) as `globalThis.__TAURI_ELECTRON_APP__`. An absolute path whose first segment is an entry, and that is not under a known real root, maps to the project (dev) or `<resource_dir>/app` (build; asked from Rust via `node/fs/resourceDir` if `process.resourcesPath` is not known yet). Writes there fail with `EROFS` in a build. `app.getAppPath()` returns the same root and `loadFile` maps paths under it back to project paths. Staging runs in production builds only, and only when `src-tauri/electron-resources/` exists; the `resources` plugin option overrides the default selection. |
 | Template, scaffolder, kitchen sink | | `node-fs` line, `bundle.resources: { "electron-resources/": "" }`, the staging folder with its `.gitignore`. Kitchen sink: 12 `fs` / `Buffer` checks in `src/checks-node.js`. |
 
-Measured after the change (Linux, WebKitGTK 2.52.6): 102 unit tests pass;
+Measured after layer 1 (Linux, WebKitGTK 2.52.6): 102 unit tests pass;
 kitchen-sink smoke 124 pass, 0 fail, 4 unsupported, 30 manual on Tauri, both
 for a debug build and under `tauri dev`; 128 pass, 0 fail on real Electron
 with the same 12 checks.
+
+Layer 2 (section 7) followed, in the order planned:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| `events` made callable | `src/internal/emitter.js` | `EventEmitter` is a function constructor now, so pre-class code (`EventEmitter.call(this)` + `util.inherits`, as readable-stream does) works; classes still extend it. `on`/`addListener` and `off`/`removeListener` are one function each, as in Node: readable-stream overrides one name with a wrapper that calls the base under the other, which recursed forever when the base delegated through `this`. Subclasses that need to see new listeners use the `_newListener` hook (`powerMonitor`, `screen`) instead of overriding `on`. Node's statics added: `on` (async iterator), `captureRejectionSymbol`, `errorMonitor`, `listenerCount`, `addAbortListener`, … |
+| `util`, `util/types` | `src/node/util.js`, `src/node/util-types.js` | Written in-house rather than the `util` npm package (large dependency tree, pre-Map `inspect`). `inspect` ports Node's layout rules (array grouping, the `compact` nesting rule); `test/util.test.js` compares ~45 values, the `format` specifiers and `isDeepStrictEqual` against Node's own output. `sys` aliases `util`. |
+| `stream`, `stream/promises`, `string_decoder` | `src/node/stream.js`, `stream-promises.js`, `string-decoder.js` | readable-stream 4 (imported as `readable-stream/lib/stream.js`, so the default export is the legacy `Stream` constructor) and the `string_decoder` package. Their `require('events')` / `require('buffer')` resolve to tauri-electron's through the aliases; `require('process/')` stays the npm `process` shim. `stream/promises` comes from `Stream.promises`, not a second entry into the package. Webpack gets a CommonJS wrapper (`bundler/stream.cjs`) so `require('stream')` is the constructor itself; Vite builds give CommonJS dependencies the namespace (`require('stream').Readable` works, calling `require('stream')` itself does not). |
+| `os` | `src/node/os.js`, `crates/…/src/node_os.rs` | Feature `node-os` (`sysinfo` with only `system` and `network`). Bridge only, no command: `os` is synchronous in Node. Static facts are fetched once and cached. `uname` / `getpwuid_r` on Unix; CPU `times` from `/proc/stat` on Linux, zeros elsewhere. |
+| `child_process` | `src/node/child-process.js`, `crates/…/src/node_child_process.rs` | Feature `node-child-process`, permission set `electron:node-child-process`. `spawnSync` over the bridge (stdin in the body, a framed answer with both outputs); after a `timeout` / `maxBuffer` kill it returns what was read instead of waiting for pipes a grandchild holds, as Node does. `spawn` over `child_spawn` + a Channel; stdin writes are queued to a writer thread so commands never block; exit is polled every 10 ms so `kill()` can reach the child. Error shapes (`Command failed: …`, `spawn x ENOENT`, `ETIMEDOUT`) checked against Node. Errors common to the Rust modules moved to `node_common.rs`. |
+| `crypto` | `src/node/crypto.js` | @noble/hashes 2 (no BigInt literals, so the `safari13` target builds). Hash and Hmac are Transform streams too. `test/stream-crypto.test.js` compares every hash, HMAC, PBKDF2, HKDF and scrypt with `node:crypto`. Ciphers, signatures, key pairs, DH: `unimplemented`. |
+| `http`, `https` | `src/node/http-client.js`, `http.js`, `https.js` | Client only, on plugin-http with `maxRedirections: 0` (Node does not follow redirects). `IncomingMessage` is a Readable. reqwest's error text is mapped to `ECONNREFUSED` / `ENOTFOUND` / `ETIMEDOUT`. `createServer` throws (layer 4). |
+
+Measured after layer 2 (same machine): 127 unit tests and 7 Rust tests
+pass; kitchen-sink smoke 141 pass, 0 fail, 4 unsupported, 31 manual on
+Tauri, for a debug build and under `tauri dev`; 145 pass, 0 fail on real
+Electron, with the 17 new checks in `src/checks-node-layer2.js`.
+
+Open points from layer 2:
+
+- `exec` / `spawn` buffer the request body of `http` and queue stdin writes;
+  neither applies back-pressure yet.
+- Writing to a child whose stdin is closed drops the data (Node emits
+  `EPIPE`).
+- `os.cpus()[i].times` are zeros outside Linux; `os.constants.errno` uses
+  Linux numbers everywhere.
+- Calling `require('stream')` as a constructor works under webpack only.
+- `http` connection errors: plugin-http reports "error sending request"
+  without the OS cause, so `ECONNREFUSED` often arrives as `ECONNRESET`.
+  Fixing it needs the error chain from Rust (our own command, or upstream).
+- The main window's `http:default` scope gained `http://*:*` /
+  `https://*:*`: URLPattern scopes without a port only match the default
+  port, so `net.request` / `http.get` to `localhost:3000` were refused before.
+- `child_process` on Windows (`cmd.exe` quoting, `taskkill` for `kill()`)
+  and `os` on macOS / Windows are unverified, like the rest of the native
+  code.
 
 Open points from layer 1:
 

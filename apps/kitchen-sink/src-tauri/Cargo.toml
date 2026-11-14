@@ -26,5 +26,7 @@ tauri = { version = "2", features = [] }
 # `git = "https://github.com/AJayClauGermany/tauri-as-electron"` instead of `path`
 # (the scaffolder, `npx github:AJayClauGermany/tauri-as-electron my-app`, does that).
 tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron", features = [
-  "node-fs", # fs, fs/promises: file access from the main process; delete to disable
+  "node-fs",            # fs, fs/promises: file access from the main process
+  "node-os",            # os: host, user, memory, CPUs, network interfaces
+  "node-child-process", # child_process: runs arbitrary commands; delete to disable
 ] }

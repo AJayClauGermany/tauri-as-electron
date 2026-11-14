@@ -29,6 +29,7 @@ import {
 import path from 'node:path'
 import { moduleChecks } from './checks-modules.js'
 import { nodeChecks } from './checks-node.js'
+import { layer2Checks } from './checks-node-layer2.js'
 
 const isElectron = Boolean(process.versions.electron)
 
@@ -122,18 +123,18 @@ const coreChecks = [
     assert(require('url').fileURLToPath('file:///a/b%20c') === '/a/b c', "require('url')")
     return 'same modules as import'
   } },
-  { id: "require('fs') works, require('child_process') explains itself", run: () => {
+  { id: "require('fs') works, require('zlib') explains itself", run: () => {
     if (typeof require !== 'function') return isElectron ? 'n/a: ESM main process on Electron' : 'no require()'
     // fs is implemented (tauri-plugin-electron's "node-fs" feature).
     assert(require('fs').existsSync(app.getPath('temp')) === true, "require('fs').existsSync")
     try {
       // Other built-ins load; their members throw when called (the same in dev
       // and in production builds, which turn require() into imports).
-      require('child_process').execSync('true')
+      require('zlib').gzipSync('x')
     } catch (error) {
       if (isElectron) return 'n/a: Node is available on Electron'
       assert(error.name === 'NotImplementedError' && error.reason === 'unsupported', `${error.name} ${error.reason}`)
-      assert(/plugin-shell/.test(error.message), error.message)
+      assert(/CompressionStream/.test(error.message), error.message)
       return error.message
     }
     if (isElectron) return 'n/a: Node is available on Electron'
@@ -568,7 +569,7 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
-export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks]
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

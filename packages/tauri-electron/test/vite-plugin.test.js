@@ -123,19 +123,23 @@ describe('Node built-ins', () => {
   it('resolve to a stub module instead of failing the build', () => {
     const build = plugin({})
     const dev = plugin({}, { dev: true })
-    for (const id of ['os', 'node:os', 'child_process', 'node:stream/promises']) {
+    for (const id of ['zlib', 'node:zlib', 'net', 'node:timers/promises']) {
       const resolved = build.resolveId(id)
       expect(resolved).toContain(id.replace(/^node:/, ''))
       const stub = `nodeBuiltin(${JSON.stringify(id.replace(/^node:/, ''))})`
       expect(build.load(resolved)).toBe(`module.exports = require('tauri-electron/require').${stub}\n`)
       expect(dev.load(resolved)).toContain(`export default ${stub}`)
     }
-    expect(NODE_BUILTINS).toContain('os')
+    expect(NODE_BUILTINS).toContain('zlib')
+    expect(NODE_BUILTINS).not.toContain('child_process')
   })
 
   it('leaves the shimmed built-ins to the aliases and unknown ids to Vite', () => {
     const p = plugin({})
-    const shimmed = ['path', 'node:path', 'path/win32', 'process', 'node:events', 'url', 'fs', 'node:fs/promises', 'original-fs', 'buffer']
+    const shimmed = [
+      'path', 'node:path', 'path/win32', 'process', 'node:events', 'url', 'fs', 'node:fs/promises', 'original-fs', 'buffer',
+      'util', 'node:util/types', 'sys', 'stream', 'stream/promises', 'string_decoder', 'os', 'child_process', 'crypto', 'http', 'node:https',
+    ]
     for (const id of [...shimmed, 'electron', './local.js']) expect(p.resolveId(id), id).toBeNull()
     expect(plugin({ aliasPath: false }).resolveId('node:path')).not.toBeNull()
     const { resolve } = plugin({ preload: 'p.js' }).config({})
@@ -147,6 +151,9 @@ describe('Node built-ins', () => {
     expect(aliased('original-fs')).toBe('tauri-electron/fs')
     expect(aliased('node:buffer')).toBe('tauri-electron/buffer')
     expect(aliased('path/win32')).toBe('tauri-electron/path/win32')
+    expect(aliased('node:child_process')).toBe('tauri-electron/child_process')
+    expect(aliased('sys')).toBe('tauri-electron/util')
+    expect(aliased('string_decoder/')).toBeUndefined() // how readable-stream reaches the npm package
     expect(aliased('buffer/index.js')).toBeUndefined() // how buffer.js reaches the npm package
     expect(aliased('node:url')).toBe('tauri-electron/url')
     expect(aliased('electron/renderer')).toBe('tauri-electron')

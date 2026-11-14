@@ -57,11 +57,16 @@ describe('redirect', () => {
     expect(at('node:fs/promises')).toMatch(/src[\\/]node[\\/]fs-promises\.js$/)
     expect(at('buffer')).toMatch(/src[\\/]node[\\/]buffer\.js$/)
     expect(at('node:path/win32')).toMatch(/src[\\/]node[\\/]path-win32\.js$/)
+    expect(at('child_process')).toMatch(/src[\\/]node[\\/]child-process\.js$/)
+    // require('stream') is the Stream constructor, as in Node.
+    expect(at('stream')).toMatch(/bundler[\\/]stream\.cjs$/)
+    expect(typeof require(at('stream'))).toBe('function')
+    expect(require(at('stream')).Readable).toBeTypeOf('function')
   })
 
   it('stubs other Node built-ins, one module per built-in', () => {
-    expect(at('child_process')).toBe(`${nodeBuiltin}?child_process`)
-    expect(at('node:stream/promises')).toBe(`${nodeBuiltin}?stream/promises`)
+    expect(at('zlib')).toBe(`${nodeBuiltin}?zlib`)
+    expect(at('node:timers/promises')).toBe(`${nodeBuiltin}?timers/promises`)
     expect(at('path', { aliasPath: false })).toBe(`${nodeBuiltin}?path`)
   })
 
@@ -124,12 +129,12 @@ describe.each([
     expect(main).not.toMatch(/\bMAIN_WINDOW_WEBPACK_ENTRY\b/)
     expect(main).toContain(`path.join("/src", 'index.html')`)
     expect(main).toContain('"/src/main.js"')
-    // electron → tauri-electron; fs → tauri-electron's fs; child_process → the stub
+    // electron → tauri-electron; fs → tauri-electron's fs; zlib → the stub
     // that explains itself; no Node require().
     expect(main).toContain(moduleId('src/index.js'))
     expect(main).toContain(moduleId('src/node/fs.js'))
     expect(main).not.toContain('node-builtin.cjs?fs"') // as a module id
-    expect(main).toContain('node-builtin.cjs?child_process')
+    expect(main).toContain('node-builtin.cjs?zlib')
     expect(main).toContain('registerNodeModule(') // bundler/main-node.js: fs & co. for require()
     expect(main).toMatch(/__TAURI_ELECTRON_APP__ = .*"entries":\[/) // where the app's files are (DefinePlugin)
     expect(main).toMatch(/const \{ app, BrowserWindow \} = __webpack_require__\(/)

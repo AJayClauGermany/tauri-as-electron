@@ -24,7 +24,17 @@
     "./buffer": "./packages/tauri-electron/src/node/buffer.js",
     "./fs": "./packages/tauri-electron/src/node/fs.js",
     "./fs/promises": "./packages/tauri-electron/src/node/fs-promises.js",
-    "./node": "./packages/tauri-electron/src/node/index.js"
+    "./node": "./packages/tauri-electron/src/node/index.js",
+    "./util": "./packages/tauri-electron/src/node/util.js",
+    "./util/types": "./packages/tauri-electron/src/node/util-types.js",
+    "./string_decoder": "./packages/tauri-electron/src/node/string-decoder.js",
+    "./stream": "./packages/tauri-electron/src/node/stream.js",
+    "./stream/promises": "./packages/tauri-electron/src/node/stream-promises.js",
+    "./os": "./packages/tauri-electron/src/node/os.js",
+    "./child_process": "./packages/tauri-electron/src/node/child-process.js",
+    "./crypto": "./packages/tauri-electron/src/node/crypto.js",
+    "./http": "./packages/tauri-electron/src/node/http.js",
+    "./https": "./packages/tauri-electron/src/node/https.js"
   },
   "bin": {
     "create-tauri-electron-app": "./scripts/create-app.mjs"
@@ -54,6 +64,7 @@
     "create-app": "node scripts/create-app.mjs"
   },
   "dependencies": {
+    "@noble/hashes": "^2.4.0",
     "@tauri-apps/api": "^2.12.0",
     "@tauri-apps/plugin-autostart": "^2.7.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.5.0",
@@ -66,6 +77,8 @@
     "@tauri-apps/plugin-os": "^2.4.0",
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.1",
-    "buffer": "^6.0.3"
+    "buffer": "^6.0.3",
+    "readable-stream": "^4.8.0",
+    "string_decoder": "^1.3.0"
   }
 }
