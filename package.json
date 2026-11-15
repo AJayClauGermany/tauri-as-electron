@@ -13,6 +13,7 @@
     "./common": "./packages/tauri-electron/src/index.js",
     "./path": "./packages/tauri-electron/src/path.js",
     "./process": "./packages/tauri-electron/src/process.js",
+    "./electron-updater": "./packages/tauri-electron/src/main/electron-updater.js",
     "./renderer-bootstrap": "./packages/tauri-electron/src/renderer/bootstrap.js",
     "./vite": "./packages/tauri-electron/vite.js",
     "./webpack": "./packages/tauri-electron/webpack.cjs",

@@ -11,6 +11,8 @@ const COMMANDS: &[&str] = &[
     "cookies_set",
     "cookies_remove",
     "clipboard_read_html",
+    "message_box",
+    "message_box_close",
     "power_blocker_start",
     "power_blocker_stop",
     "notification_show",

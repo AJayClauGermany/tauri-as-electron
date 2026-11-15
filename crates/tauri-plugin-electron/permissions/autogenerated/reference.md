@@ -16,6 +16,8 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-cookies-set`
 - `allow-cookies-remove`
 - `allow-clipboard-read-html`
+- `allow-message-box`
+- `allow-message-box-close`
 - `allow-power-blocker-start`
 - `allow-power-blocker-stop`
 - `allow-notification-show`
@@ -417,6 +419,58 @@ Enables the is_devtools_open command without any pre-configured scope.
 <td>
 
 Denies the is_devtools_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-message-box`
+
+</td>
+<td>
+
+Enables the message_box command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-message-box`
+
+</td>
+<td>
+
+Denies the message_box command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-message-box-close`
+
+</td>
+<td>
+
+Enables the message_box_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-message-box-close`
+
+</td>
+<td>
+
+Denies the message_box_close command without any pre-configured scope.
 
 </td>
 </tr>

@@ -31,6 +31,9 @@
  *  - makes `process.env` read the real environment (the main process gets it
  *    from tauri-plugin-electron) instead of Vite's empty object,
  *  - adds every root-level *.html file to the build inputs,
+ *  - writes the custom schemes the app passes to `protocol.handle()` (and
+ *    `registerSchemesAsPrivileged`) to `src-tauri/electron-schemes.json`,
+ *    where `tauri_plugin_electron::bundled_schemes!()` reads them at build time,
  *  - in dev, forwards the hidden main window's console to the terminal (the
  *    window has no visible devtools; Electron devs expect main logs there).
  */
@@ -39,7 +42,7 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -119,6 +122,10 @@ function virtualSrc(id, isDev) {
  *   (`session.registerPreloadScript` / `setPreloads`), put in every renderer page. Those of
  *   electron-log and @sentry/electron are found when the app depends on them; list module
  *   specifiers or project-relative files for others, or `false` for none.
+ * @param {false|string[]} [options.schemes] Custom schemes to register in Tauri besides the ones
+ *   found in the app's source (`protocol.handle('x', …)`, `protocol.registerSchemesAsPrivileged`)
+ *   and those of known libraries; written to src-tauri/electron-schemes.json for
+ *   `tauri_plugin_electron::bundled_schemes!()`. `false`: write nothing.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -140,6 +147,8 @@ export default function tauriElectron(options = {}) {
     config(userConfig) {
       root = path.resolve(userConfig.root ?? process.cwd())
       const alias = [{ find: /^electron(\/(main|renderer|common))?$/, replacement: 'tauri-electron' }]
+      // electron-builder's auto-update library, on tauri-plugin-updater.
+      alias.push({ find: /^electron-updater$/, replacement: 'tauri-electron/electron-updater' })
       for (const [name, replacement] of Object.entries(NODE_SHIMS)) {
         if (options.aliasPath === false && name.startsWith('path')) continue
         alias.push({ find: new RegExp(`^(node:)?${name}$`), replacement })
@@ -178,6 +187,9 @@ export default function tauriElectron(options = {}) {
       libraryPreloads = sessionPreloads(root, options.sessionPreloads)
       isDev = resolved.command === 'serve'
       outDir = resolved.build?.outDir ?? 'dist'
+      // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
+      const schemes = writeSchemes(root, options.schemes)
+      if (schemes?.length) resolved.logger?.info?.(`tauri-electron: custom schemes ${schemes.join(', ')} (src-tauri/electron-schemes.json)`)
     },
 
     buildStart() {

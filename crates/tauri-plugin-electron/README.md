@@ -12,7 +12,10 @@ features alone: no Rust code or capability files to edit.
 // src-tauri/src/lib.rs
 pub fn run() {
     tauri_plugin_electron::Builder::new()
-        .protocol("app") // one per scheme passed to protocol.handle()
+        // The schemes your JavaScript passes to protocol.handle(), found by
+        // the bundler plugin (src-tauri/electron-schemes.json, see build.rs).
+        .protocols(tauri_plugin_electron::bundled_schemes!())
+        .protocol("app") // or one by one
         .install(tauri::Builder::default())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -26,7 +29,9 @@ tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-ele
 
 `src-tauri/build.rs` needs a few lines so Tauri sees the permissions of the
 plugins registered for you (Cargo only exposes a build script to its direct
-dependencies); copy it from the [template](../../templates/tauri-electron-app/src-tauri/build.rs).
+dependencies), and passes `src-tauri/electron-schemes.json` (written by the
+bundler plugins) on to `bundled_schemes!()`; copy it from the
+[template](../../templates/tauri-electron-app/src-tauri/build.rs).
 `npx github:AJayClauGermany/tauri-as-electron --into .` writes all of this
 for you. Pin with `tag = "v0.1.0"` (or `branch`, `rev`); keep the JavaScript
 half (`tauri-electron`) at the same ref.
@@ -86,11 +91,12 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `ipcRenderer.sendSync` + `event.returnValue` | A blocking `XMLHttpRequest` to the `tauri-electron://` scheme, forwarded to the main window, which answers with `bridge_respond` |
 | `webPreferences.additionalArguments` (renderer `process.argv`) | `set_window_config` before the window is created; the renderer reads it synchronously from the scheme |
 | `dialog.showOpenDialogSync`, `showSaveDialogSync`, `showMessageBoxSync` | Blocking `tauri-plugin-dialog` calls behind the scheme (main window only; `dialog` feature) |
+| `dialog.showMessageBox` / `showMessageBoxSync` with more than three buttons or `checkboxLabel` | A small window (`src/message_box.rs`) whose page the scheme serves (`message-box/<id>`); the page reports its size and the answer over the same scheme. `message_box` / `message_box_close` commands, `dialog/message-window` on the scheme for the blocking variant |
 | Node's `fs` (`node-fs` feature) | `fs.*Sync`: `node/fs/<op>` on the scheme, answered from a worker thread. `fs.promises` and callbacks: the `node_fs` command (raw body, off the main thread). One implementation (`src/node_fs.rs`) behind both. Refused unless the caller is `electron-main` showing the app's own page |
 | Node's `os` (`node-os` feature) | `node/os/<op>` on the scheme (`src/node_os.rs`) |
 | Node's `child_process` (`node-child-process` feature) | `spawnSync`: `node/child_process/spawnSync` on the scheme, stdin in the request body, both outputs in the answer. `spawn`: the `child_spawn` command with a Channel for output and exit, then `child_write`, `child_end`, `child_kill` (`src/node_child_process.rs`) |
 | Node's `net`, `tls`, `dgram`, `dns` (`node-net`, `node-tls` features) | A handle table of tokio sockets (`src/node_net.rs`). `net_connect`, `net_listen`, `udp_bind` take a Channel that carries data, end, errors and accepted connections; `net_write` resolves once the bytes are flushed; `net_pause` stops reading in Rust. TLS is rustls on the same sockets (`src/node_tls.rs`); `dns_lookup` is the OS resolver, `dns_resolve` / `dns_reverse` use hickory-resolver (`src/node_dns.rs`) |
-| `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` are forwarded to the main window's handler |
+| `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` / `protocols(bundled_schemes!())` are forwarded to the main window's handler |
 | `webContents.openDevTools`, `closeDevTools`, `isDevToolsOpened` | `WebviewWindow::open_devtools` (debug builds, or the `devtools` feature) |
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |

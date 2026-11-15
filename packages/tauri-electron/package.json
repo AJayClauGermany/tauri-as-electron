@@ -12,6 +12,7 @@
     "./common": "./src/index.js",
     "./path": "./src/path.js",
     "./process": "./src/process.js",
+    "./electron-updater": "./src/main/electron-updater.js",
     "./renderer-bootstrap": "./src/renderer/bootstrap.js",
     "./vite": "./vite.js",
     "./webpack": "./webpack.cjs",

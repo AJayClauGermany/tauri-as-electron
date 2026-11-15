@@ -908,7 +908,21 @@ export class BrowserWindow extends EventEmitter {
       nodeIntegration,
       sandbox,
       zoomFactor: this.webContents._zoomFactor,
+      titleBarOverlay: this._titleBarOverlayConfig(),
     }
+  }
+
+  /**
+   * The window controls the renderer bootstrap draws for `titleBarStyle:
+   * 'hidden'` + `titleBarOverlay` (Windows and Linux; macOS keeps its own
+   * traffic lights), or null.
+   */
+  _titleBarOverlayConfig() {
+    const o = this._options
+    const hidden = o.titleBarStyle === 'hidden' || o.titleBarStyle === 'hiddenInset' || o.titleBarStyle === 'customButtonsOnHover'
+    if (isMac || !hidden || !o.titleBarOverlay) return null
+    const overlay = o.titleBarOverlay === true ? {} : { ...o.titleBarOverlay }
+    return { ...overlay, minimizable: this._state.minimizable, maximizable: this._state.maximizable, closable: this._state.closable }
   }
 
   _createNative(url) {
@@ -1520,7 +1534,16 @@ export class BrowserWindow extends EventEmitter {
   }
 
   // Platform chrome Tauri does not expose to JavaScript: accepted, no effect.
-  setTitleBarOverlay(options) { this._titleBarOverlay = options; warnOnce('setTitleBarOverlay', 'BrowserWindow.setTitleBarOverlay() is a no-op in tauri-electron.') }
+  /** Restyle the window controls drawn for titleBarOverlay (color, symbolColor, height). */
+  setTitleBarOverlay(options = {}) {
+    if (!this._options.titleBarOverlay) return
+    const current = this._options.titleBarOverlay === true ? {} : this._options.titleBarOverlay
+    this._options.titleBarOverlay = { ...current, ...options }
+    const overlay = this._titleBarOverlayConfig()
+    if (!overlay) return
+    if (hasNativePlugin() && this._label) native('set_window_config', { label: this._label, config: this._rendererConfig() }).catch(report('setTitleBarOverlay'))
+    this.webContents._command('title-bar-overlay', { overlay })
+  }
   setWindowButtonVisibility(visible) { this._windowButtonVisibility = Boolean(visible) }
   setWindowButtonPosition(position) { this._windowButtonPosition = position }
   getWindowButtonPosition() { return this._windowButtonPosition ?? this._options.trafficLightPosition ?? null }

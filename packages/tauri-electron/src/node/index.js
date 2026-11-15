@@ -42,6 +42,7 @@ import dgram from './dgram.js'
 import dns from './dns.js'
 import dnsPromises from './dns-promises.js'
 import { registerNodeModule } from '../require.js'
+import electronUpdater from '../main/electron-updater.js'
 
 for (const [name, exports] of Object.entries({
   fs,
@@ -89,6 +90,9 @@ for (const [name, exports] of Object.entries({
 
 // The globals of Node's main process: `global`, setImmediate, and timers
 // returning Timeout objects (`setTimeout(...).unref()` is common in Node code).
+// Not a built-in: electron-builder's updater, for require('electron-updater') in CommonJS main code.
+registerNodeModule('electron-updater', electronUpdater)
+
 if (typeof globalThis.global === 'undefined') globalThis.global = globalThis
 installTimerGlobals(globalThis)
 

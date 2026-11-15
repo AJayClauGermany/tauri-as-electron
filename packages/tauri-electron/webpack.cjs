@@ -46,7 +46,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -54,6 +54,7 @@ const BUNDLER = path.join(__dirname, 'bundler')
 
 const MODULES = {
   electron: path.join(SRC, 'index.js'),
+  electronUpdater: path.join(SRC, 'main', 'electron-updater.js'),
   require: path.join(SRC, 'require.js'),
   bootstrap: path.join(SRC, 'renderer', 'bootstrap.js'),
   mainEntry: path.join(BUNDLER, 'main-entry.js'),
@@ -144,6 +145,7 @@ function requireFromProject(id, context) {
 /** Where a request of the app's code should go instead, or null to leave it alone. */
 function redirect(request, { aliasPath, userResolved }) {
   if (ELECTRON_REQUEST.test(request)) return MODULES.electron
+  if (request === 'electron-updater' && !userResolved.has(request)) return MODULES.electronUpdater
   const bare = request.replace(/^node:/, '')
   if (userResolved.has(bare) || userResolved.has(request)) return null
   if (aliasPath !== false || !bare.startsWith('path')) {
@@ -202,6 +204,7 @@ class TauriElectronPlugin {
    * @param {boolean} [options.forwardMainConsole=true] Print the main window's console in the dev-server terminal.
    * @param {boolean} [options.forgeGlobals=true] Define Forge's `<NAME>_WEBPACK_ENTRY` globals for `pages`.
    * @param {false|string[]} [options.resources] App files `fs` can read in a build (see the Vite plugin).
+   * @param {false|string[]} [options.schemes] Extra custom schemes for src-tauri/electron-schemes.json (see the Vite plugin).
    * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
    */
   constructor(options = {}) {
@@ -325,6 +328,9 @@ class TauriElectronPlugin {
       }).apply(compiler)
     }
     new bundler.DefinePlugin(definitions).apply(compiler)
+
+    // --- custom schemes for tauri-plugin-electron (src-tauri/electron-schemes.json) ------------
+    writeSchemes(context, options.schemes)
 
     // --- app files for fs, in production builds -------------------------------------------------
     if (!dev) {

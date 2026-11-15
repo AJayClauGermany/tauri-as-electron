@@ -37,8 +37,11 @@ npm run build   # tauri build
   `app.requestSingleInstanceLock()`, `"updater"` for `autoUpdater` (plus
   `plugins.updater` in `tauri.conf.json`). See the
   [feature list](../../crates/tauri-plugin-electron/README.md#features).
-- `src-tauri/src/lib.rs`: declare every scheme your main process passes to
-  `protocol.handle()` with `.protocol("app")`. Nothing else to change.
+- `src-tauri/src/lib.rs`: nothing to change. The schemes your main process
+  passes to `protocol.handle()` are found by the bundler plugin and written
+  to `src-tauri/electron-schemes.json` (commit it); `build.rs` hands them to
+  `bundled_schemes!()`. Add a scheme the plugin cannot see (built from a
+  variable) with `.protocol("app")` or the plugin's `schemes` option.
 - `src-tauri/capabilities/`: empty on purpose; tauri-plugin-electron grants
   Electron's defaults (the main process may use everything enabled,
   renderers only IPC). Add capability files if your pages call Tauri APIs

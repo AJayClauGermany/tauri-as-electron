@@ -33,7 +33,11 @@ import { layer2Checks } from './checks-node-layer2.js'
 import { layer3Checks } from './checks-node-layer3.js'
 import { layer4Checks } from './checks-node-layer4.js'
 import { waveAChecks } from './checks-wave-a.js'
+<<<<<<< HEAD
 import { waveBNative2Checks } from './checks-wave-b-native2.js'
+=======
+import { waveBBundlerChecks } from './checks-wave-b-bundler.js'
+>>>>>>> wave-b-bundler
 
 const isElectron = Boolean(process.versions.electron)
 
@@ -573,7 +577,11 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
+<<<<<<< HEAD
 export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks]
+=======
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBBundlerChecks]
+>>>>>>> wave-b-bundler
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

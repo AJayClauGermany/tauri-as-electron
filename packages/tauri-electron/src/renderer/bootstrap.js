@@ -11,7 +11,8 @@
  *   setWindowOpenHandler, `will-navigate`, `did-navigate-in-page`,
  *   `console-message`, `before-input-event`, find-in-page,
  *   `-webkit-app-region: drag`, and file drops with real paths
- *   (webUtils.getPathForFile).
+ *   (webUtils.getPathForFile), and the window controls of `titleBarOverlay`
+ *   (./window-controls.js).
  */
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
@@ -20,6 +21,7 @@ import { isRenderer, report } from '../internal/runtime.js'
 import { syncRequest } from '../internal/native.js'
 import { postToMain, rendererReady, commandHandlers } from './ipc-renderer.js'
 import { registerFilePath } from './web-utils.js'
+import { installWindowControls } from './window-controls.js'
 
 installProcessShim()
 
@@ -481,6 +483,8 @@ if (isRenderer) {
   trackPageEvents()
   trackDragRegions()
   trackFileDrops()
+  // titleBarStyle 'hidden' + titleBarOverlay (Windows, Linux): minimize / maximize / close buttons.
+  if (config?.titleBarOverlay) installWindowControls(config.titleBarOverlay)
   // Like Electron, window.close() closes the BrowserWindow ('close' is still emitted).
   window.close = () => {
     getCurrentWindow().close().catch(report('window.close'))
