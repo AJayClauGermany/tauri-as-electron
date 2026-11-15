@@ -54,6 +54,8 @@ pub async fn create_window<R: Runtime>(
         .on_download(downloads::on_download)
         .on_permission_request(permissions::on_permission_request);
     let window = builder.build().map_err(|e| e.to_string())?;
+    // Screen sharing: media settings and the screen-capture hook (C9).
+    crate::display_media::attach(&app, &window, &label);
     #[cfg(any(
         target_os = "linux",
         target_os = "dragonfly",

@@ -50,6 +50,9 @@ const COMMANDS: &[&str] = &[
     "download_control",
     "download_commit",
     "download_discard",
+    "print_to_pdf",
+    "capture_page",
+    "desktop_sources",
 ];
 
 fn main() {

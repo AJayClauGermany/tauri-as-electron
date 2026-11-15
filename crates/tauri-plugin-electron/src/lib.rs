@@ -44,9 +44,12 @@ use std::{
     time::Duration,
 };
 
+mod capture;
 #[cfg(all(desktop, feature = "clipboard"))]
 mod clipboard;
 mod cookies;
+mod desktop_capturer;
+mod display_media;
 mod downloads;
 mod features;
 #[cfg(desktop)]
@@ -1533,7 +1536,10 @@ impl Builder {
                 windows::download_url,
                 windows::download_control,
                 windows::download_commit,
-                windows::download_discard
+                windows::download_discard,
+                capture::print_to_pdf,
+                capture::capture_page,
+                desktop_capturer::desktop_sources
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
