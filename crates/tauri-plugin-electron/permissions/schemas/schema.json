@@ -559,6 +559,18 @@
           "markdownDescription": "Denies the is_devtools_open command without any pre-configured scope."
         },
         {
+          "description": "Enables the keytar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-keytar",
+          "markdownDescription": "Enables the keytar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the keytar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-keytar",
+          "markdownDescription": "Denies the keytar command without any pre-configured scope."
+        },
+        {
           "description": "Enables the message_box command without any pre-configured scope.",
           "type": "string",
           "const": "allow-message-box",
@@ -787,6 +799,30 @@
           "markdownDescription": "Denies the process_info command without any pre-configured scope."
         },
         {
+          "description": "Enables the pty_attach command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pty-attach",
+          "markdownDescription": "Enables the pty_attach command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pty_attach command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pty-attach",
+          "markdownDescription": "Denies the pty_attach command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pty_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pty-control",
+          "markdownDescription": "Enables the pty_control command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pty_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pty-control",
+          "markdownDescription": "Denies the pty_control command without any pre-configured scope."
+        },
+        {
           "description": "Enables the safe_storage_decrypt command without any pre-configured scope.",
           "type": "string",
           "const": "allow-safe-storage-decrypt",
@@ -845,6 +881,18 @@
           "type": "string",
           "const": "deny-set-window-config",
           "markdownDescription": "Denies the set_window_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the sqlite command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-sqlite",
+          "markdownDescription": "Enables the sqlite command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the sqlite command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-sqlite",
+          "markdownDescription": "Denies the sqlite command without any pre-configured scope."
         },
         {
           "description": "Enables the trash_item command without any pre-configured scope.",
@@ -911,6 +959,24 @@
           "type": "string",
           "const": "default",
           "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`"
+        },
+        {
+          "description": "The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-keytar`",
+          "type": "string",
+          "const": "keytar",
+          "markdownDescription": "The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-keytar`"
+        },
+        {
+          "description": "The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-sqlite`",
+          "type": "string",
+          "const": "sqlite",
+          "markdownDescription": "The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-sqlite`"
+        },
+        {
+          "description": "The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-pty-attach`\n- `allow-pty-control`",
+          "type": "string",
+          "const": "pty",
+          "markdownDescription": "The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-pty-attach`\n- `allow-pty-control`"
         },
         {
           "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",

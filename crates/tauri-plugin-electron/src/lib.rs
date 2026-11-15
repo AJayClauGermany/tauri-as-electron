@@ -18,6 +18,9 @@
 //!   or `sandbox: false`, see `node_windows.rs`): the synchronous variants over the bridge
 //!   (`node/<module>/<op>`), the asynchronous ones over commands (`node_fs`,
 //!   `child_spawn`, `net_connect` & co.).
+//! - **npm packages with native code** that the bundler plugins alias:
+//!   keytar, better-sqlite3 / sqlite3 and node-pty (features `keytar`,
+//!   `sqlite`, `pty`; see `native_modules`), with the same callers.
 //! - **DevTools** (`webContents.openDevTools()` and friends),
 //!   **`shell.trashItem()`**, menu-bar visibility, `session.cookies`,
 //!   `clipboard.readHTML` (and the synchronous clipboard reads of Electron
@@ -51,6 +54,7 @@ mod downloads;
 mod features;
 #[cfg(desktop)]
 mod message_box;
+mod native_modules;
 #[cfg(feature = "node-child-process")]
 mod node_child_process;
 #[cfg(any(
@@ -746,6 +750,8 @@ fn handle_node<R: Runtime>(
                 );
             }
         }
+        // better-sqlite3 and node-pty's synchronous calls (features sqlite, pty).
+        "sqlite" | "pty" => native_modules::bridge(label, module, op, body, responder),
         _ => respond(responder, 404, "text/plain", Vec::new()),
     }
 }
@@ -1257,6 +1263,7 @@ static PAGE_LOADS: std::sync::LazyLock<Mutex<PageLoads>> =
     std::sync::LazyLock::new(Default::default);
 
 fn node_page_started(label: &str, url: &str) {
+    native_modules::page_started(label, url);
     #[cfg(feature = "node-fs")]
     PAGE_LOADS.lock().unwrap().started.insert(
         label.to_string(),
@@ -1266,6 +1273,7 @@ fn node_page_started(label: &str, url: &str) {
 }
 
 fn node_page_finished(label: &str, url: &str) {
+    native_modules::page_finished(label, url);
     #[cfg(feature = "node-fs")]
     {
         let stamp = {
@@ -1289,6 +1297,7 @@ fn node_page_finished(label: &str, url: &str) {
 
 /// The window closed: everything its pages opened.
 fn node_window_closed(label: &str) {
+    native_modules::window_closed(label);
     #[cfg(feature = "node-fs")]
     {
         {
@@ -1533,7 +1542,11 @@ impl Builder {
                 windows::download_url,
                 windows::download_control,
                 windows::download_commit,
-                windows::download_discard
+                windows::download_discard,
+                native_modules::keytar,
+                native_modules::sqlite,
+                native_modules::pty_attach,
+                native_modules::pty_control
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());

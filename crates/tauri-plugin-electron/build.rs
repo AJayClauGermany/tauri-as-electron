@@ -50,6 +50,10 @@ const COMMANDS: &[&str] = &[
     "download_control",
     "download_commit",
     "download_discard",
+    "keytar",
+    "sqlite",
+    "pty_attach",
+    "pty_control",
 ];
 
 fn main() {
