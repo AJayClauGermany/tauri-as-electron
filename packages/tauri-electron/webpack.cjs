@@ -34,6 +34,9 @@
  *    exists (see the Vite plugin),
  *  - rewrites `__dirname`, `__filename`, `import.meta.dirname|filename` and
  *    `fileURLToPath(import.meta.url)` in your source to project-relative paths,
+ *  - bundles the modules started with `utilityProcess.fork()` /
+ *    `child_process.fork()` for Node.js with a second compiler
+ *    (bundler/fork-webpack.cjs; see the Vite plugin),
  *  - in development (watch mode), prints the hidden main window's console in
  *    the terminal running the dev server.
  *
@@ -47,6 +50,8 @@ const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
+const forkShared = require('./bundler/fork.cjs')
+const { forkWebpackConfig, runForkBuild } = require('./bundler/fork-webpack.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -212,6 +217,7 @@ class TauriElectronPlugin {
    * @param {false|string[]} [options.schemes] Extra custom schemes for src-tauri/electron-schemes.json (see the Vite plugin).
    * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
    * @param {boolean|'auto'} [options.rendererNode='auto'] Node built-ins for nodeIntegration windows (see the Vite plugin).
+   * @param {false|string[]} [options.fork] Extra fork entry points, or `false` for none (see the Vite plugin).
    */
   constructor(options = {}) {
     if (!options.main) throw new Error(`${NAME}: the \`main\` option (your Electron main script) is required`)
@@ -309,9 +315,25 @@ class TauriElectronPlugin {
     const entry = config.entry
     config.entry = typeof entry === 'function' ? async () => rewriteEntries(await entry()) : rewriteEntries(entry ?? {})
 
+    // --- fork entry points, bundled for Node by a second compiler ------------------------------
+    const forkPlan = forkShared.forkPlan(context, options.fork, scan)
+    const forkDir = forkPlan.needed ? forkShared.forkOutDir(context, dev) : null
+    const forkManifest = forkShared.forkManifest(forkPlan, { dev, outDir: forkDir })
+    if (forkDir) {
+      const forkConfig = (watching) => forkWebpackConfig({ context, plan: forkPlan, outDir: forkDir, dev: dev || watching, config, skipLoaders: [MODULES.pathGlobalsLoader] })
+      compiler.hooks.beforeRun.tapPromise(NAME, () => runForkBuild(bundler, forkConfig(false)))
+      let forkWatching = null
+      compiler.hooks.watchRun.tapPromise(NAME, async () => {
+        forkWatching ??= await runForkBuild(bundler, forkConfig(true), { watch: true })
+      })
+      compiler.hooks.watchClose.tap(NAME, () => forkWatching?.close(() => {}))
+    } else if (forkPlan.needed) {
+      console.warn(`${NAME}: the app forks Node.js children, but src-tauri/electron-resources/ (mapped in tauri.conf.json "bundle.resources") is missing, so their modules are not shipped`)
+    }
+
     // --- renderer pages from `pages` (Electron Forge entry points) ---------------------------
-    // Where the app's own files are, for fs (read by bundler/main-node.js).
-    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appFilesConfig(context, { dev, sessionPreloads: libraryPreloads })) }
+    // Where the app's own files are, for fs (read by bundler/main-node.js), and the fork entries.
+    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify({ ...appFilesConfig(context, { dev, sessionPreloads: libraryPreloads }), ...(forkManifest ? { fork: forkManifest } : {}) }) }
     const pageFile = (page) => page.filename ?? `${page.name}/index.html`
     for (const page of pages) {
       if (options.forgeGlobals !== false) {

@@ -35,12 +35,18 @@
  *  - writes the custom schemes the app passes to `protocol.handle()` (and
  *    `registerSchemesAsPrivileged`) to `src-tauri/electron-schemes.json`,
  *    where `tauri_plugin_electron::bundled_schemes!()` reads them at build time,
+ *  - bundles the modules the app starts with `utilityProcess.fork()` /
+ *    `child_process.fork()` for Node.js (bundler/fork.cjs), with the child
+ *    bootstrap, into `node_modules/.tauri-electron/fork` (dev, rebuilt on
+ *    change) or `src-tauri/electron-resources/fork` (build),
  *  - in dev, forwards the hidden main window's console to the terminal (the
  *    window has no visible devtools; Electron devs expect main logs there).
  */
 import fs from 'node:fs'
 import path from 'node:path'
 import shared from './bundler/shared.cjs'
+import forkShared from './bundler/fork.cjs'
+import { buildForks } from './bundler/fork-vite.js'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
 const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = shared
@@ -131,6 +137,9 @@ function virtualSrc(id, isDev) {
  * @param {boolean|'auto'} [options.rendererNode='auto'] Load the Node layer in renderer pages, for
  *   windows created with `nodeIntegration: true` or `sandbox: false` (installed only in those).
  *   `'auto'`: when the app depends on Electron < 20 or its sources mention either option.
+ * @param {false|string[]} [options.fork] Modules started with `utilityProcess.fork()` /
+ *   `child_process.fork()` that the source scan cannot find (project-relative files), or
+ *   `false` to build none. Found: `fork(path.join(__dirname, 'worker.js'))` and similar static paths.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -145,6 +154,9 @@ export default function tauriElectron(options = {}) {
   let outDir = 'dist'
   let libraryPreloads = []
   let withRendererNode = false
+  let forkPlan = { entries: [], needed: false }
+  let forkDir = null
+  let forkWatcher = null
 
   return {
     name: 'tauri-electron',
@@ -200,15 +212,30 @@ export default function tauriElectron(options = {}) {
       // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
       const schemes = writeSchemes(root, options.schemes, scan)
       if (schemes?.length) resolved.logger?.info?.(`tauri-electron: custom schemes ${schemes.join(', ')} (src-tauri/electron-schemes.json)`)
+      // Fork entry points, bundled for Node.
+      forkPlan = forkShared.forkPlan(root, options.fork, scan)
+      forkDir = forkPlan.needed ? forkShared.forkOutDir(root, isDev) : null
+      if (forkPlan.needed && !forkDir) {
+        resolved.logger?.warn?.('tauri-electron: the app forks Node.js children, but src-tauri/electron-resources/ (mapped in tauri.conf.json "bundle.resources") is missing, so their modules are not shipped')
+      }
     },
 
-    buildStart() {
+    async buildStart() {
       if (isDev) return
       const staged = stageAppFiles(root, { resources: options.resources, exclude: [outDir] })
       if (staged !== null) this.info?.(`staged ${staged} app file(s) for fs in src-tauri/electron-resources/app`)
+      if (forkDir) {
+        await buildForks({ root, plan: forkPlan, outDir: forkDir, dev: false })
+        this.info?.(`built ${forkPlan.entries.length} fork entr${forkPlan.entries.length === 1 ? 'y' : 'ies'} for Node.js in ${path.relative(root, forkDir)}`)
+      }
     },
 
-    configureServer(server) {
+    async configureServer(server) {
+      // Fork entries are rebuilt on change; the first build is there before the app starts.
+      if (forkDir && !forkWatcher) {
+        forkWatcher = await buildForks({ root, plan: forkPlan, outDir: forkDir, dev: true, watch: true })
+        server.httpServer?.once('close', () => forkWatcher?.close())
+      }
       if (options.forwardMainConsole === false) return
       const colors = { error: '\x1b[31m', warn: '\x1b[33m' }
       server.middlewares.use(LOG_ENDPOINT, (req, res) => {
@@ -257,7 +284,8 @@ export default function tauriElectron(options = {}) {
       if (name === VIRTUAL.main) {
         lines.push(`import 'tauri-electron/node'`)
         if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
-        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
+        const fork = forkShared.forkManifest(forkPlan, { dev: isDev, outDir: forkDir })
+        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify({ ...appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }), ...(fork ? { fork } : {}) })}`)
       }
       if (name === VIRTUAL.rendererNode) {
         lines.push(`import { hasNode } from 'tauri-electron/renderer-node'`)

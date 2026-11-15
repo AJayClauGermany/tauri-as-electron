@@ -9,6 +9,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { forkEntriesInSource, mentionsFork } = require('./fork.cjs')
 
 /** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
 const NODE_BUILTINS = [
@@ -108,11 +109,15 @@ function mentionsRequire(code) {
   return code.includes('require(')
 }
 
-/** Replace `__dirname` & co. in `code` with the given project-relative paths. */
-function rewritePathGlobals(code, dirname, filename) {
+/**
+ * Replace `__dirname` & co. in `code` with the given project-relative paths
+ * (`toCode` turns a path into the code that replaces them: a string literal,
+ * or an expression for code that runs in a forked Node.js).
+ */
+function rewritePathGlobals(code, dirname, filename, toCode = JSON.stringify) {
   return code.replace(PATH_GLOBALS, (match, skipped, legacy, meta) => {
     if (skipped) return match
-    return JSON.stringify((legacy ?? meta) === 'dirname' ? dirname : filename)
+    return toCode((legacy ?? meta) === 'dirname' ? dirname : filename)
   })
 }
 
@@ -376,7 +381,8 @@ function schemesInSource(code) {
  * `writeSchemes`, which walk only if they need to.
  */
 function scanSources(root) {
-  const result = { node: false, schemes: new Set() }
+  // forks: fork entry points (project path → source file), forkCalls: whether anything forks (bundler/fork.cjs).
+  const result = { node: false, schemes: new Set(), forks: new Map(), forkCalls: false }
   let seen = 0
   let dirs = 0
   const visit = (dir, depth) => {
@@ -402,6 +408,8 @@ function scanSources(root) {
           const code = fs.readFileSync(full, 'utf8')
           if (!result.node && SCANNED_SOURCE.test(entry.name) && NODE_WINDOW.test(code)) result.node = true
           for (const scheme of schemesInSource(code)) result.schemes.add(scheme)
+          if (mentionsFork(code)) result.forkCalls = true
+          for (const fork of forkEntriesInSource(code, full, root)) result.forks.set(fork.key, fork.file)
         } catch {
           /* unreadable: skip */
         }

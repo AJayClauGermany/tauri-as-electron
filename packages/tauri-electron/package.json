@@ -64,6 +64,9 @@
     "./remote/renderer": "./src/remote/renderer.js",
     "./remote/main": "./src/remote/main.js"
   },
+  "bin": {
+    "tauri-electron-node-sidecar": "./bundler/node-sidecar.mjs"
+  },
   "files": [
     "src",
     "vite.js",
