@@ -8,6 +8,9 @@
 //   npm run smoke -- --electron   # run the same app on real Electron instead
 //                                 # (uses $ELECTRON_PATH or `npx electron`)
 //
+// $KITCHEN_SMOKE_BINARY runs that kitchen-sink binary instead of the one in
+// Cargo's target directory (with --no-build: a copy kept from an earlier build).
+//
 // Exit code is 1 if any check *failed*; "unsupported" checks are expected.
 // On Linux without a display it uses `xvfb-run` when available.
 import { spawn, execFileSync } from 'node:child_process'
@@ -32,6 +35,7 @@ function run(command, commandArgs, options = {}) {
 }
 
 function binaryPath() {
+  if (process.env.KITCHEN_SMOKE_BINARY) return path.resolve(process.env.KITCHEN_SMOKE_BINARY)
   const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps'], { cwd: path.join(root, 'src-tauri') }))
   const exe = process.platform === 'win32' ? 'kitchen-sink.exe' : 'kitchen-sink'
   return path.join(metadata.target_directory, 'debug', exe)
