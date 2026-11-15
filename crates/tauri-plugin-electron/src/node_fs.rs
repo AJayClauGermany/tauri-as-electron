@@ -1101,7 +1101,12 @@ mod tests {
         let path = display(dir.join("owned.txt"));
         let flags = json!({ "write": true, "create": true });
         let open = |owner: &str| {
-            json_of(run_for(owner, "open", &json!({ "path": path, "flags": flags }), &[]))
+            json_of(run_for(
+                owner,
+                "open",
+                &json!({ "path": path, "flags": flags }),
+                &[],
+            ))
         };
         let old = open("page-test");
         let other = open("other-test");
