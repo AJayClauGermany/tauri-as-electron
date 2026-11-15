@@ -98,8 +98,8 @@ permissions, like the window's own page. Views are never put in the
 `child-webviews` is opt-in because it needs Tauri's `unstable` feature: its
 API may change in minor Tauri releases, and it puts every window in Tauri's
 multi-webview mode (each window's own webview becomes a child webview sized
-to the window; on Linux, frameless windows then lose Tauri's edge-resize
-handles).
+to the window; on Linux this crate re-attaches the edge-resize handles of
+frameless windows, which Tauri gives only to a window's sole webview).
 
 Add capability files in `src-tauri/capabilities/` for anything more, or call
 `.default_capabilities(false)` to manage every permission yourself.

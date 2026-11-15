@@ -72,9 +72,9 @@ macos-proxy = ["tauri/macos-proxy"]
 # five of the surveyed chat apps are built on it: it needs Tauri's `unstable`
 # feature, whose API may change in minor Tauri releases and which puts every
 # window in Tauri's multi-webview mode (each window's own webview becomes a
-# child webview sized to the window; on Linux, frameless windows then lose
-# Tauri's edge-resize handles). On Linux it also uses gtk (already in the build
-# through Tauri) to lay views over the window's webview.
+# child webview sized to the window, a mode with fewer users than the
+# default). On Linux it also uses gtk (already in the build through Tauri) to
+# lay views over the window's webview and to keep frameless windows resizable.
 child-webviews = ["tauri/unstable", "dep:gtk"]
 
 # --- Node built-ins backed by Rust ---------------------------------------------------

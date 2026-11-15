@@ -68,6 +68,9 @@ pub async fn create_window<R: Runtime>(
                 let view = webview.inner();
                 downloads::gtk::attach(&handle, &view, &label);
                 permissions::gtk::attach(&handle, &view, &label);
+                // Multi-webview mode drops Tauri's own edge-resize handles.
+                #[cfg(feature = "child-webviews")]
+                crate::views::gtk_overlay::attach_resize_handles(&view);
             })
             .map_err(|e| e.to_string())?;
     }

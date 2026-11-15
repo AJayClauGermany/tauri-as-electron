@@ -935,4 +935,83 @@ pub mod gtk_overlay {
     pub fn forget(label: &str) {
         PLACED.with(|placed| placed.borrow_mut().remove(label));
     }
+
+    /// Edge resizing of a frameless window through its webview. In
+    /// multi-webview mode (Tauri's `unstable`) tauri-runtime-wry no longer
+    /// gives a window's own webview these handles; adapted from its
+    /// `undecorated_resizing` (Apache-2.0 / MIT).
+    pub fn attach_resize_handles(view: &WebView) {
+        use gtk::{
+            gdk::{EventMask, WindowEdge},
+            glib::Propagation,
+        };
+        const INSET: i32 = 5;
+        fn edge(view: &WebView, (root_x, root_y): (f64, f64)) -> Option<(gtk::Window, WindowEdge)> {
+            let window = view.toplevel()?.downcast::<gtk::Window>().ok()?;
+            if window.is_decorated() || !window.is_resizable() || window.is_maximized() {
+                return None;
+            }
+            let surface = window.window()?;
+            let (left, top) = surface.position();
+            let (x, y) = (root_x - left as f64, root_y - top as f64);
+            let border = (surface.scale_factor() * INSET) as f64;
+            let (width, height) = (surface.width() as f64, surface.height() as f64);
+            let edge = match (
+                x < border,
+                x >= width - border,
+                y < border,
+                y >= height - border,
+            ) {
+                (true, false, true, false) => WindowEdge::NorthWest,
+                (false, true, true, false) => WindowEdge::NorthEast,
+                (true, false, false, true) => WindowEdge::SouthWest,
+                (false, true, false, true) => WindowEdge::SouthEast,
+                (true, false, false, false) => WindowEdge::West,
+                (false, true, false, false) => WindowEdge::East,
+                (false, false, true, false) => WindowEdge::North,
+                (false, false, false, true) => WindowEdge::South,
+                _ => return None,
+            };
+            Some((window, edge))
+        }
+        fn cursor(edge: WindowEdge) -> gtk::gdk::CursorType {
+            use gtk::gdk::CursorType;
+            match edge {
+                WindowEdge::NorthWest => CursorType::TopLeftCorner,
+                WindowEdge::NorthEast => CursorType::TopRightCorner,
+                WindowEdge::SouthWest => CursorType::BottomLeftCorner,
+                WindowEdge::SouthEast => CursorType::BottomRightCorner,
+                WindowEdge::West => CursorType::LeftSide,
+                WindowEdge::East => CursorType::RightSide,
+                WindowEdge::North => CursorType::TopSide,
+                _ => CursorType::BottomSide,
+            }
+        }
+        view.add_events(
+            EventMask::POINTER_MOTION_MASK
+                | EventMask::BUTTON1_MOTION_MASK
+                | EventMask::BUTTON_PRESS_MASK,
+        );
+        view.connect_motion_notify_event(|view, event| {
+            let Some((_, edge)) = edge(view, event.root()) else {
+                return Propagation::Proceed;
+            };
+            if let Some(surface) = view.window() {
+                let cursor = gtk::gdk::Cursor::for_display(&surface.display(), cursor(edge));
+                surface.set_cursor(cursor.as_ref());
+            }
+            Propagation::Stop
+        });
+        view.connect_button_press_event(|view, event| {
+            if event.button() != 1 {
+                return Propagation::Proceed;
+            }
+            let Some((window, edge)) = edge(view, event.root()) else {
+                return Propagation::Proceed;
+            };
+            let (x, y) = event.root();
+            window.begin_resize_drag(edge, 1, x as i32, y as i32, event.time());
+            Propagation::Stop
+        });
+    }
 }
