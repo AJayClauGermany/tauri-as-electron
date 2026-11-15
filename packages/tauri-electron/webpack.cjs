@@ -46,7 +46,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, scanSources } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -271,7 +271,9 @@ class TauriElectronPlugin {
     }
     // Library preloads (electron-log, …): session preloads, which Electron runs before the window's own.
     const libraryPreloads = sessionPreloads(context, options.sessionPreloads)
-    const withRendererNode = rendererNode(context, options.rendererNode)
+    // One walk over the project's sources for both the Node check and the schemes.
+    const scan = typeof options.rendererNode === 'boolean' && options.schemes === false ? undefined : scanSources(context)
+    const withRendererNode = rendererNode(context, options.rendererNode, scan)
     const rendererPrefix = (name, page) => [
       ...(withRequire ? [MODULES.require] : []),
       MODULES.bootstrap,
@@ -338,7 +340,7 @@ class TauriElectronPlugin {
     new bundler.DefinePlugin(definitions).apply(compiler)
 
     // --- custom schemes for tauri-plugin-electron (src-tauri/electron-schemes.json) ------------
-    writeSchemes(context, options.schemes)
+    writeSchemes(context, options.schemes, scan)
 
     // --- app files for fs, in production builds -------------------------------------------------
     if (!dev) {

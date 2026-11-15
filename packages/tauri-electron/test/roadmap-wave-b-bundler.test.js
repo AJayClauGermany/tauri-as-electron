@@ -126,6 +126,18 @@ describe('electron-updater', () => {
     expect(await autoUpdater.checkForUpdates()).not.toBeNull()
   })
 
+  it('rejects a failed download without an error listener instead of hanging', async () => {
+    const autoUpdater = new updater.AppUpdater()
+    autoUpdater.logger = null
+    autoUpdater.autoDownload = false
+    state.update = { ...fakeUpdate(), download: async () => { throw new Error('signature mismatch') } }
+    await autoUpdater.checkForUpdates()
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await expect(autoUpdater.downloadUpdate()).rejects.toThrow('signature mismatch')
+    await expect(new updater.AppUpdater().downloadUpdate()).rejects.toThrow('Please check update first')
+    spy.mockRestore()
+  })
+
   it('emits error when the updater feature is off', async () => {
     state.features = []
     const autoUpdater = new updater.AppUpdater()

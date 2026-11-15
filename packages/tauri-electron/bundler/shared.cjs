@@ -242,35 +242,11 @@ function electronMajor(root) {
 /** `nodeIntegration: true` or `sandbox: false` in a BrowserWindow's webPreferences. */
 const NODE_WINDOW = /\bnodeIntegration\s*:\s*(?:true|!0)\b|\bsandbox\s*:\s*(?:false|!1)\b/
 const SCANNED_SOURCE = /\.(?:[cm]?[jt]sx?)$/i
-const SCAN_LIMIT = 5000
+const SCAN_LIMIT = 20000
 
 /** Whether a project source file (outside dependencies and build output) asks for Node in a window. */
-function sourcesAskForNode(root) {
-  let seen = 0
-  const visit = (dir) => {
-    let names
-    try {
-      names = fs.readdirSync(dir, { withFileTypes: true })
-    } catch {
-      return false
-    }
-    for (const entry of names) {
-      if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
-      const full = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        if (visit(full)) return true
-      } else if (SCANNED_SOURCE.test(entry.name)) {
-        if (++seen > SCAN_LIMIT) return false
-        try {
-          if (fs.statSync(full).size < 2_000_000 && NODE_WINDOW.test(fs.readFileSync(full, 'utf8'))) return true
-        } catch {
-          /* unreadable: skip */
-        }
-      }
-    }
-    return false
-  }
-  return visit(root)
+function sourcesAskForNode(root, scan) {
+  return (scan ?? scanSources(root)).node
 }
 
 /**
@@ -281,11 +257,11 @@ function sourcesAskForNode(root) {
  * depends on Electron < 20 (unsandboxed preloads by default) or its sources
  * mention `nodeIntegration: true` / `sandbox: false`.
  */
-function rendererNode(root, option = 'auto') {
+function rendererNode(root, option = 'auto', scan) {
   if (option === true || option === false) return option
   const electron = electronMajor(root)
   if (electron !== null && electron < 20) return true
-  return sourcesAskForNode(root)
+  return sourcesAskForNode(root, scan)
 }
 
 /** Where the bundler plugins stage app files; tauri.conf.json maps it to the resource folder. */
@@ -392,27 +368,42 @@ function schemesInSource(code) {
   return found
 }
 
-function scanForSchemes(dir, found, depth = 0) {
-  let names
-  try {
-    names = fs.readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return
-  }
-  for (const entry of names) {
-    if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      if (depth < 12) scanForSchemes(full, found, depth + 1)
-    } else if (SCHEME_SOURCE.test(entry.name)) {
-      try {
-        if (fs.statSync(full).size > 4 * 1024 * 1024) continue
-        for (const scheme of schemesInSource(fs.readFileSync(full, 'utf8'))) found.add(scheme)
-      } catch {
-        /* unreadable: skip */
+/**
+ * One walk over the project's own sources (outside dependencies, `src-tauri`
+ * and build output) for what the plugins look for: whether a window asks for
+ * Node (`node`) and the custom schemes passed to `protocol` (`schemes`).
+ * The plugins make one and pass it to `rendererNode` and `writeSchemes`.
+ */
+function scanSources(root) {
+  const result = { node: false, schemes: new Set() }
+  let seen = 0
+  const visit = (dir, depth) => {
+    let names
+    try {
+      names = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of names) {
+      if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (depth < 12) visit(full, depth + 1)
+      } else if (SCHEME_SOURCE.test(entry.name)) {
+        if (++seen > SCAN_LIMIT) return
+        try {
+          if (fs.statSync(full).size > 4 * 1024 * 1024) continue
+          const code = fs.readFileSync(full, 'utf8')
+          if (!result.node && SCANNED_SOURCE.test(entry.name) && NODE_WINDOW.test(code)) result.node = true
+          for (const scheme of schemesInSource(code)) result.schemes.add(scheme)
+        } catch {
+          /* unreadable: skip */
+        }
       }
     }
   }
+  visit(root, 0)
+  return result
 }
 
 /**
@@ -421,10 +412,9 @@ function scanForSchemes(dir, found, depth = 0) {
  * depends on, and `extra` (the plugins' `schemes` option; `false` turns
  * the collection off). Sorted, lower case, reserved schemes left out.
  */
-function collectSchemes(root, extra) {
+function collectSchemes(root, extra, scan) {
   if (extra === false) return []
-  const found = new Set()
-  scanForSchemes(root, found)
+  const found = new Set((scan ?? scanSources(root)).schemes)
   const pkg = readPackageJson(root)
   const deps = { ...pkg.optionalDependencies, ...pkg.devDependencies, ...pkg.dependencies }
   for (const [name, schemes] of Object.entries(LIBRARY_SCHEMES)) if (deps[name]) schemes.forEach((s) => found.add(s))
@@ -438,9 +428,9 @@ function collectSchemes(root, extra) {
  * does not rebuild for nothing). Returns the schemes, or null when nothing
  * was written.
  */
-function writeSchemes(root, extra) {
+function writeSchemes(root, extra, scan) {
   if (extra === false || !fs.existsSync(path.join(root, 'src-tauri'))) return null
-  const schemes = collectSchemes(root, extra)
+  const schemes = collectSchemes(root, extra, scan)
   const file = path.join(root, SCHEMES_FILE)
   const text = JSON.stringify(schemes) + '\n'
   let current = null
@@ -454,6 +444,7 @@ function writeSchemes(root, extra) {
 }
 
 module.exports = {
+  scanSources,
   NODE_BUILTINS,
   NODE_SHIMS,
   PACKAGE_SHIMS,

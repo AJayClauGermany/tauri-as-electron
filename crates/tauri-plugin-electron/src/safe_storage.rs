@@ -21,7 +21,7 @@ use std::{
         Arc, Condvar, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use aes_gcm::{
@@ -32,6 +32,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::{json, Value};
 
 const KEY_TIMEOUT: Duration = Duration::from_secs(10);
+const RETRY_AFTER: Duration = Duration::from_secs(30);
 const TAG_KEYCHAIN: &[u8; 4] = b"tev1";
 const TAG_PLAIN: &[u8; 4] = b"tev0";
 /// The `basic_text` key: public, like Chromium's "peanuts".
@@ -43,6 +44,9 @@ type KeyResult = Result<[u8; 32], String>;
 struct KeySlot {
     started: bool,
     result: Option<KeyResult>,
+    /// When the keychain last failed: it is asked again after `RETRY_AFTER`
+    /// (a prompt was dismissed, or the keyring was still locked at login).
+    failed_at: Option<Instant>,
 }
 
 /// Plugin state: the keychain key once known, and the plaintext switch.
@@ -67,6 +71,13 @@ impl SafeStorage {
     fn key(&self) -> KeyResult {
         let (lock, ready) = &*self.slot;
         let mut slot = lock.lock().unwrap();
+        if matches!(slot.result, Some(Err(_)))
+            && slot.failed_at.is_some_and(|at| at.elapsed() >= RETRY_AFTER)
+        {
+            slot.started = false;
+            slot.result = None;
+            slot.failed_at = None;
+        }
         if !slot.started {
             slot.started = true;
             let shared = self.slot.clone();
@@ -74,7 +85,12 @@ impl SafeStorage {
             thread::spawn(move || {
                 let result = load_or_create_key(&service, &account);
                 let (lock, ready) = &*shared;
-                lock.lock().unwrap().result = Some(result);
+                let mut slot = lock.lock().unwrap();
+                if result.is_err() {
+                    slot.failed_at = Some(Instant::now());
+                }
+                slot.result = Some(result);
+                drop(slot);
                 ready.notify_all();
             });
         }
@@ -201,6 +217,7 @@ mod tests {
         *storage.slot.0.lock().unwrap() = KeySlot {
             started: true,
             result: Some(key),
+            failed_at: None,
         };
         storage
     }

@@ -30,6 +30,7 @@ async function ensurePermission() {
 }
 
 /** Shown notifications that can still report something, by id. */
+const MAX_LIVE = 200
 const live = new Map()
 // Ids are i32 in Rust; start at a random offset so a reloaded main process does not reuse them.
 let nextId = 1 + Math.floor(Math.random() * 1e6) * 1000
@@ -105,7 +106,11 @@ export class Notification extends EventEmitter {
         const body = [this.subtitle, this.body].filter(Boolean).join('\n')
         if (nativeBackend) {
           this._id ??= nextId++
+          live.delete(this._id)
           live.set(this._id, this)
+          // Only Linux reports 'close', so elsewhere entries would never leave:
+          // keep the most recent ones (older notifications are long gone from the screen).
+          while (live.size > MAX_LIVE) live.delete(live.keys().next().value)
           await listenForNative()
           await native('notification_show', {
             options: { id: this._id, title: this.title, body, icon: this.icon, silent: this.silent, actions: this._buttons() },

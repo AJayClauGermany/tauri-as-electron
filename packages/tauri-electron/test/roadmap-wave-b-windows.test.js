@@ -152,7 +152,7 @@ describe('downloads', () => {
 describe('permission requests', () => {
   it('grants without a handler, as Electron does', async () => {
     onPermissionRequest({ id: 3, label: 'x', permission: 'geolocation', url: 'https://a.test/p' })
-    expect(state.commands).toEqual([{ command: 'permission_respond', args: { id: 3, label: 'x', url: 'https://a.test/p', permission: 'geolocation', granted: true } }])
+    expect(state.commands).toEqual([{ command: 'permission_respond', args: { id: 3, label: 'x', url: 'https://a.test/p', permission: 'geolocation', mediaTypes: [], granted: true } }])
   })
 
   it('runs the session handler and answers with its (possibly late) callback', async () => {
@@ -167,7 +167,7 @@ describe('permission requests', () => {
     expect(state.commands).toEqual([])
     answer(false)
     answer(true)
-    expect(state.commands).toEqual([{ command: 'permission_respond', args: { id: 4, label: 'x', url: 'https://a.test/p', permission: 'media', granted: false } }])
+    expect(state.commands).toEqual([{ command: 'permission_respond', args: { id: 4, label: 'x', url: 'https://a.test/p', permission: 'media', mediaTypes: ['audio'], granted: false } }])
     session.defaultSession._handlers.permissionRequest = null
   })
 })
@@ -206,5 +206,12 @@ describe('setProxy', () => {
     await session.defaultSession.setProxy({})
     await netFetch('https://example.com/')
     expect(httpFetch).toHaveBeenLastCalledWith('https://example.com/', undefined)
+  })
+
+  it("a partition's fetch does not take the default session's proxy", async () => {
+    await session.defaultSession.setProxy({ proxyRules: 'd.test:1' })
+    await session.fromPartition('persist:no-proxy').fetch('https://example.com/', { method: 'GET' })
+    expect(httpFetch).toHaveBeenLastCalledWith('https://example.com/', { method: 'GET' })
+    await session.defaultSession.setProxy({})
   })
 })

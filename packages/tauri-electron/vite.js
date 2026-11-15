@@ -43,7 +43,7 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, scanSources } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -192,11 +192,14 @@ export default function tauriElectron(options = {}) {
     configResolved(resolved) {
       root = resolved.root
       libraryPreloads = sessionPreloads(root, options.sessionPreloads)
-      withRendererNode = rendererNode(root, options.rendererNode)
+      // One walk over the project's sources for both the Node check and the schemes.
+      const fixedNode = typeof options.rendererNode === 'boolean'
+      const scan = fixedNode && options.schemes === false ? undefined : scanSources(root)
+      withRendererNode = rendererNode(root, options.rendererNode, scan)
       isDev = resolved.command === 'serve'
       outDir = resolved.build?.outDir ?? 'dist'
       // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
-      const schemes = writeSchemes(root, options.schemes)
+      const schemes = writeSchemes(root, options.schemes, scan)
       if (schemes?.length) resolved.logger?.info?.(`tauri-electron: custom schemes ${schemes.join(', ')} (src-tauri/electron-schemes.json)`)
     },
 

@@ -226,7 +226,9 @@ export class AppUpdater extends EventEmitter {
 
   _error(error) {
     const err = error instanceof Error ? error : new Error(String(error))
-    this.emit('error', err, err.stack ?? err.message)
+    // Without an 'error' listener, emit() throws: log instead, so callers can still reject with it.
+    if (this.listenerCount('error') > 0) this.emit('error', err, err.stack ?? err.message)
+    else (this.logger?.error ?? console.error).call(this.logger ?? console, `Error: ${err.stack ?? err.message}`)
     return err
   }
 

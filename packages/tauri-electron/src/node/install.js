@@ -7,6 +7,7 @@
  * through ../renderer/node.js.
  */
 import fs from './fs.js'
+import processShim from '../process.js'
 import fsPromises from './fs-promises.js'
 import buffer, { Buffer } from './buffer.js'
 import util from './util.js'
@@ -86,6 +87,8 @@ export const nodeModules = {
   'dns/promises': dnsPromises,
 }
 
+const NODE_VERSION = '22.0.0'
+
 let installed = false
 
 /**
@@ -102,4 +105,11 @@ export function installNodeLayer({ timers: nodeTimers = true } = {}) {
   if (nodeTimers) installTimerGlobals(globalThis)
   else if (typeof globalThis.setImmediate !== 'function') Object.assign(globalThis, { setImmediate, clearImmediate })
   if (typeof globalThis.Buffer === 'undefined') globalThis.Buffer = Buffer
+  // The Node API level the shims follow. Libraries parse it (readdirp 3,
+  // under chokidar 3, at import time); only pages with the Node layer get it.
+  // (globalThis.process is this shim in a webview; under real Node it is left alone.)
+  if (!processShim.versions.node) {
+    processShim.versions.node = NODE_VERSION
+    processShim.version = `v${NODE_VERSION}`
+  }
 }

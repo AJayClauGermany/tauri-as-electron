@@ -647,14 +647,16 @@ fn handle_node<R: Runtime>(
                 // fs.watch: the watcher exists when fs.watch() returns. Off
                 // the main thread: a recursive watch walks the whole tree.
                 if op == "watch" {
-                    thread::spawn(move || match node_fs_watch::watch(&args) {
+                    let owner = label.to_string();
+                    thread::spawn(move || match node_fs_watch::watch(&owner, &args) {
                         Ok(value) => respond_json(responder, 200, &value),
                         Err(error) => respond_json(responder, 400, &json!(error)),
                     });
                     return;
                 }
                 let op = op.to_string();
-                thread::spawn(move || match node_fs::run(&op, &args, &body) {
+                let owner = label.to_string();
+                thread::spawn(move || match node_fs::run_for(&owner, &op, &args, &body) {
                     Ok(node_fs::Output::Bytes(bytes)) => {
                         respond(responder, 200, "application/octet-stream", bytes)
                     }
@@ -1179,9 +1181,10 @@ async fn node_fs<R: Runtime>(
             );
         };
         let body = body.clone();
+        let owner = webview.label().to_string();
         let result = tauri::async_runtime::spawn_blocking(move || {
             let (op, args, data) = node_fs::parse_frame(&body)?;
-            node_fs::run(&op, &args, data)
+            node_fs::run_for(&owner, &op, &args, data)
         })
         .await
         .map_err(|e| json!({ "code": "ERR_INTERNAL", "message": e.to_string() }))?;
@@ -1212,7 +1215,7 @@ fn fs_watch<R: Runtime>(
         return Err(refusal);
     }
     #[cfg(feature = "node-fs")]
-    return Ok(node_fs_watch::attach(id, on_event));
+    return Ok(node_fs_watch::attach(webview.label(), id, on_event));
     #[cfg(not(feature = "node-fs"))]
     {
         let _ = (id, on_event);
@@ -1222,14 +1225,28 @@ fn fs_watch<R: Runtime>(
 
 /// `watcher.close()`.
 #[tauri::command]
-fn fs_unwatch(id: u32) -> bool {
+fn fs_unwatch<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<bool, Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
     #[cfg(feature = "node-fs")]
-    return node_fs_watch::unwatch(id);
+    return Ok(node_fs_watch::unwatch(webview.label(), id));
     #[cfg(not(feature = "node-fs"))]
     {
         let _ = id;
-        false
+        Ok(false)
     }
+}
+
+/// Close the files and watchers a page opened: it reloaded or its window
+/// closed, and a restarted Node process starts with none.
+fn close_node_resources(label: &str) {
+    #[cfg(feature = "node-fs")]
+    {
+        node_fs::close_owned(label);
+        node_fs_watch::close_owned(label);
+    }
+    let _ = label;
 }
 
 // safeStorage's asynchronous variants (and isAsyncEncryptionAvailable): the
@@ -1493,14 +1510,12 @@ impl Builder {
             // Navigation events for every window, including remote pages that
             // the renderer bootstrap cannot run in.
             .on_page_load(|webview, payload| {
+                // A reloaded page (the main process, or a window with Node)
+                // starts with no open files, as a restarted Node would.
+                if matches!(payload.event(), PageLoadEvent::Started) {
+                    close_node_resources(webview.label());
+                }
                 if webview.label() == MAIN_LABEL {
-                    // A reloaded main process starts with no open files, as a
-                    // restarted Node would: close what the previous page left open.
-                    #[cfg(feature = "node-fs")]
-                    if matches!(payload.event(), PageLoadEvent::Started) {
-                        node_fs::close_all();
-                        node_fs_watch::close_all();
-                    }
                     return;
                 }
                 // The origin permission decisions are kept for (Windows / macOS).
@@ -1527,6 +1542,11 @@ impl Builder {
                     let urls: Vec<String> = urls.iter().map(|u| u.to_string()).collect();
                     let _ = app.emit_to(MAIN_LABEL, "tauri-electron:opened", urls);
                 }
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } => close_node_resources(label),
                 _ => {
                     let _ = app;
                 }

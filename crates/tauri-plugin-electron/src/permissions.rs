@@ -87,6 +87,17 @@ impl Permissions {
     }
 }
 
+/// What a remembered decision is for: the permission and, for `media`, the
+/// device types (a camera grant must not answer for the microphone).
+pub fn decision_key(permission: &str, media: &[&str]) -> String {
+    if media.is_empty() {
+        return permission.to_string();
+    }
+    let mut media = media.to_vec();
+    media.sort_unstable();
+    format!("{permission}:{}", media.join(","))
+}
+
 #[allow(dead_code)]
 fn origin(url: &str) -> String {
     tauri::Url::parse(url)
@@ -164,7 +175,7 @@ pub fn on_permission_request<R: Runtime>(
         .get(&label)
         .cloned()
         .unwrap_or_default();
-    let key = (label.clone(), origin(&url), permission.to_string());
+    let key = (label.clone(), origin(&url), decision_key(permission, media));
     if let Some(granted) = state.decisions.lock().unwrap().get(&key).copied() {
         return if granted {
             PermissionResponse::Allow

@@ -14,7 +14,7 @@ import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { NotImplementedError, MAIN_LABEL, report, warnOnce } from '../internal/runtime.js'
 import { native, hasNativePlugin } from '../internal/native.js'
 import { platform } from '../process.js'
-import { netFetch, setDefaultProxy } from './net.js'
+import { netFetch, setDefaultProxy, OWN_PROXY } from './net.js'
 import { protocol } from './protocol.js'
 import { BrowserWindow, webContentsFromLabel } from './browser-window.js'
 import { dialog } from './dialog.js'
@@ -278,6 +278,7 @@ export class Session extends EventEmitter {
   /** Applies to windows created afterwards (Tauri sets a webview's proxy at creation) and to fetch(). */
   setProxy(config) {
     this._proxy = parseProxyConfig(config)
+    this._proxyConfigured = true
     if (this === defaultSession) setDefaultProxy(this._proxy?.url ?? null)
     if (BrowserWindow.getAllWindows().some((win) => win.webContents.session === this)) {
       warnOnce('setProxy-existing', 'session.setProxy() applies to windows created afterwards: Tauri sets a webview\'s proxy when it is created.')
@@ -294,7 +295,11 @@ export class Session extends EventEmitter {
   setSSLConfig() {}
   enableNetworkEmulation() {}
   disableNetworkEmulation() {}
-  fetch(input, init) { return netFetch(input, this._proxy && init?.proxy === undefined ? { ...init, proxy: { all: this._proxy.url } } : init) }
+  // Each session uses its own proxy settings only (the default session's are applied by netFetch).
+  fetch(input, init) {
+    if (this === defaultSession) return netFetch(input, init)
+    return netFetch(input, { ...init, [OWN_PROXY]: true, ...(this._proxy && init?.proxy === undefined ? { proxy: { all: this._proxy.url } } : {}) })
+  }
 
   /**
    * Tauri clears everything a webview stored (cookies, storage, cache) - the

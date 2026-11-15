@@ -182,7 +182,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `proxy_url` when windows are created (with B6's Rust-side creation);
   `resolveProxy` then reports the configured proxy. *Apps 4.* Effort S
   after B6.
-  *Done: one http:// or socks5:// proxy from `proxyRules` (`proxyUrl` at window creation) for windows created afterwards and `net.fetch` / `session.fetch`; `resolveProxy` reports it. No PAC / auto-detect / bypass rules; macOS needs the new `macos-proxy` feature (macOS 14+).*
+  *Done: one http:// or socks5:// proxy from `proxyRules` (`proxyUrl` at window creation) for windows created afterwards and `net.fetch` / `session.fetch`; `resolveProxy` reports it. No PAC / auto-detect / bypass rules; macOS needs the new `macos-proxy` feature (macOS 14+). On Linux the default session and `persist:` partitions share one WebKit data store, hence one proxy.*
 
 ## Wave C: structural, several sessions each
 

@@ -52,6 +52,8 @@ impl Sink {
 }
 
 struct Entry {
+    /// The webview that created it (stopped when that page reloads or closes).
+    owner: String,
     _watcher: RecommendedWatcher,
     sink: Arc<Mutex<Sink>>,
 }
@@ -101,7 +103,7 @@ fn event_type(kind: &EventKind) -> Option<&'static str> {
 
 /// Start watching `path` (bridge `node/fs/watch?a={ path, recursive }`):
 /// `{ id }`. Events are kept until [`attach`].
-pub fn watch(args: &Value) -> Result<Value, NodeError> {
+pub fn watch(owner: &str, args: &Value) -> Result<Value, NodeError> {
     let path = args["path"]
         .as_str()
         .ok_or_else(|| NodeError::invalid("path must be a string"))?
@@ -151,6 +153,7 @@ pub fn watch(args: &Value) -> Result<Value, NodeError> {
     WATCHERS.lock().unwrap().insert(
         id,
         Entry {
+            owner: owner.to_string(),
             _watcher: watcher,
             sink,
         },
@@ -160,11 +163,12 @@ pub fn watch(args: &Value) -> Result<Value, NodeError> {
 
 /// Send a watcher's events to `channel`, those kept so far first. False
 /// when the watcher is gone.
-pub fn attach(id: u32, channel: Channel<Value>) -> bool {
+pub fn attach(owner: &str, id: u32, channel: Channel<Value>) -> bool {
     let Some(sink) = WATCHERS
         .lock()
         .unwrap()
         .get(&id)
+        .filter(|entry| entry.owner == owner)
         .map(|entry| entry.sink.clone())
     else {
         return false;
@@ -180,13 +184,21 @@ pub fn attach(id: u32, channel: Channel<Value>) -> bool {
 }
 
 /// `watcher.close()`. False when it was already closed.
-pub fn unwatch(id: u32) -> bool {
-    WATCHERS.lock().unwrap().remove(&id).is_some()
+pub fn unwatch(owner: &str, id: u32) -> bool {
+    let mut watchers = WATCHERS.lock().unwrap();
+    if watchers.get(&id).is_some_and(|entry| entry.owner == owner) {
+        watchers.remove(&id);
+        return true;
+    }
+    false
 }
 
-/// Stop every watcher (the main page reloaded).
-pub fn close_all() {
-    WATCHERS.lock().unwrap().clear();
+/// Stop the watchers `owner` created (its page reloaded, or it closed).
+pub fn close_owned(owner: &str) {
+    WATCHERS
+        .lock()
+        .unwrap()
+        .retain(|_, entry| entry.owner != owner);
 }
 
 #[cfg(test)]

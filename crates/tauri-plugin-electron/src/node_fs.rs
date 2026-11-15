@@ -173,7 +173,9 @@ pub fn run(op: &str, args: &Value, data: &[u8]) -> FsResult {
         ),
         "close" => {
             let fd = args.fd()?;
-            match fds().lock().unwrap().files.remove(&fd) {
+            let mut table = fds().lock().unwrap();
+            table.owners.remove(&fd);
+            match table.files.remove(&fd) {
                 Some(_) => Ok(Output::Json(Value::Null)),
                 None => Err(bad_fd("close")),
             }
@@ -220,6 +222,8 @@ pub fn run(op: &str, args: &Value, data: &[u8]) -> FsResult {
 struct FdTable {
     next: i64,
     files: HashMap<i64, Arc<File>>,
+    /// The webview that opened each descriptor (closed when it reloads or closes).
+    owners: HashMap<i64, String>,
 }
 
 /// The process-wide descriptor table. Descriptors start at 3: 0–2 are stdio.
@@ -229,13 +233,39 @@ fn fds() -> &'static Mutex<FdTable> {
         Mutex::new(FdTable {
             next: 3,
             files: HashMap::new(),
+            owners: HashMap::new(),
         })
     })
 }
 
-/// Close every descriptor (the main page reloaded).
-pub fn close_all() {
-    fds().lock().unwrap().files.clear();
+/// [`run`] for the webview `owner`: descriptors it opens are closed by
+/// [`close_owned`] when that page reloads or its window closes.
+pub fn run_for(owner: &str, op: &str, args: &Value, data: &[u8]) -> FsResult {
+    let result = run(op, args, data);
+    if op == "open" {
+        if let Ok(Output::Json(fd)) = &result {
+            if let Some(fd) = fd.as_i64() {
+                fds().lock().unwrap().owners.insert(fd, owner.to_string());
+            }
+        }
+    }
+    result
+}
+
+/// Close the descriptors `owner` opened (its page reloaded, or it closed),
+/// as a restarted Node process would start with none.
+pub fn close_owned(owner: &str) {
+    let mut table = fds().lock().unwrap();
+    let owned: Vec<i64> = table
+        .owners
+        .iter()
+        .filter(|(_, o)| o.as_str() == owner)
+        .map(|(fd, _)| *fd)
+        .collect();
+    for fd in owned {
+        table.owners.remove(&fd);
+        table.files.remove(&fd);
+    }
 }
 
 fn bad_fd(syscall: &str) -> FsError {

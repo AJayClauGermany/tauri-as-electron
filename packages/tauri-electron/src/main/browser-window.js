@@ -955,6 +955,8 @@ export class BrowserWindow extends EventEmitter {
   _spawnNative(label, url) {
     const native = createWebviewWindow(label, this._nativeOptions(url), {
       permissionHandler: typeof this._session?._handlers?.permissionRequest === 'function',
+      // The session chose its proxy (setProxy), so a window without one goes direct.
+      proxyConfigured: Boolean(this._session?._proxyConfigured),
     })
     const previous = this._native
     this._native = native

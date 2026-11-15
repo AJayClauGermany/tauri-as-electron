@@ -57,6 +57,9 @@ export function setDefaultProxy(url) {
   defaultProxy = url || null
 }
 
+/** In `init`: the request is a session's own (session.fetch), which does not take the default session's proxy. */
+export const OWN_PROXY = Symbol('tauri-electron:own-proxy')
+
 export function netFetch(input, init) {
   const url = typeof input === 'string' ? input : input?.url ?? String(input)
   // Local schemes plugin-http cannot fetch are served by the webview itself.
@@ -66,7 +69,12 @@ export function netFetch(input, init) {
     init = { ...init }
     delete init.bypassCustomProtocolHandlers
   }
-  if (defaultProxy && init?.proxy === undefined) init = { ...init, proxy: { all: defaultProxy } }
+  if (init?.[OWN_PROXY]) {
+    init = { ...init }
+    delete init[OWN_PROXY]
+  } else if (defaultProxy && init?.proxy === undefined) {
+    init = { ...init, proxy: { all: defaultProxy } }
+  }
   return httpFetch(input, init)
 }
 

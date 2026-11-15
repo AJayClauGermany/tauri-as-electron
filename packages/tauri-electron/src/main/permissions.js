@@ -38,7 +38,7 @@ export function onPermissionRequest({ id, label, permission, mediaTypes = [], ur
   const callback = (granted) => {
     if (answered) return
     answered = true
-    native('permission_respond', { id, label, url, permission, granted: Boolean(granted) }).catch(report('permission request'))
+    native('permission_respond', { id, label, url, permission, mediaTypes: [...mediaTypes], granted: Boolean(granted) }).catch(report('permission request'))
   }
   if (typeof handler !== 'function') return callback(true)
   const details = { requestingUrl: url, securityOrigin: originOf(url), isMainFrame: true, embeddingOrigin: originOf(url) }

@@ -18,6 +18,8 @@ use crate::{downloads, permissions};
 pub struct Extras {
     /// The window's session has a permission request handler.
     permission_handler: bool,
+    /// The window's session called setProxy (without a proxy: direct).
+    proxy_configured: bool,
 }
 
 /// `new BrowserWindow()`. Async: WebView2 deadlocks when a webview is
@@ -39,7 +41,7 @@ pub async fn create_window<R: Runtime>(
         target_os = "netbsd",
         target_os = "openbsd"
     ))]
-    linux_proxy::before_create(&app, &options);
+    linux_proxy::before_create(&app, &options, extras.proxy_configured);
     let builder = WebviewWindowBuilder::from_config(&app, &options).map_err(|e| e.to_string())?;
     #[cfg(not(any(
         target_os = "linux",
@@ -75,8 +77,10 @@ pub async fn create_window<R: Runtime>(
 
 /// WebKitGTK keeps the proxy on the web context, which the windows of the
 /// default data store share: wry sets it when a window with a proxy is
-/// created and never unsets it. Once a proxy has been used, a window created
-/// without one puts the context back on the system settings first.
+/// created and never unsets it. A window whose session set no proxy
+/// (`setProxy` to direct) puts the context back on the system settings; a
+/// window of a session that never called `setProxy` leaves it as it is, so
+/// it does not undo another session's proxy.
 #[cfg(any(
     target_os = "linux",
     target_os = "dragonfly",
@@ -94,12 +98,16 @@ mod linux_proxy {
 
     static USED: AtomicBool = AtomicBool::new(false);
 
-    pub fn before_create<R: Runtime>(app: &AppHandle<R>, options: &WindowConfig) {
+    pub fn before_create<R: Runtime>(
+        app: &AppHandle<R>,
+        options: &WindowConfig,
+        proxy_configured: bool,
+    ) {
         if options.proxy_url.is_some() {
             USED.store(true, Ordering::Relaxed);
             return;
         }
-        if !USED.load(Ordering::Relaxed) || options.incognito {
+        if !proxy_configured || !USED.load(Ordering::Relaxed) || options.incognito {
             return;
         }
         // Any window of the default store reaches its context: the main one.
@@ -140,9 +148,12 @@ pub fn permission_respond<R: Runtime>(
     label: String,
     url: String,
     permission: String,
+    media_types: Option<Vec<String>>,
     granted: bool,
 ) {
-    permissions::respond(&app, id, &label, &url, &permission, granted);
+    let media: Vec<&str> = media_types.iter().flatten().map(String::as_str).collect();
+    let key = permissions::decision_key(&permission, &media);
+    permissions::respond(&app, id, &label, &url, &key, granted);
 }
 
 /// `webContents.downloadURL` / `session.downloadURL`: returns the item id.

@@ -326,18 +326,16 @@ pub fn start_http<R: Runtime>(
                 discard(&temp);
                 downloads.remove(id);
                 let received = control.received.load(Ordering::Relaxed);
-                // A failure before the response: the item still starts, then fails.
+                // A failure before the response: the item still starts (so
+                // the app sees it fail), marked failed so no save dialog asks.
                 if !started.load(Ordering::Relaxed) {
-                    emit_started(
+                    emit(
                         &app,
-                        id,
-                        &label,
-                        tag.as_deref(),
-                        &url,
-                        &name_from_url(&url),
-                        "",
-                        0,
-                        false,
+                        json!({
+                            "event": "started", "id": id, "label": label, "tag": tag, "url": url,
+                            "filename": name_from_url(&url), "mimeType": "", "totalBytes": 0,
+                            "canPause": false, "failed": true,
+                        }),
                     );
                 }
                 emit_done(&app, id, "interrupted", received, 0);

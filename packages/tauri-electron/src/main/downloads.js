@@ -205,7 +205,8 @@ export function onDownloadEvent(payload) {
       native('download_control', { id: item._id, action: 'cancel' }).catch(() => {})
       return item
     }
-    if (!item._savePath && !item._done) askForSavePath(item, webContents)
+    // `failed`: the transfer failed before any response; 'done' (interrupted) follows.
+    if (!item._savePath && !item._done && !payload.failed) askForSavePath(item, webContents)
     return item
   }
   const item = items.get(payload.id)
