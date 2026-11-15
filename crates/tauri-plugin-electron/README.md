@@ -55,6 +55,7 @@ half (`tauri-electron`) at the same ref.
 | `single-instance` | off | `app.requestSingleInstanceLock`, `second-instance` | `tauri-plugin-single-instance` |
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |
+| `macos-proxy` | off | `session.setProxy` on macOS (14+) | Tauri's `macos-proxy` feature |
 | `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process (`fs.watch` included) | `notify` crate (`std::fs` for the rest) |
 | `node-os` | off, listed by the template | Node's `os` | `sysinfo` crate |
 | `node-child-process` | off, listed by the template | Node's `child_process` | none (`std::process`, in this crate) |
@@ -107,6 +108,9 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` / `protocols(bundled_schemes!())` are forwarded to the main window's handler |
 | `webContents.openDevTools`, `closeDevTools`, `isDevToolsOpened` | `WebviewWindow::open_devtools` (debug builds, or the `devtools` feature) |
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |
+| `new BrowserWindow()` | `create_window`: Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's `new WebviewWindow()`, plus the hooks below (`src/windows.rs`) |
+| `session.on('will-download')`, `DownloadItem`, `downloadURL` | Downloads go to a temporary file, moved to the save path by `download_commit`. Page downloads: WebKitGTK's download signals (Linux), `on_download` (Windows, macOS). `download_url`: a reqwest transfer with the window's cookies (`net` feature) that can pause and cancel (`src/downloads.rs`) |
+| `session.setPermissionRequestHandler` | WebKitGTK's `permission-request`, answered when the handler calls back (Linux); `on_permission_request` answered from the handler's earlier decisions (Windows, macOS) (`src/permissions.rs`) |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
 

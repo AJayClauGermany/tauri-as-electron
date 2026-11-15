@@ -50,6 +50,13 @@ async function fetchFile(url, method) {
 }
 
 /** fetch() for Electron's main process (no CORS). */
+/** The default session's proxy (session.setProxy / app.setProxy), for net.fetch. */
+let defaultProxy = null
+
+export function setDefaultProxy(url) {
+  defaultProxy = url || null
+}
+
 export function netFetch(input, init) {
   const url = typeof input === 'string' ? input : input?.url ?? String(input)
   // Local schemes plugin-http cannot fetch are served by the webview itself.
@@ -59,6 +66,7 @@ export function netFetch(input, init) {
     init = { ...init }
     delete init.bypassCustomProtocolHandlers
   }
+  if (defaultProxy && init?.proxy === undefined) init = { ...init, proxy: { all: defaultProxy } }
   return httpFetch(input, init)
 }
 

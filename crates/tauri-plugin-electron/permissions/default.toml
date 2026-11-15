@@ -25,4 +25,11 @@ permissions = [
   "allow-safe-storage-status",
   "allow-safe-storage-encrypt",
   "allow-safe-storage-decrypt",
+  "allow-create-window",
+  "allow-permission-handler",
+  "allow-permission-respond",
+  "allow-download-url",
+  "allow-download-control",
+  "allow-download-commit",
+  "allow-download-discard",
 ]

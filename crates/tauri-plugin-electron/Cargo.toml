@@ -65,6 +65,8 @@ updater = ["dep:tauri-plugin-updater"]
 # webContents.openDevTools() in release builds (Tauri's `devtools` feature; uses
 # private APIs on macOS, so not App Store compatible).
 devtools = ["tauri/devtools"]
+# session.setProxy on macOS (needs macOS 14; Tauri's `macos-proxy` feature).
+macos-proxy = ["tauri/macos-proxy"]
 
 # --- Node built-ins backed by Rust ---------------------------------------------------
 # Not in `default`: apps list them explicitly in src-tauri/Cargo.toml (the
@@ -118,6 +120,11 @@ sysinfo = { version = "0.40", optional = true, default-features = false, feature
 [target.'cfg(unix)'.dependencies]
 # access(2) and errno constants for the Node `fs` error codes (feature node-fs).
 libc = "0.2"
+
+# WebKitGTK webviews of BrowserWindows: downloads and permission requests
+# (the version wry uses, so nothing more is built).
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 trash = "5"

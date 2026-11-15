@@ -5255,6 +5255,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "trash",
+ "webkit2gtk",
  "webpki-roots",
  "zbus 5.19.0",
 ]

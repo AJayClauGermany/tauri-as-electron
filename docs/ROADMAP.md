@@ -124,7 +124,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   become remote references. *Apps 10.* Most of them also need B1.
   Effort M–L.
   *Done: `tauri-electron/remote` (`/main`, `/renderer`), aliased by both bundler plugins and `require()`. Synchronous requests over `sendSync`; per-page reference tables with release on garbage collection; callbacks async, promises resolved in the renderer, errors rethrown. No `instanceof` against remote classes, no key enumeration of proxies.*
-- [ ] **B6. Downloads.** `session.on('will-download')`, `DownloadItem`
+- [x] **B6. Downloads.** `session.on('will-download')`, `DownloadItem`
   (`setSavePath`, `getFilename`, `getURL`, `getTotalBytes`,
   `getReceivedBytes`, `cancel`, `updated`, `done`),
   `webContents.downloadURL`, `session.downloadURL`, so `electron-dl` works.
@@ -133,12 +133,14 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   JavaScript `WebviewWindow`; that also enables B7 per window and B12.
   Progress is coarse (Tauri reports requested and finished). *Apps 8,
   plus `electron-dl` in 6.* Effort M.
-- [ ] **B7. Permission handlers applied.** `setPermissionRequestHandler` /
+  *Done: windows are created by a plugin command (`create_window`, Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's); every download goes to a temporary file that the main process moves to the save path when it is complete, so `setSavePath` works although the Rust hook decides synchronously (a save dialog asks without one). Linux uses WebKitGTK's download signals directly (sizes, progress, cancel); Windows / macOS use `on_download` (no total size, `cancel()` discards the file after the transfer). `downloadURL` is a reqwest transfer with the window's cookies (`net` feature): sizes, pause, resume, cancel. Not verified on Windows / macOS.*
+- [x] **B7. Permission handlers applied.** `setPermissionRequestHandler` /
   `setPermissionCheckHandler` through Tauri's `on_permission_request`
   (camera, microphone, geolocation, notifications; per platform as wry
   supports them). The Rust hook is synchronous, so answer from decisions
   the main page pushed ahead (or block on a bridge round trip, off the
   main thread). *Apps 14.* Effort M.
+  *Done for `setPermissionRequestHandler`: Linux answers asynchronously from the handler's callback (WebKitGTK `permission-request`); Windows / macOS answer from earlier decisions per window, origin and permission (the first request gets the platform default while the handler runs). No handler: granted, as in Electron. `setPermissionCheckHandler` stays stored (no hook for permission checks). Not verified on Windows / macOS.*
 - [x] **B8. Window controls for `titleBarOverlay`.** On Windows and Linux,
   `titleBarStyle: 'hidden'` + `titleBarOverlay` gives Electron apps native
   minimize / maximize / close buttons; here frameless windows have none.
@@ -176,10 +178,11 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   dialog cannot express the options. *Apps 8 use `checkboxLabel`.*
   Effort M.
   *Done: a window served by the bridge scheme (no IPC permission), parented and disabling its parent; also for `showMessageBoxSync` (blocks on the bridge). The native dialog stays for three buttons or fewer without a checkbox.*
-- [ ] **B13. `session.setProxy` / `app.setProxy`** through
+- [x] **B13. `session.setProxy` / `app.setProxy`** through
   `proxy_url` when windows are created (with B6's Rust-side creation);
   `resolveProxy` then reports the configured proxy. *Apps 4.* Effort S
   after B6.
+  *Done: one http:// or socks5:// proxy from `proxyRules` (`proxyUrl` at window creation) for windows created afterwards and `net.fetch` / `session.fetch`; `resolveProxy` reports it. No PAC / auto-detect / bypass rules; macOS needs the new `macos-proxy` feature (macOS 14+).*
 
 ## Wave C: structural, several sessions each
 

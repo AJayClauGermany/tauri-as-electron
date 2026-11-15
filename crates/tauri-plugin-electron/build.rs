@@ -43,6 +43,13 @@ const COMMANDS: &[&str] = &[
     "dns_resolve",
     "dns_reverse",
     "dns_servers",
+    "create_window",
+    "permission_handler",
+    "permission_respond",
+    "download_url",
+    "download_control",
+    "download_commit",
+    "download_discard",
 ];
 
 fn main() {
