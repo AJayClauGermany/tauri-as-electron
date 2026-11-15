@@ -533,7 +533,8 @@ ${pageNote}
     vm, worker_threads and http2 do not exist yet:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md
   - src-tauri/Cargo.toml: enable "single-instance" if you call
-    app.requestSingleInstanceLock(), "updater" for autoUpdater.
+    app.requestSingleInstanceLock(), "updater" for autoUpdater,
+    "child-webviews" for WebContentsView, BrowserView or <webview>.
 `)
 }
 

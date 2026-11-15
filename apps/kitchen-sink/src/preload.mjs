@@ -42,4 +42,7 @@ contextBridge.exposeInMainWorld('kitchen', {
 
   // Context menu
   showContextMenu: (x, y) => ipcRenderer.send('kitchen:context-menu', x, y),
+
+  // <webview> guests: a message to the element ('ipc-message')
+  sendToHost: (channel, ...args) => ipcRenderer.sendToHost(channel, ...args),
 })

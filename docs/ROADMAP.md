@@ -186,7 +186,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 
 ## Wave C: structural, several sessions each
 
-- [ ] **C1. `<webview>` and `WebContentsView` / `BrowserView`** on Tauri
+- [x] **C1. `<webview>` and `WebContentsView` / `BrowserView`** on Tauri
   child webviews (`Window::add_child`, behind tauri's `unstable` feature):
   a `<webview>` custom element that keeps a child webview positioned over
   its box, a `webContents` for each child (IPC, `executeJavaScript`,
@@ -195,6 +195,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `<webview>` (the core of Ferdium, Zulip, Wire, Rocket.Chat,
   Responsively) and 6 use views (the core of Mattermost). One feature
   behind five chat apps.* Effort L.
+  *Done (Linux verified; Windows / macOS compile-checked only): feature `child-webviews`, opt-in because it turns on Tauri's `unstable` (every window then uses Tauri's multi-webview mode). `View`, `WebContentsView`, `BrowserView`, `contentView` / `setContentView`, `setBrowserView` & co. are child webviews with a full webContents each (IPC, `executeJavaScript`, navigation events, partitions, downloads, permissions, `fromId` / `getAllWebContents`), created when a view joins a window's tree; Linux lays them in a `GtkOverlay` over the window's webview, as WebKitGTK multi-webview windows ignore bounds. `<webview>` (with `webviewTag`): an element upgraded by hand (`webview` is not a valid custom element name) whose guest the main process attaches (`will-attach-webview` with Electron's webPreferences rules, `did-attach-webview`) and the page keeps over the element's box through the bridge; methods, events, `ipc-message` from `sendToHost`. Remote pages are driven from Rust (`executeJavaScript` with JSON results, `reload`, history). Limits: views are native webviews over the page (page content cannot cover them, scrolling containers do not clip them, the embedder's zoom is ignored); stacking order changes apply on Linux only; `preload` attributes are ignored and remote guests get no preload or IPC, which Ferdium's recipes and Mattermost's server preload need (C6's mechanism, extended to views); no `did-fail-load` for network errors; frameless windows on Linux lose Tauri's edge-resize handles while the feature is on.*
 - [ ] **C2. `worker_threads`** on Web Workers that load the Node layer
   (`Worker`, `parentPort`, `workerData`, `MessageChannel`, `isMainThread`).
   Needs the bridge to accept workers. *Apps 8.* Effort L.

@@ -56,6 +56,7 @@ half (`tauri-electron`) at the same ref.
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |
 | `macos-proxy` | off | `session.setProxy` on macOS (14+) | Tauri's `macos-proxy` feature |
+| `child-webviews` | off | `WebContentsView`, `BrowserView`, `BrowserWindow.contentView`, the `<webview>` tag | Tauri's `unstable` feature (`Window::add_child`, multi-webview windows); `gtk` on Linux (already in the build) |
 | `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process (`fs.watch` included) | `notify` crate (`std::fs` for the rest) |
 | `node-os` | off, listed by the template | Node's `os` | `sysinfo` crate |
 | `node-child-process` | off, listed by the template | Node's `child_process` | none (`std::process`, in this crate) |
@@ -85,7 +86,20 @@ first, so a second launch exits before anything else starts), then grants:
   the enabled features, for a window the main process creates with
   `nodeIntegration: true` or `sandbox: false`. Only `electron-main` can
   configure windows (`set_window_config`), and the Node built-ins also check
-  the grant in Rust.
+  the grant in Rust. It names the label as a window and as a webview, so it
+  also grants a `<webview nodeintegration>` guest (a webview in another
+  window) that the main process allowed.
+
+Child webviews (`child-webviews`) get the capabilities of the window they
+are in, as Tauri matches capabilities by window label too: the renderer
+permissions, like the window's own page. Views are never put in the
+`electron-main` window, whose capability names that window.
+
+`child-webviews` is opt-in because it needs Tauri's `unstable` feature: its
+API may change in minor Tauri releases, and it puts every window in Tauri's
+multi-webview mode (each window's own webview becomes a child webview sized
+to the window; on Linux, frameless windows then lose Tauri's edge-resize
+handles).
 
 Add capability files in `src-tauri/capabilities/` for anything more, or call
 `.default_capabilities(false)` to manage every permission yourself.
@@ -111,6 +125,7 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `new BrowserWindow()` | `create_window`: Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's `new WebviewWindow()`, plus the hooks below (`src/windows.rs`) |
 | `session.on('will-download')`, `DownloadItem`, `downloadURL` | Downloads go to a temporary file, moved to the save path by `download_commit`. Page downloads: WebKitGTK's download signals (Linux), `on_download` (Windows, macOS). `download_url`: a reqwest transfer with the window's cookies (`net` feature) that can pause and cancel (`src/downloads.rs`) |
 | `session.setPermissionRequestHandler` | WebKitGTK's `permission-request`, answered when the handler calls back (Linux); `on_permission_request` answered from the handler's earlier decisions (Windows, macOS) (`src/permissions.rs`) |
+| `WebContentsView`, `BrowserView`, `<webview>` (`child-webviews` feature) | Child webviews of the BrowserWindow (`Window::add_child`): `view_create`, `view_update` (bounds, visibility, raise, move to another window, focus, background), `view_navigate`, `view_eval` (script in pages without the renderer bootstrap, JSON result), `view_close`, for `electron-main` only. A page moves the guests of its own `<webview>` elements over `view/bounds` on the scheme. Linux: tauri-runtime-wry packs webviews into the window's box, where bounds do nothing, so views are moved into a `GtkOverlay` over the window's webview, in an event box that clips them (`src/views.rs`) |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
 
