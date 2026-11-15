@@ -54,7 +54,9 @@ pub fn grant<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> 
         let capability = json!({
             "identifier": format!("electron-node-{label}"),
             "description": "A BrowserWindow created with nodeIntegration or an unsandboxed preload: Node built-ins, like Electron gives it.",
+            // A view's label names a webview (in another window): match both.
             "windows": [label],
+            "webviews": [label],
             "permissions": permissions,
         });
         if let Err(error) = app.add_capability(capability.to_string()) {

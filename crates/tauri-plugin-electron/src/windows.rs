@@ -89,7 +89,7 @@ pub async fn create_window<R: Runtime>(
     target_os = "netbsd",
     target_os = "openbsd"
 ))]
-mod linux_proxy {
+pub(crate) mod linux_proxy {
     use std::{
         sync::atomic::{AtomicBool, Ordering},
         time::Duration,

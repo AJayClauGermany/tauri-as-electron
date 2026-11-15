@@ -34,6 +34,7 @@ pub fn enabled() -> Vec<&'static str> {
         "single-instance",
         "updater",
         "devtools",
+        "child-webviews",
         "node-fs",
         "node-os",
         "node-child-process",
@@ -51,6 +52,7 @@ pub fn enabled() -> Vec<&'static str> {
                     | "power-monitor"
                     | "single-instance"
                     | "updater"
+                    | "child-webviews"
             )
         });
     }

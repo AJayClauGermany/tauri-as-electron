@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-view-create"
+description = "Enables the view_create command without any pre-configured scope."
+commands.allow = ["view_create"]
+
+[[permission]]
+identifier = "deny-view-create"
+description = "Denies the view_create command without any pre-configured scope."
+commands.deny = ["view_create"]

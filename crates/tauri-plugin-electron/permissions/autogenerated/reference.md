@@ -33,6 +33,11 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-download-control`
 - `allow-download-commit`
 - `allow-download-discard`
+- `allow-view-create`
+- `allow-view-update`
+- `allow-view-navigate`
+- `allow-view-eval`
+- `allow-view-close`
 
 ## Permission Table
 
@@ -1365,6 +1370,136 @@ Enables the udp_send command without any pre-configured scope.
 <td>
 
 Denies the udp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-view-close`
+
+</td>
+<td>
+
+Enables the view_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-view-close`
+
+</td>
+<td>
+
+Denies the view_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-view-create`
+
+</td>
+<td>
+
+Enables the view_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-view-create`
+
+</td>
+<td>
+
+Denies the view_create command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-view-eval`
+
+</td>
+<td>
+
+Enables the view_eval command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-view-eval`
+
+</td>
+<td>
+
+Denies the view_eval command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-view-navigate`
+
+</td>
+<td>
+
+Enables the view_navigate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-view-navigate`
+
+</td>
+<td>
+
+Denies the view_navigate command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-view-update`
+
+</td>
+<td>
+
+Enables the view_update command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-view-update`
+
+</td>
+<td>
+
+Denies the view_update command without any pre-configured scope.
 
 </td>
 </tr>

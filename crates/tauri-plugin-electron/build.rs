@@ -50,6 +50,11 @@ const COMMANDS: &[&str] = &[
     "download_control",
     "download_commit",
     "download_discard",
+    "view_create",
+    "view_update",
+    "view_navigate",
+    "view_eval",
+    "view_close",
 ];
 
 fn main() {

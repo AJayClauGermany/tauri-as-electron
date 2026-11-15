@@ -67,6 +67,15 @@ updater = ["dep:tauri-plugin-updater"]
 devtools = ["tauri/devtools"]
 # session.setProxy on macOS (needs macOS 14; Tauri's `macos-proxy` feature).
 macos-proxy = ["tauri/macos-proxy"]
+# WebContentsView, BrowserView and the <webview> tag, as child webviews of a
+# window (Tauri's multi-webview API, `Window::add_child`). Opt-in, although
+# five of the surveyed chat apps are built on it: it needs Tauri's `unstable`
+# feature, whose API may change in minor Tauri releases and which puts every
+# window in Tauri's multi-webview mode (each window's own webview becomes a
+# child webview sized to the window; on Linux, frameless windows then lose
+# Tauri's edge-resize handles). On Linux it also uses gtk (already in the build
+# through Tauri) to lay views over the window's webview.
+child-webviews = ["tauri/unstable", "dep:gtk"]
 
 # --- Node built-ins backed by Rust ---------------------------------------------------
 # Not in `default`: apps list them explicitly in src-tauri/Cargo.toml (the
@@ -125,6 +134,8 @@ libc = "0.2"
 # (the version wry uses, so nothing more is built).
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+# Views laid over a window's webview (feature child-webviews); the version Tauri uses.
+gtk = { version = "0.18", optional = true }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 trash = "5"

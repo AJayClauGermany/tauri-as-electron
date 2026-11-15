@@ -907,10 +907,70 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`",
+          "description": "Enables the view_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-view-close",
+          "markdownDescription": "Enables the view_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the view_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-view-close",
+          "markdownDescription": "Denies the view_close command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the view_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-view-create",
+          "markdownDescription": "Enables the view_create command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the view_create command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-view-create",
+          "markdownDescription": "Denies the view_create command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the view_eval command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-view-eval",
+          "markdownDescription": "Enables the view_eval command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the view_eval command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-view-eval",
+          "markdownDescription": "Denies the view_eval command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the view_navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-view-navigate",
+          "markdownDescription": "Enables the view_navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the view_navigate command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-view-navigate",
+          "markdownDescription": "Denies the view_navigate command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the view_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-view-update",
+          "markdownDescription": "Enables the view_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the view_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-view-update",
+          "markdownDescription": "Denies the view_update command without any pre-configured scope."
+        },
+        {
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-view-create`\n- `allow-view-update`\n- `allow-view-navigate`\n- `allow-view-eval`\n- `allow-view-close`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-view-create`\n- `allow-view-update`\n- `allow-view-navigate`\n- `allow-view-eval`\n- `allow-view-close`"
         },
         {
           "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",

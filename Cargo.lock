@@ -5227,6 +5227,7 @@ dependencies = [
  "aes-gcm",
  "arboard",
  "base64 0.23.1",
+ "gtk",
  "hickory-resolver",
  "keepawake",
  "keyring",

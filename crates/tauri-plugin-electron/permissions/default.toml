@@ -32,4 +32,9 @@ permissions = [
   "allow-download-control",
   "allow-download-commit",
   "allow-download-discard",
+  "allow-view-create",
+  "allow-view-update",
+  "allow-view-navigate",
+  "allow-view-eval",
+  "allow-view-close",
 ]
