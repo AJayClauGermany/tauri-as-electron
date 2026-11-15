@@ -50,6 +50,9 @@ const COMMANDS: &[&str] = &[
     "download_control",
     "download_commit",
     "download_discard",
+    "web_request_listeners",
+    "web_request_respond",
+    "tls_auth_respond",
 ];
 
 fn main() {
