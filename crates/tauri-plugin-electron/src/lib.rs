@@ -787,8 +787,10 @@ async fn clipboard_read_html() -> Result<String, String> {
 }
 
 /// `powerSaveBlocker.start(type)`: the id of an operating-system assertion.
+/// Async: taking one can mean a blocking D-Bus call (Linux), kept off the
+/// main thread.
 #[tauri::command]
-fn power_blocker_start<R: Runtime>(app: AppHandle<R>, kind: String) -> Result<u32, String> {
+async fn power_blocker_start<R: Runtime>(app: AppHandle<R>, kind: String) -> Result<u32, String> {
     #[cfg(all(desktop, feature = "power-save-blocker"))]
     {
         let name = app.package_info().name.clone();
@@ -803,7 +805,7 @@ fn power_blocker_start<R: Runtime>(app: AppHandle<R>, kind: String) -> Result<u3
 
 /// `powerSaveBlocker.stop(id)`.
 #[tauri::command]
-fn power_blocker_stop<R: Runtime>(app: AppHandle<R>, id: u32) -> bool {
+async fn power_blocker_stop<R: Runtime>(app: AppHandle<R>, id: u32) -> bool {
     #[cfg(all(desktop, feature = "power-save-blocker"))]
     return app.state::<power::Blockers>().stop(id);
     #[cfg(not(all(desktop, feature = "power-save-blocker")))]
@@ -1106,6 +1108,12 @@ impl Builder {
             // the renderer bootstrap cannot run in.
             .on_page_load(|webview, payload| {
                 if webview.label() == MAIN_LABEL {
+                    // A reloaded main process starts with no open files, as a
+                    // restarted Node would: close what the previous page left open.
+                    #[cfg(feature = "node-fs")]
+                    if matches!(payload.event(), PageLoadEvent::Started) {
+                        node_fs::close_all();
+                    }
                     return;
                 }
                 let event = match payload.event() {

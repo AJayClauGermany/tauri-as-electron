@@ -207,33 +207,55 @@ export function encodePng(rgba, width, height) {
   return out
 }
 
-/** One axis of a resample: box-averages when shrinking, interpolates linearly when growing. */
-function resampleAxis(src, srcLen, dstLen, lines, get, set) {
+/**
+ * One axis of a resample over 4-channel float pixels: box-averages when
+ * shrinking, interpolates linearly when growing. Pixel `i` of line `line`
+ * is at `line * lineStep + i * step` in both buffers (`dstStep` / `dstLineStep` in `dst`).
+ */
+function resampleAxis(src, dst, srcLen, dstLen, lines, step, lineStep, dstStep, dstLineStep) {
   const scale = srcLen / dstLen
   for (let line = 0; line < lines; line++) {
+    const srcBase = line * lineStep
+    const dstBase = line * dstLineStep
     for (let d = 0; d < dstLen; d++) {
-      const acc = [0, 0, 0, 0]
+      const out = dstBase + d * dstStep
+      let c0 = 0
+      let c1 = 0
+      let c2 = 0
+      let c3 = 0
       if (scale > 1) {
         const from = d * scale
         const to = from + scale
         let weight = 0
-        for (let s = Math.floor(from); s < Math.min(Math.ceil(to), srcLen); s++) {
+        const last = Math.min(Math.ceil(to), srcLen)
+        for (let s = Math.floor(from); s < last; s++) {
           const w = Math.min(s + 1, to) - Math.max(s, from)
-          const px = get(src, line, s)
-          for (let c = 0; c < 4; c++) acc[c] += px[c] * w
+          const i = srcBase + s * step
+          c0 += src[i] * w
+          c1 += src[i + 1] * w
+          c2 += src[i + 2] * w
+          c3 += src[i + 3] * w
           weight += w
         }
-        for (let c = 0; c < 4; c++) acc[c] /= weight
+        c0 /= weight
+        c1 /= weight
+        c2 /= weight
+        c3 /= weight
       } else {
         const pos = Math.max(0, Math.min(srcLen - 1, (d + 0.5) * scale - 0.5))
         const s0 = Math.floor(pos)
-        const s1 = Math.min(s0 + 1, srcLen - 1)
         const t = pos - s0
-        const a = get(src, line, s0)
-        const b = get(src, line, s1)
-        for (let c = 0; c < 4; c++) acc[c] = a[c] * (1 - t) + b[c] * t
+        const a = srcBase + s0 * step
+        const b = srcBase + Math.min(s0 + 1, srcLen - 1) * step
+        c0 = src[a] * (1 - t) + src[b] * t
+        c1 = src[a + 1] * (1 - t) + src[b + 1] * t
+        c2 = src[a + 2] * (1 - t) + src[b + 2] * t
+        c3 = src[a + 3] * (1 - t) + src[b + 3] * t
       }
-      set(line, d, acc)
+      dst[out] = c0
+      dst[out + 1] = c1
+      dst[out + 2] = c2
+      dst[out + 3] = c3
     }
   }
 }
@@ -241,26 +263,26 @@ function resampleAxis(src, srcLen, dstLen, lines, get, set) {
 /** Resize RGBA pixels (alpha-premultiplied while resampling, so edges do not darken). */
 export function resizeRgba(rgba, width, height, newWidth, newHeight) {
   const pre = new Float32Array(width * height * 4)
-  for (let i = 0; i < width * height; i++) {
-    const a = rgba[i * 4 + 3] / 255
-    pre[i * 4] = rgba[i * 4] * a
-    pre[i * 4 + 1] = rgba[i * 4 + 1] * a
-    pre[i * 4 + 2] = rgba[i * 4 + 2] * a
-    pre[i * 4 + 3] = rgba[i * 4 + 3]
+  for (let i = 0; i < width * height * 4; i += 4) {
+    const a = rgba[i + 3] / 255
+    pre[i] = rgba[i] * a
+    pre[i + 1] = rgba[i + 1] * a
+    pre[i + 2] = rgba[i + 2] * a
+    pre[i + 3] = rgba[i + 3]
   }
-  const pixel = (buf, i) => [buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]
+  // Rows first (width → newWidth), then columns (height → newHeight).
   const wide = new Float32Array(newWidth * height * 4)
-  resampleAxis(pre, width, newWidth, height, (buf, y, x) => pixel(buf, (y * width + x) * 4), (y, x, v) => wide.set(v, (y * newWidth + x) * 4))
+  resampleAxis(pre, wide, width, newWidth, height, 4, width * 4, 4, newWidth * 4)
   const out = new Float32Array(newWidth * newHeight * 4)
-  resampleAxis(wide, height, newHeight, newWidth, (buf, x, y) => pixel(buf, (y * newWidth + x) * 4), (x, y, v) => out.set(v, (y * newWidth + x) * 4))
+  resampleAxis(wide, out, height, newHeight, newWidth, newWidth * 4, 4, newWidth * 4, 4)
   const result = new Uint8Array(newWidth * newHeight * 4)
-  for (let i = 0; i < newWidth * newHeight; i++) {
-    const a = out[i * 4 + 3]
+  for (let i = 0; i < newWidth * newHeight * 4; i += 4) {
+    const a = out[i + 3]
     const k = a > 0 ? 255 / a : 0
-    result[i * 4] = Math.round(Math.min(255, out[i * 4] * k))
-    result[i * 4 + 1] = Math.round(Math.min(255, out[i * 4 + 1] * k))
-    result[i * 4 + 2] = Math.round(Math.min(255, out[i * 4 + 2] * k))
-    result[i * 4 + 3] = Math.round(Math.min(255, a))
+    result[i] = Math.round(Math.min(255, out[i] * k))
+    result[i + 1] = Math.round(Math.min(255, out[i + 1] * k))
+    result[i + 2] = Math.round(Math.min(255, out[i + 2] * k))
+    result[i + 3] = Math.round(Math.min(255, a))
   }
   return result
 }

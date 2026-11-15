@@ -95,8 +95,17 @@ class Cookies extends EventEmitter {
     if (!hasNativePlugin()) throw new NotImplementedError(api, { reason: 'plugin', hint: 'Cookies need tauri-plugin-electron.' })
     if (this._session === defaultSession) return MAIN_LABEL
     const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.session === this._session)
-    if (!win) throw new Error(`${api}: no window uses partition '${this._session._partition}' yet; its cookie store is reached through one.`)
-    await win._nativeReady.promise
+    const missing = () => new Error(`${api}: no window uses partition '${this._session._partition}' yet; its cookie store is reached through one.`)
+    if (!win) throw missing()
+    // The window may close before its native window exists: do not wait forever.
+    await new Promise((resolve, reject) => {
+      const onClosed = () => reject(missing())
+      win.once('closed', onClosed)
+      win._nativeReady.promise.then(() => {
+        win.removeListener('closed', onClosed)
+        resolve()
+      }, reject)
+    })
     return win._label
   }
 

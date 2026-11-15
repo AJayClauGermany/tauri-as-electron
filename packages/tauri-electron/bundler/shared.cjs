@@ -212,6 +212,14 @@ function sessionPreloads(root, option) {
  * versions follow it: clipboard reads are synchronous before 45.
  */
 function electronMajor(root) {
+  // The installed version, when there is one: a range such as `>=44 <46` does not say.
+  try {
+    const installed = JSON.parse(fs.readFileSync(require.resolve('electron/package.json', { paths: [root] }), 'utf8'))
+    const major = /^(\d+)\./.exec(installed.version ?? '')
+    if (major) return Number(major[1])
+  } catch {
+    /* not installed: read the range */
+  }
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
     const range = pkg.devDependencies?.electron ?? pkg.dependencies?.electron ?? pkg.optionalDependencies?.electron

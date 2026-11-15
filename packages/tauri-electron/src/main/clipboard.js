@@ -128,7 +128,8 @@ export const clipboard = {
   has(mimetype) {
     if (synchronousReads()) {
       if (buffers.has(mimetype)) return true
-      return readSync('formats', []).includes(FORMAT_ALIASES[mimetype] ?? mimetype)
+      // Only that format is checked (the image check decodes the image).
+      return readSync(`has/${FORMAT_ALIASES[mimetype] ?? mimetype}`, false) === true
     }
     return clipboard._hasAsync(mimetype)
   },

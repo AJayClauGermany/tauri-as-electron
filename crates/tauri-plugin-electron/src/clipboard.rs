@@ -21,9 +21,19 @@ pub fn read_html() -> Result<String, String> {
     Ok(clipboard()?.get().html().unwrap_or_default())
 }
 
-/// `op`: `readText`, `readHTML`, `readImage` or `formats`.
+/// `op`: `readText`, `readHTML`, `readImage`, `formats`, or `has/<mime type>`
+/// (checks that one format only: the image check converts the whole image).
 pub fn read(op: &str) -> Result<Answer, String> {
     let mut board = clipboard()?;
+    if let Some(format) = op.strip_prefix("has/") {
+        let has = match format {
+            "text/plain" => board.get_text().is_ok_and(|t| !t.is_empty()),
+            "text/html" => board.get().html().is_ok_and(|h| !h.is_empty()),
+            "image/png" => board.get_image().is_ok(),
+            _ => false,
+        };
+        return Ok(Answer::Json(json!(has)));
+    }
     match op {
         "readText" => Ok(Answer::Json(json!(board.get_text().unwrap_or_default()))),
         "readHTML" => Ok(Answer::Json(json!(board.get().html().unwrap_or_default()))),

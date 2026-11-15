@@ -187,14 +187,22 @@ export class NativeImage {
     return !this._bytes && !this._url && !this._rgba && !this._pending
   }
 
-  /** A new image from this one's pixels, now if possible, else once decoded. */
-  _derive(size, transform) {
+  /**
+   * A new image from this one's pixels (`transform` returns null for an
+   * empty result): now if they can be had synchronously, else once decoded.
+   * `sizeOf` gives the result's size from the source's pixel size, so a
+   * pending copy reports its size at once when the source's is known.
+   */
+  _derive(transform, sizeOf) {
     const pixels = this._pixels()
     if (pixels) {
       const out = transform(pixels)
-      return new NativeImage({ rgba: out.rgba, width: out.width, height: out.height, scaleFactor: this._scaleFactor })
+      return out ? new NativeImage({ rgba: out.rgba, width: out.width, height: out.height, scaleFactor: this._scaleFactor }) : new NativeImage()
     }
     if (this.isEmpty()) return new NativeImage()
+    const known = this._knownPixelSize()
+    const size = known ? sizeOf(known) : { width: 0, height: 0 }
+    if (known && (!size.width || !size.height)) return new NativeImage()
     return new NativeImage({
       pending: async () => {
         const source = await this._decodedPixels()
@@ -260,32 +268,48 @@ export class NativeImage {
 
   addRepresentation() {}
 
+  /** The image's size in pixels when known synchronously, else null. */
+  _knownPixelSize() {
+    const size = this._pixelSize ?? parseImageSize(this._bytes)
+    return size && size.width && size.height ? size : null
+  }
+
   /** `{ width?, height?, quality? }` in DIPs; one side alone keeps the aspect ratio. */
   resize(options = {}) {
     const scale = this._scaleFactor
-    const { width: w, height: h } = this.getSize()
-    let width = options.width
-    let height = options.height
-    if (width === undefined && height === undefined) return this._derive({ width: w * scale, height: h * scale }, (p) => p)
-    if (width === undefined) width = h ? Math.round((w * height) / h) : 0
-    if (height === undefined) height = w ? Math.round((h * width) / w) : 0
-    const target = { width: Math.max(0, Math.round(width * scale)), height: Math.max(0, Math.round(height * scale)) }
-    if (!target.width || !target.height) return new NativeImage()
-    return this._derive(target, (p) => ({ ...target, rgba: resizeRgba(p.rgba, p.width, p.height, target.width, target.height) }))
+    // Target size in pixels for a source of `pw` × `ph` pixels.
+    const target = (pw, ph) => {
+      let width = options.width === undefined ? undefined : options.width * scale
+      let height = options.height === undefined ? undefined : options.height * scale
+      if (width === undefined && height === undefined) return { width: pw, height: ph }
+      if (width === undefined) width = (pw * height) / ph
+      if (height === undefined) height = (ph * width) / pw
+      return { width: Math.max(0, Math.round(width)), height: Math.max(0, Math.round(height)) }
+    }
+    return this._derive((p) => {
+      const size = target(p.width, p.height)
+      if (!size.width || !size.height) return null
+      return size.width === p.width && size.height === p.height ? p : { ...size, rgba: resizeRgba(p.rgba, p.width, p.height, size.width, size.height) }
+    }, (known) => target(known.width, known.height))
   }
 
   /** `{ x, y, width, height }` in DIPs, clamped to the image. */
   crop(rect = {}) {
     const scale = this._scaleFactor
-    const { width: w, height: h } = this.getSize()
-    const x = Math.max(0, Math.min(w, rect.x ?? 0))
-    const y = Math.max(0, Math.min(h, rect.y ?? 0))
-    const size = {
-      width: Math.round(Math.max(0, Math.min(w - x, rect.width ?? 0)) * scale),
-      height: Math.round(Math.max(0, Math.min(h - y, rect.height ?? 0)) * scale),
+    const area = (pw, ph) => {
+      const x = Math.max(0, Math.min(pw, Math.round((rect.x ?? 0) * scale)))
+      const y = Math.max(0, Math.min(ph, Math.round((rect.y ?? 0) * scale)))
+      return {
+        x,
+        y,
+        width: Math.max(0, Math.min(pw - x, Math.round((rect.width ?? 0) * scale))),
+        height: Math.max(0, Math.min(ph - y, Math.round((rect.height ?? 0) * scale))),
+      }
     }
-    if (!size.width || !size.height) return new NativeImage()
-    return this._derive(size, (p) => cropRgba(p.rgba, p.width, p.height, x * scale, y * scale, size.width, size.height))
+    return this._derive((p) => {
+      const a = area(p.width, p.height)
+      return a.width && a.height ? cropRgba(p.rgba, p.width, p.height, a.x, a.y, a.width, a.height) : null
+    }, (known) => area(known.width, known.height))
   }
 }
 

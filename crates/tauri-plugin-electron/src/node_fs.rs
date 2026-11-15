@@ -173,7 +173,7 @@ pub fn run(op: &str, args: &Value, data: &[u8]) -> FsResult {
         ),
         "close" => {
             let fd = args.fd()?;
-            match fds().lock().unwrap().remove(&fd) {
+            match fds().lock().unwrap().files.remove(&fd) {
                 Some(_) => Ok(Output::Json(Value::Null)),
                 None => Err(bad_fd("close")),
             }
@@ -222,12 +222,6 @@ struct FdTable {
     files: HashMap<i64, Arc<File>>,
 }
 
-impl FdTable {
-    fn remove(&mut self, fd: &i64) -> Option<Arc<File>> {
-        self.files.remove(fd)
-    }
-}
-
 /// The process-wide descriptor table. Descriptors start at 3: 0–2 are stdio.
 fn fds() -> &'static Mutex<FdTable> {
     static FDS: OnceLock<Mutex<FdTable>> = OnceLock::new();
@@ -237,6 +231,11 @@ fn fds() -> &'static Mutex<FdTable> {
             files: HashMap::new(),
         })
     })
+}
+
+/// Close every descriptor (the main page reloaded).
+pub fn close_all() {
+    fds().lock().unwrap().files.clear();
 }
 
 fn bad_fd(syscall: &str) -> FsError {
@@ -294,6 +293,26 @@ fn open(path: &str, flags: &Value, mode: Option<f64>) -> FsResult {
     }
     #[cfg(not(any(unix, windows)))]
     let _ = mode;
+    // Node allows `O_RDONLY | O_CREAT`; std refuses to create without write
+    // access, so create the file first, then open it for reading.
+    if (flag("create") || flag("exclusive")) && !flag("write") && !flag("append") {
+        let mut create = OpenOptions::new();
+        create.write(true);
+        if flag("exclusive") {
+            create.create_new(true);
+        } else {
+            create.create(true);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            create.mode(mode.map(|m| m as u32).unwrap_or(0o666));
+        }
+        create
+            .open(path)
+            .map_err(|e| FsError::io(&e, "open", Some(path), None))?;
+        options.create(false).create_new(false).truncate(false);
+    }
     let opened = options
         .open(path)
         .map_err(|e| FsError::io(&e, "open", Some(path), None))?;
@@ -1092,6 +1111,16 @@ mod tests {
         json_of(call("fdWrite", json!({ "fd": fd }), b"!"));
         json_of(call("close", json!({ "fd": fd }), &[]));
         assert_eq!(fs::read(&path).unwrap(), b"Jell!");
+
+        // O_RDONLY | O_CREAT creates the file, as in Node.
+        let created = display(dir.join("created"));
+        let fd = json_of(call(
+            "open",
+            json!({ "path": created, "flags": { "read": true, "create": true } }),
+            &[],
+        ));
+        json_of(call("close", json!({ "fd": fd }), &[]));
+        assert!(Path::new(&created).exists());
         fs::remove_dir_all(dir).unwrap();
     }
 

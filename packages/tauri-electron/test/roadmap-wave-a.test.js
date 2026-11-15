@@ -169,6 +169,25 @@ describe('nativeImage (A5)', () => {
     expect(state.sync).toEqual([])
   })
 
+  it('resizes and crops images that are not loaded yet once they are', async () => {
+    globalThis.__TAURI_ELECTRON_APP__ = { root: null, entries: ['public'] }
+    const png = encodePng(new Uint8Array(4 * 2 * 4).fill(200), 4, 2)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = async () => new Response(png)
+    try {
+      const image = nativeImage.createFromPath('/public/icon.png')
+      const half = image.resize({ width: 2 })
+      expect(half.isEmpty()).toBe(false)
+      await half._load()
+      expect(half.getSize()).toEqual({ width: 2, height: 1 })
+      const corner = nativeImage.createFromPath('/public/icon.png').crop({ x: 1, y: 1, width: 5, height: 5 })
+      await corner._load()
+      expect(corner.getSize()).toEqual({ width: 3, height: 1 })
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
   it('makes thumbnails that fit the size', async () => {
     state.onSync = () => ({ bytes: encodePng(new Uint8Array(8 * 4 * 4).fill(255), 8, 4) })
     const thumbnail = await nativeImage.createThumbnailFromPath('/pics/wide.png', { width: 4, height: 4 })
@@ -220,6 +239,20 @@ describe('file-backed protocols (A7)', () => {
     expect((await onRequest({ scheme: 'vector', url: 'vector://app/missing', method: 'GET' })).status).toBe(404)
     expect((await onRequest({ scheme: 'vector', url: 'vector://app/gone', method: 'GET' })).status).toBe(404)
   })
+
+  it('registerFileProtocol keeps # and ? in paths, and answers bodiless statuses', async () => {
+    const read = []
+    state.onCommand = (command, frame) => {
+      read.push(frameArgs(frame).args.path)
+      return new TextEncoder().encode('x').buffer
+    }
+    protocol.registerFileProtocol('notes', (request, callback) => {
+      callback(request.url.endsWith('cached') ? { path: '/n/a', statusCode: 304 } : '/n/C#/what?.md')
+    })
+    expect((await onRequest({ scheme: 'notes', url: 'notes://app/x', method: 'GET' })).status).toBe(200)
+    expect(read).toEqual(['/n/C#/what?.md'])
+    expect((await onRequest({ scheme: 'notes', url: 'notes://app/cached', method: 'GET' })).status).toBe(304)
+  })
 })
 
 // --- screen, clipboard, power, cookies -------------------------------------------------------------------------
@@ -251,6 +284,8 @@ describe('clipboard (A8)', () => {
       'clipboard/readText': { value: 'sync text' },
       'clipboard/readHTML': { value: '<i>y</i>' },
       'clipboard/formats': { value: ['text/plain', 'text/html'] },
+      'clipboard/has/text/html': { value: true },
+      'clipboard/has/image/png': { value: false },
       'clipboard/readImage': { bytes: pixels },
     })[path]
     expect(clipboard.readText()).toBe('sync text')
@@ -331,6 +366,12 @@ describe('bundler: Electron version and session preloads (A8, A10)', () => {
     write('package.json', JSON.stringify({ dependencies: { electron: 'latest' } }))
     expect(shared.electronMajor(root)).toBeNull()
     expect('electron' in shared.appFilesConfig(root, { dev: false })).toBe(false)
+  })
+
+  it('prefers the installed electron version to the range', () => {
+    write('package.json', JSON.stringify({ devDependencies: { electron: '>=44 <46' } }))
+    write('node_modules/electron/package.json', JSON.stringify({ name: 'electron', version: '45.1.0' }))
+    expect(shared.electronMajor(root)).toBe(45)
   })
 
   it('finds the preloads of libraries the app depends on', () => {

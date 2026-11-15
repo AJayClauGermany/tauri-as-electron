@@ -158,7 +158,9 @@ export const protocol = {
       const headers = new Headers(file.headers)
       for (const [name, value] of Object.entries(result?.headers ?? {})) headers.set(name, value)
       if (result?.mimeType) headers.set('content-type', result.charset ? `${result.mimeType}; charset=${result.charset}` : result.mimeType)
-      return new Response(file.body, { status: result?.statusCode ?? 200, headers })
+      const status = result?.statusCode ?? 200
+      // Statuses that cannot carry a body (Response() throws otherwise).
+      return new Response([101, 204, 205, 304].includes(status) ? null : file.body, { status, headers })
     })
   },
 
