@@ -157,6 +157,24 @@ describe('vm (C4)', () => {
     warn.mockRestore()
   })
 
+  it("names the file in JavaScriptCore's location-less eval frames", () => {
+    const context = vm.createContext({})
+    document.frames[0].contentWindow.eval = () => {
+      const error = new Error('jsc')
+      error.stack = 'inner@\neval code@\neval@[native code]\nrunInContext@tauri://localhost/assets/a.js:1:2'
+      error.line = 3
+      error.column = 4
+      throw error
+    }
+    let error
+    try {
+      vm.runInContext('x', context, { filename: 'script.js' })
+    } catch (e) {
+      error = e
+    }
+    expect(error.stack).toBe('inner@script.js:3:4\neval code@script.js\neval@[native code]\nrunInContext@tauri://localhost/assets/a.js:1:2')
+  })
+
   it('explains a Content-Security-Policy without unsafe-eval, and that workers have no contexts', () => {
     const context = vm.createContext({})
     document.frames[0].contentWindow.eval = () => {

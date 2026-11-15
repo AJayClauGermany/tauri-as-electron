@@ -339,7 +339,14 @@ export class Worker extends EventEmitter {
       return
     }
 
-    const native = workers.create({ name: options.name ? String(options.name) : undefined })
+    let native
+    try {
+      native = workers.create({ name: options.name ? String(options.name) : undefined })
+    } catch (error) {
+      liveWorkers.delete(this)
+      notifyWorkers()
+      throw error
+    }
     this._native = native
     native.addEventListener('message', (event) => this._onMessage(event))
     native.addEventListener('messageerror', () => this.emit('messageerror', codeError(Error, 'ERR_WORKER_MESSAGE_DESERIALIZE', 'Message could not be deserialized')))

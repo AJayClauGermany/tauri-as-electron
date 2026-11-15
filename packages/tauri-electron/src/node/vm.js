@@ -67,6 +67,31 @@ function withSourceUrl(code, filename) {
   return `${source}\n//# sourceURL=${String(filename).replace(/\s/g, '%20')}`
 }
 
+/**
+ * JavaScriptCore ignores `//# sourceURL` in stack traces of eval code: its
+ * frames have no location (`eval code@`). Give the evaluated code's frames
+ * (those before the native `eval` frame) the file name, and the top one
+ * JavaScriptCore's `line` / `column`, as Node's stacks name the Script's
+ * file. V8 (WebView2) already names it.
+ */
+function nameFrames(error, filename) {
+  if (!error || typeof error !== 'object' || typeof error.stack !== 'string' || !filename) return error
+  const lines = error.stack.split('\n')
+  const boundary = lines.findIndex((line) => /^eval@\[native code\]$/.test(line))
+  if (boundary <= 0 || !lines.slice(0, boundary).some((line) => line.endsWith('@'))) return error
+  for (let i = 0; i < boundary; i++) {
+    if (!lines[i].endsWith('@')) continue
+    const position = i === 0 && Number.isInteger(error.line) ? `:${error.line}${Number.isInteger(error.column) ? `:${error.column}` : ''}` : ''
+    lines[i] += `${filename}${position}`
+  }
+  try {
+    error.stack = lines.join('\n')
+  } catch {
+    /* read-only stack */
+  }
+  return error
+}
+
 function filenameOf(options, fallback = 'evalmachine.<anonymous>') {
   if (typeof options === 'string') return options
   return options?.filename ?? fallback
@@ -272,6 +297,8 @@ class Context {
     if (!sandbox) return
     for (const key of Reflect.ownKeys(this.global)) {
       if (this.builtins.has(key) || this.mirrored.has(key)) continue
+      // What the webview may inject into frames later (Tauri's internals) is not the code's.
+      if (typeof key === 'string' && key.startsWith('__TAURI')) continue
       const descriptor = Object.getOwnPropertyDescriptor(this.global, key)
       if (!descriptor) continue
       sandbox[key] = 'value' in descriptor ? descriptor.value : this.global[key]
@@ -312,7 +339,7 @@ class Context {
     try {
       return this.shadowed.size ? this.scopedEval(source) : this.global.eval(source)
     } catch (error) {
-      throw explainEval(error)
+      throw nameFrames(explainEval(error), filename)
     } finally {
       this.syncOut()
     }
@@ -386,7 +413,7 @@ export function runInThisContext(code, options) {
     // Indirect eval: the page's global scope.
     return (0, eval)(withSourceUrl(persistDeclarations(String(code)), filenameOf(options)))
   } catch (error) {
-    throw explainEval(error)
+    throw nameFrames(explainEval(error), filenameOf(options))
   }
 }
 

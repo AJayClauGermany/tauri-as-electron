@@ -95,7 +95,8 @@ export function start(loadRuntime) {
       const original = target?.[name]
       if (typeof original !== 'function') continue
       target[name] = function tracked(...args) {
-        const result = original.apply(this, args)
+        // A bare `fetch(url)` has no `this`: give global functions their scope.
+        const result = original.apply(this === undefined ? target : this, args)
         return result && typeof result.then === 'function' ? track(result) : result
       }
     }
