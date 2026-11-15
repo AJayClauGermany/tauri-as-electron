@@ -10,4 +10,11 @@ permissions = [
   "allow-is-devtools-open",
   "allow-trash-item",
   "allow-bridge-respond",
+  "allow-set-menu-visible",
+  "allow-cookies-get",
+  "allow-cookies-set",
+  "allow-cookies-remove",
+  "allow-clipboard-read-html",
+  "allow-power-blocker-start",
+  "allow-power-blocker-stop",
 ]

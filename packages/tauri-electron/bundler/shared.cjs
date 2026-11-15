@@ -133,14 +133,93 @@ const SYSTEM_ROOTS = new Set([
  * path such as `/src/data.json` (from the rewritten `__dirname`) an app
  * file, and in development the project folder itself.
  */
-function appFilesConfig(root, { dev }) {
+function appFilesConfig(root, { dev, sessionPreloads = [] }) {
   let entries = []
   try {
     entries = fs.readdirSync(root).filter((name) => !name.startsWith('.') && name !== 'src-tauri' && !SYSTEM_ROOTS.has(name))
   } catch {
     /* no project folder: nothing is app-relative */
   }
-  return { root: dev ? root : null, entries }
+  const config = { root: dev ? root : null, entries }
+  const electron = electronMajor(root)
+  if (electron !== null) config.electron = electron
+  // Which session preloads the renderers run (session.setPreloads does not warn about them).
+  if (sessionPreloads.length) config.sessionPreloads = sessionPreloads.map((p) => p.name)
+  return config
+}
+
+/**
+ * Preload scripts that libraries register at runtime with
+ * `session.registerPreloadScript` / `setPreloads` (paths inside their
+ * package). tauri-electron cannot load a file at runtime, so the bundler
+ * plugins put them in every renderer page when the app depends on the
+ * library. `specifier` is tried first (a package export), then `files`.
+ */
+const SESSION_PRELOADS = [
+  { name: 'electron-log', specifier: 'electron-log/preload', files: ['src/renderer/electron-log-preload.js', 'preload.js'] },
+  { name: '@sentry/electron', specifier: '@sentry/electron/preload', files: [] },
+]
+
+function readPackageJson(root) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+/** A module id the bundler can import: a resolvable specifier as is, else an absolute file path. */
+function resolveFrom(root, specifier, files = []) {
+  try {
+    require.resolve(specifier, { paths: [root] })
+    return { id: specifier }
+  } catch {
+    /* not a package export: try the files */
+  }
+  for (const file of files) {
+    const full = path.join(root, 'node_modules', ...specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1), file)
+    if (fs.existsSync(full)) return { id: full, file: true }
+  }
+  return null
+}
+
+/**
+ * The session preloads to put in renderer pages: `[{ name, id, file }]`.
+ * `option` is the plugins' `sessionPreloads` option: false for none, or
+ * extra module specifiers / project-relative files (added to the known
+ * libraries the app depends on).
+ */
+function sessionPreloads(root, option) {
+  if (option === false) return []
+  const pkg = readPackageJson(root)
+  const deps = { ...pkg.optionalDependencies, ...pkg.devDependencies, ...pkg.dependencies }
+  const found = []
+  for (const known of SESSION_PRELOADS) {
+    if (!deps[known.name]) continue
+    const resolved = resolveFrom(root, known.specifier, known.files)
+    if (resolved) found.push({ name: known.name, ...resolved })
+  }
+  for (const extra of [option ?? []].flat().filter(Boolean)) {
+    if (/^\.{0,2}[\\/]/.test(extra)) found.push({ name: extra, id: path.resolve(root, extra), file: true })
+    else found.push({ name: extra, ...(resolveFrom(root, extra) ?? { id: extra }) })
+  }
+  return found
+}
+
+/**
+ * The major version of the `electron` package the project depends on
+ * (`"^28.1.0"` → 28), or null. APIs that changed shape between Electron
+ * versions follow it: clipboard reads are synchronous before 45.
+ */
+function electronMajor(root) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+    const range = pkg.devDependencies?.electron ?? pkg.dependencies?.electron ?? pkg.optionalDependencies?.electron
+    const match = typeof range === 'string' ? /(\d+)/.exec(range.replace(/^npm:electron@/, '')) : null
+    return match ? Number(match[1]) : null
+  } catch {
+    return null
+  }
 }
 
 /** Where the bundler plugins stage app files; tauri.conf.json maps it to the resource folder. */
@@ -215,5 +294,7 @@ module.exports = {
   rewriteBuiltinRequires,
   mentionsRequire,
   appFilesConfig,
+  electronMajor,
+  sessionPreloads,
   stageAppFiles,
 }

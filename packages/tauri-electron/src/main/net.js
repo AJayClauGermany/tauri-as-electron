@@ -5,16 +5,56 @@
  * `net.request` are not subject to CORS. The hidden main window is, so
  * requests go through plugin-http (Rust's reqwest), which is not. Allowed
  * URLs are governed by the `http:` scope in the main capability.
+ * `file://` URLs are read through Node `fs` (feature `node-fs` of
+ * tauri-plugin-electron), as in Electron, with a content type from the
+ * file extension: the usual body of a `protocol.handle()` handler.
  */
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { EventEmitter } from '../internal/emitter.js'
-import { NotImplementedError, warnOnce } from '../internal/runtime.js'
+import { NotImplementedError, warnOnce, inTauri, explainError } from '../internal/runtime.js'
+import { mimeType } from '../internal/mime.js'
+import { native, hasFeature, featureError } from '../internal/native.js'
+import { encodeFrame, responseBytes } from '../internal/node-bridge.js'
+import { resolveAppPath } from '../internal/app-files.js'
+import { platform } from '../process.js'
+
+const FILE_ERRORS = { ENOENT: 'ERR_FILE_NOT_FOUND', ENOTDIR: 'ERR_FILE_NOT_FOUND', EISDIR: 'ERR_FILE_NOT_FOUND', EACCES: 'ERR_ACCESS_DENIED', EPERM: 'ERR_ACCESS_DENIED' }
+
+/** A file URL's path (`/C:/x` → `C:\x` on Windows); the app's own files map as in `fs`. */
+export function filePath(url, onPlatform = platform) {
+  let path = decodeURIComponent(url.pathname)
+  if (onPlatform === 'win32') {
+    path = /^\/[a-zA-Z]:/.test(path) ? path.slice(1).replace(/\//g, '\\') : url.host ? `\\\\${url.host}${path.replace(/\//g, '\\')}` : path
+  }
+  return resolveAppPath(path).path
+}
+
+/** `file://` → a Response with the file, read with the `node_fs` command (feature `node-fs`). */
+async function fetchFile(url, method) {
+  const api = 'net.fetch(file://)'
+  if (!inTauri || !hasFeature('node-fs')) throw featureError(api, 'node-fs')
+  let bytes
+  try {
+    bytes = responseBytes(await native('node_fs', encodeFrame('read', { path: filePath(url) })))
+  } catch (error) {
+    if (error?.code === 'ERR_FEATURE_DISABLED') throw featureError(api, 'node-fs')
+    if (!error?.syscall) throw explainError(api, error)
+    throw new Error(`net::${FILE_ERRORS[error.code] ?? 'ERR_FAILED'}`, { cause: error })
+  }
+  const response = new Response(method === 'HEAD' ? null : bytes, {
+    status: 200,
+    headers: { 'content-type': mimeType(url.pathname), 'content-length': String(bytes.byteLength) },
+  })
+  Object.defineProperty(response, 'url', { value: url.href })
+  return response
+}
 
 /** fetch() for Electron's main process (no CORS). */
 export function netFetch(input, init) {
   const url = typeof input === 'string' ? input : input?.url ?? String(input)
   // Local schemes plugin-http cannot fetch are served by the webview itself.
   if (/^(data|blob):/i.test(url)) return fetch(input, init)
+  if (/^file:/i.test(url)) return fetchFile(new URL(url), String(init?.method ?? input?.method ?? 'GET').toUpperCase())
   if (init?.bypassCustomProtocolHandlers !== undefined) {
     init = { ...init }
     delete init.bypassCustomProtocolHandlers

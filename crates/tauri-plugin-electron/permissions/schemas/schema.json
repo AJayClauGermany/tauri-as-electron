@@ -355,6 +355,18 @@
           "markdownDescription": "Denies the child_write command without any pre-configured scope."
         },
         {
+          "description": "Enables the clipboard_read_html command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-clipboard-read-html",
+          "markdownDescription": "Enables the clipboard_read_html command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the clipboard_read_html command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-clipboard-read-html",
+          "markdownDescription": "Denies the clipboard_read_html command without any pre-configured scope."
+        },
+        {
           "description": "Enables the close_devtools command without any pre-configured scope.",
           "type": "string",
           "const": "allow-close-devtools",
@@ -365,6 +377,42 @@
           "type": "string",
           "const": "deny-close-devtools",
           "markdownDescription": "Denies the close_devtools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cookies_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cookies-get",
+          "markdownDescription": "Enables the cookies_get command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cookies_get command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cookies-get",
+          "markdownDescription": "Denies the cookies_get command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cookies_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cookies-remove",
+          "markdownDescription": "Enables the cookies_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cookies_remove command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cookies-remove",
+          "markdownDescription": "Denies the cookies_remove command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the cookies_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cookies-set",
+          "markdownDescription": "Enables the cookies_set command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cookies_set command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cookies-set",
+          "markdownDescription": "Denies the cookies_set command without any pre-configured scope."
         },
         {
           "description": "Enables the dns_lookup command without any pre-configured scope.",
@@ -535,6 +583,30 @@
           "markdownDescription": "Denies the open_devtools command without any pre-configured scope."
         },
         {
+          "description": "Enables the power_blocker_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-power-blocker-start",
+          "markdownDescription": "Enables the power_blocker_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the power_blocker_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-power-blocker-start",
+          "markdownDescription": "Denies the power_blocker_start command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the power_blocker_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-power-blocker-stop",
+          "markdownDescription": "Enables the power_blocker_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the power_blocker_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-power-blocker-stop",
+          "markdownDescription": "Denies the power_blocker_stop command without any pre-configured scope."
+        },
+        {
           "description": "Enables the process_info command without any pre-configured scope.",
           "type": "string",
           "const": "allow-process-info",
@@ -545,6 +617,18 @@
           "type": "string",
           "const": "deny-process-info",
           "markdownDescription": "Denies the process_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the set_menu_visible command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-menu-visible",
+          "markdownDescription": "Enables the set_menu_visible command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_menu_visible command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-menu-visible",
+          "markdownDescription": "Denies the set_menu_visible command without any pre-configured scope."
         },
         {
           "description": "Enables the set_window_config command without any pre-configured scope.",
@@ -619,10 +703,10 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`",
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`"
         },
         {
           "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",

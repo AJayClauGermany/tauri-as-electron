@@ -79,11 +79,11 @@ round of work; **now** is the current status. See
 | `webContents.ipc` | Per-window IPC handlers | ❌ | ✅ |
 | `webPreferences.additionalArguments` → renderer `process.argv` | The window configuration is passed in `--vscode-window-config=…` | ❌ | ✅ |
 | `webPreferences.zoomFactor`, `sandbox`, `spellcheck`, `backgroundThrottling` | Window creation | 🟡 | ✅ `spellcheck` ignored |
-| `protocol.registerSchemesAsPrivileged`, `protocol.handle`, `unhandle`, `registerFileProtocol` | `vscode-file://` and `vscode-webview://` | ❌ | 🟡 `handle` works for schemes declared in Rust; no file access without `fs` |
+| `protocol.registerSchemesAsPrivileged`, `protocol.handle`, `unhandle`, `registerFileProtocol` | `vscode-file://` and `vscode-webview://` | ❌ | 🟡 `handle` works for schemes declared in Rust; `net.fetch('file://…')` and `registerFileProtocol` read files with the `node-fs` feature |
 | `utilityProcess.fork` | Extension host, shared process, pty host, file watcher | ❌ | ❌ biggest blocker, see below |
 | `safeStorage.encryptString/decryptString`, `isEncryptionAvailable`, `getSelectedStorageBackend` | Secret storage | ❌ | 🟡 reports encryption unavailable (VS Code has a fallback for this) |
 | `powerMonitor` events and `getSystemIdleState`, `isOnBatteryPower` | Telemetry, idle detection | ❌ | 🟡 `unknown`, battery from `navigator.getBattery` |
-| `powerSaveBlocker.start/stop` | Keep the display awake during debugging | ❌ | 🟡 Screen Wake Lock, best effort |
+| `powerSaveBlocker.start/stop` | Keep the display awake during debugging | ❌ | ✅ Operating-system assertion (`keepawake`) |
 | `systemPreferences.getMediaAccessStatus`, `subscribeNotification`, `getUserDefault` | Permissions, accent/scroller notifications | ❌ | 🟡 |
 | `webContents.findInPage` / `stopFindInPage` / `found-in-page` | Find in webviews | ❌ | 🟡 `window.find()` |
 | `webContents.navigationHistory` | Integrated browser | ❌ | 🟡 tracked from navigation events |

@@ -253,6 +253,19 @@ function trackPageEvents() {
   window.addEventListener('keydown', onKey, true)
   window.addEventListener('keyup', onKey, true)
 
+  // autoHideMenuBar: Alt pressed and released with nothing in between
+  // toggles the menu bar, as in Electron.
+  let altAlone = false
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Alt') altAlone = false
+    else if (!event.repeat) altAlone = true
+  }, true)
+  window.addEventListener('keyup', (event) => {
+    if (event.key === 'Alt' && altAlone && subscribed.has('menu-bar-alt')) lifecycle('menu-bar-alt', {})
+    altAlone = false
+  }, true)
+  window.addEventListener('mousedown', () => (altAlone = false), true)
+
   window.addEventListener('wheel', (event) => {
     if (event.ctrlKey && subscribed.has('zoom-changed')) lifecycle('zoom-changed', { direction: event.deltaY < 0 ? 'in' : 'out' })
   }, { passive: true })

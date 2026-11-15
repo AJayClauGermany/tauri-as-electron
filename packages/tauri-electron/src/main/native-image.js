@@ -5,12 +5,24 @@
  * cargo features of `tauri` are enabled.
  *
  * Synchronous getters work from what can be read synchronously: getSize()
- * parses the PNG/GIF/JPEG/BMP header; bitmaps are encoded to PNG with a
- * canvas (toDataURL is synchronous). Resizing/cropping encoded images needs
- * an asynchronous decode, so it is not implemented.
+ * parses the PNG/GIF/JPEG/BMP header; PNGs are decoded and bitmaps encoded
+ * to PNG in JavaScript (../internal/png.js), so resize(), crop(), toBitmap()
+ * and toPNG() are synchronous for PNGs and bitmaps, as in Electron. Other
+ * formats (JPEG, GIF, …) and images still to be fetched are decoded with
+ * createImageBitmap when they are used (`resolveImage`, an icon); their
+ * resized / cropped copies report their size at once but have no bytes
+ * until then.
+ *
+ * createFromPath reads absolute paths through Node `fs` (feature `node-fs`
+ * of tauri-plugin-electron); the app's own files (`/public/icon.png`,
+ * `path.join(__dirname, 'icon.png')`) are fetched from the app.
  */
-import { NotImplementedError } from '../internal/runtime.js'
+import { NotImplementedError, inTauri } from '../internal/runtime.js'
 import { base64ToBytes, bytesToBase64 } from '../internal/serialize.js'
+import { decodePng, encodePng, isPng, resizeRgba, cropRgba } from '../internal/png.js'
+import { nodeCallSync } from '../internal/node-bridge.js'
+import { isAppPath } from '../internal/app-files.js'
+import { fileURLToPath } from '../url.js'
 
 const be32 = (b, i) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0
 const be16 = (b, i) => (b[i] << 8) | b[i + 1]
@@ -71,18 +83,49 @@ function canvasFor(rgba, width, height) {
   return canvas
 }
 
+/** Pixels of encoded bytes, decoded by the webview (any format it reads). */
+async function decodeAsync(bytes, mime) {
+  const png = decodePng(bytes)
+  if (png) return png
+  if (typeof createImageBitmap !== 'function' || typeof OffscreenCanvas !== 'function') {
+    throw new NotImplementedError('nativeImage decoding', { reason: 'unsupported', hint: 'Only PNG images can be decoded without createImageBitmap / OffscreenCanvas.' })
+  }
+  const bitmap = await createImageBitmap(new Blob([bytes], { type: mime }))
+  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+  const context = canvas.getContext('2d')
+  context.drawImage(bitmap, 0, 0)
+  const { data } = context.getImageData(0, 0, bitmap.width, bitmap.height)
+  return { width: bitmap.width, height: bitmap.height, rgba: new Uint8Array(data.buffer, data.byteOffset, data.byteLength) }
+}
+
+function sniffMime(bytes, fallback = 'image/png') {
+  if (!bytes || bytes.length < 4) return fallback
+  if (isPng(bytes)) return 'image/png'
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) return 'image/jpeg'
+  if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif'
+  if (bytes[0] === 0x42 && bytes[1] === 0x4d) return 'image/bmp'
+  if (bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1 && bytes[3] === 0) return 'image/x-icon'
+  if (bytes.length > 12 && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP') return 'image/webp'
+  return fallback
+}
+
 function dataUrlBytes(dataUrl) {
   const comma = dataUrl.indexOf(',')
   return comma === -1 ? null : base64ToBytes(dataUrl.slice(comma + 1))
 }
 
 export class NativeImage {
-  constructor({ bytes = null, url = null, mime = 'image/png', rgba = null, width = 0, height = 0, scaleFactor = 1 } = {}) {
+  /**
+   * `pending` (with `width` / `height`): pixels that only an asynchronous
+   * decode can produce, `() => Promise<{ width, height, rgba }>`.
+   */
+  constructor({ bytes = null, url = null, mime, rgba = null, width = 0, height = 0, scaleFactor = 1, pending = null } = {}) {
     this._bytes = bytes
     this._url = url
-    this._mime = mime
+    this._mime = mime ?? sniffMime(bytes)
     this._rgba = rgba
-    this._pixelSize = rgba ? { width, height } : null
+    this._pending = pending
+    this._pixelSize = rgba || pending ? { width, height } : null
     this._scaleFactor = scaleFactor || 1
     this.isMacTemplateImage = false
   }
@@ -90,27 +133,77 @@ export class NativeImage {
   /** Encoded bytes, encoding a bitmap to PNG on first use. */
   _encoded() {
     if (!this._bytes && this._rgba) {
-      const canvas = canvasFor(this._rgba, this._pixelSize.width, this._pixelSize.height)
-      if (canvas) {
-        this._bytes = dataUrlBytes(canvas.toDataURL('image/png'))
-        this._mime = 'image/png'
-      }
+      this._bytes = encodePng(this._rgba, this._pixelSize.width, this._pixelSize.height)
+      this._mime = 'image/png'
     }
     return this._bytes
   }
 
-  /** Resolve to raw bytes (fetching `url` relative to the app if needed). */
+  /** `{ width, height, rgba }` when they can be had synchronously (a bitmap or a PNG), else null. */
+  _pixels() {
+    if (!this._rgba && this._bytes && isPng(this._bytes)) {
+      try {
+        const { width, height, rgba } = decodePng(this._bytes)
+        this._rgba = rgba
+        this._pixelSize = { width, height }
+      } catch {
+        return null
+      }
+    }
+    return this._rgba ? { ...this._pixelSize, rgba: this._rgba } : null
+  }
+
+  /** Pixels, decoding (and fetching) as needed. */
+  async _decodedPixels() {
+    const ready = this._pixels()
+    if (ready) return ready
+    const bytes = await this._load()
+    if (!bytes) return null
+    if (this._rgba) return { ...this._pixelSize, rgba: this._rgba }
+    return decodeAsync(bytes, this._mime)
+  }
+
+  /** Resolve to raw bytes (fetching `url` relative to the app, or finishing a pending decode). */
   async _load() {
+    if (this._pending) {
+      const pending = this._pending
+      this._pending = null
+      const result = await pending()
+      if (result) {
+        this._rgba = result.rgba
+        this._pixelSize = { width: result.width, height: result.height }
+      }
+    }
     if (this._encoded()) return this._bytes
     if (!this._url) return null
     const response = await fetch(this._url)
     if (!response.ok) throw new Error(`Could not load image ${this._url}: HTTP ${response.status}`)
     this._bytes = new Uint8Array(await response.arrayBuffer())
+    this._mime = sniffMime(this._bytes, this._mime)
     return this._bytes
   }
 
   isEmpty() {
-    return !this._bytes && !this._url && !this._rgba
+    return !this._bytes && !this._url && !this._rgba && !this._pending
+  }
+
+  /** A new image from this one's pixels, now if possible, else once decoded. */
+  _derive(size, transform) {
+    const pixels = this._pixels()
+    if (pixels) {
+      const out = transform(pixels)
+      return new NativeImage({ rgba: out.rgba, width: out.width, height: out.height, scaleFactor: this._scaleFactor })
+    }
+    if (this.isEmpty()) return new NativeImage()
+    return new NativeImage({
+      pending: async () => {
+        const source = await this._decodedPixels()
+        return source ? transform(source) : null
+      },
+      width: size.width,
+      height: size.height,
+      scaleFactor: this._scaleFactor,
+    })
   }
 
   /** The encoded bytes (not re-encoded if the image was created from a JPEG/GIF). */
@@ -119,15 +212,17 @@ export class NativeImage {
   }
 
   toJPEG(quality = 90) {
-    if (!this._rgba) throw new NotImplementedError('nativeImage#toJPEG', { reason: 'unimplemented', hint: 'Only images created from a bitmap can be encoded.' })
-    const canvas = canvasFor(this._rgba, this._pixelSize.width, this._pixelSize.height)
+    const pixels = this._pixels()
+    if (!pixels) throw new NotImplementedError('nativeImage#toJPEG', { reason: 'unimplemented', hint: 'Only PNG images and bitmaps can be re-encoded synchronously.' })
+    const canvas = canvasFor(pixels.rgba, pixels.width, pixels.height)
     return canvas ? dataUrlBytes(canvas.toDataURL('image/jpeg', quality / 100)) : null
   }
 
-  /** BGRA pixels, like Electron (only for images created from a bitmap). */
+  /** BGRA pixels, like Electron (PNG images and bitmaps). */
   toBitmap() {
-    if (!this._rgba) throw new NotImplementedError('nativeImage#toBitmap', { reason: 'unimplemented', hint: 'Only images created from a bitmap can be decoded.' })
-    return new Uint8Array(swapRedBlue(this._rgba).buffer)
+    const pixels = this._pixels()
+    if (!pixels) throw new NotImplementedError('nativeImage#toBitmap', { reason: 'unimplemented', hint: 'Only PNG images and bitmaps can be decoded synchronously.' })
+    return new Uint8Array(swapRedBlue(pixels.rgba).buffer)
   }
 
   getBitmap() {
@@ -165,12 +260,32 @@ export class NativeImage {
 
   addRepresentation() {}
 
-  resize() {
-    throw new NotImplementedError('nativeImage#resize', { reason: 'unimplemented', hint: 'Could be done with an OffscreenCanvas.' })
+  /** `{ width?, height?, quality? }` in DIPs; one side alone keeps the aspect ratio. */
+  resize(options = {}) {
+    const scale = this._scaleFactor
+    const { width: w, height: h } = this.getSize()
+    let width = options.width
+    let height = options.height
+    if (width === undefined && height === undefined) return this._derive({ width: w * scale, height: h * scale }, (p) => p)
+    if (width === undefined) width = h ? Math.round((w * height) / h) : 0
+    if (height === undefined) height = w ? Math.round((h * width) / w) : 0
+    const target = { width: Math.max(0, Math.round(width * scale)), height: Math.max(0, Math.round(height * scale)) }
+    if (!target.width || !target.height) return new NativeImage()
+    return this._derive(target, (p) => ({ ...target, rgba: resizeRgba(p.rgba, p.width, p.height, target.width, target.height) }))
   }
 
-  crop() {
-    throw new NotImplementedError('nativeImage#crop', { reason: 'unimplemented', hint: 'Could be done with an OffscreenCanvas.' })
+  /** `{ x, y, width, height }` in DIPs, clamped to the image. */
+  crop(rect = {}) {
+    const scale = this._scaleFactor
+    const { width: w, height: h } = this.getSize()
+    const x = Math.max(0, Math.min(w, rect.x ?? 0))
+    const y = Math.max(0, Math.min(h, rect.y ?? 0))
+    const size = {
+      width: Math.round(Math.max(0, Math.min(w - x, rect.width ?? 0)) * scale),
+      height: Math.round(Math.max(0, Math.min(h - y, rect.height ?? 0)) * scale),
+    }
+    if (!size.width || !size.height) return new NativeImage()
+    return this._derive(size, (p) => cropRgba(p.rgba, p.width, p.height, x * scale, y * scale, size.width, size.height))
   }
 }
 
@@ -183,9 +298,42 @@ export function pathToAppUrl(p) {
   return '/' + clean.replace(/^public\//, '')
 }
 
+const isAbsolute = (p) => /^\/(?!\/)|^[a-zA-Z]:[\\/]|^\\\\/.test(p)
+
+/** The file's bytes, read through Node `fs`; undefined when `fs` cannot be used, null when the file cannot be read. */
+function readDiskImage(path) {
+  if (!inTauri) return undefined
+  try {
+    return nodeCallSync({ api: 'nativeImage.createFromPath', module: 'fs', feature: 'node-fs', op: 'read', args: { path }, toError: (body) => Object.assign(new Error(body.code), body) })
+  } catch (error) {
+    return error?.syscall ? null : undefined
+  }
+}
+
+/** `icon@2x.png` is a 2x image, as Electron reads it. */
+function scaleFromName(p) {
+  const match = /@(\d+(?:\.\d+)?)x\.[^./\\]+$/.exec(p)
+  return match ? Number(match[1]) : 1
+}
+
 export const nativeImage = {
   createEmpty: () => new NativeImage(),
-  createFromPath: (p) => new NativeImage({ url: pathToAppUrl(p) }),
+  /**
+   * Absolute paths on disk are read synchronously through Node `fs`; the
+   * app's own files (and everything when `fs` is unavailable) are fetched
+   * from the app when used. A file that cannot be read gives an empty image.
+   */
+  createFromPath(p) {
+    let path = p instanceof URL ? fileURLToPath(p) : String(p)
+    if (/^file:/i.test(path)) path = fileURLToPath(path)
+    const scaleFactor = scaleFromName(path)
+    if (isAbsolute(path) && !isAppPath(path)) {
+      const bytes = readDiskImage(path)
+      if (bytes === null) return new NativeImage()
+      if (bytes) return new NativeImage({ bytes, scaleFactor })
+    }
+    return new NativeImage({ url: pathToAppUrl(p), scaleFactor })
+  },
   createFromBuffer: (buffer, options = {}) => {
     const bytes = new Uint8Array(buffer)
     if (options.width && options.height && !parseImageSize(bytes)) {
@@ -208,7 +356,22 @@ export const nativeImage = {
     return new NativeImage({ bytes, mime: match[1] ?? 'image/png' })
   },
   createFromNamedImage: () => new NativeImage(),
-  createThumbnailFromPath: () => Promise.reject(new NotImplementedError('nativeImage.createThumbnailFromPath', { reason: 'unimplemented' })),
+  /** Images only: the file scaled to fit `size`, keeping its aspect ratio. */
+  async createThumbnailFromPath(path, size) {
+    if (!size || !(size.width > 0) || !(size.height > 0)) throw new TypeError('size must be { width, height } with positive values')
+    const image = nativeImage.createFromPath(path)
+    try {
+      await image._load()
+    } catch {
+      // reported below as an empty image
+    }
+    const { width, height } = image.getSize()
+    if (image.isEmpty() || !width || !height) throw new Error(`Failed to get thumbnail from local thumbnail cache reference: ${path}`)
+    const scale = Math.min(size.width / width, size.height / height)
+    const thumbnail = image.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) })
+    await thumbnail._load()
+    return thumbnail
+  },
 }
 
 /** Accept whatever Electron accepts for an icon (path or NativeImage) and return bytes. */

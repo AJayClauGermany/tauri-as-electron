@@ -28,6 +28,7 @@ pub fn enabled() -> Vec<&'static str> {
         "tray",
         "protocol-client",
         "login-item",
+        "power-save-blocker",
         "single-instance",
         "updater",
         "devtools",
@@ -42,7 +43,11 @@ pub fn enabled() -> Vec<&'static str> {
         list.retain(|name| {
             !matches!(
                 *name,
-                "global-shortcut" | "login-item" | "single-instance" | "updater"
+                "global-shortcut"
+                    | "login-item"
+                    | "power-save-blocker"
+                    | "single-instance"
+                    | "updater"
             )
         });
     }

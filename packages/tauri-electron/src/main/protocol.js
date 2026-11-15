@@ -10,11 +10,15 @@
  * by the handler registered here, which returns a `Response` like in
  * Electron. On Windows and Android, Tauri serves a scheme as
  * `http://<scheme>.localhost/<path>`; handlers still see `<scheme>://...`.
+ *
+ * The deprecated `register{File,Buffer,String,Http}Protocol` callback forms
+ * are adapters onto `handle()`; files are read with `net.fetch('file://…')`.
  */
 import { NotImplementedError } from '../internal/runtime.js'
 import { onBridgeRequest, startBridgeListener } from '../internal/native.js'
 import { base64ToBytes, bytesToBase64 } from '../internal/serialize.js'
 import { platform } from '../process.js'
+import { pathToFileURL } from '../url.js'
 
 const BUILTIN = new Set(['http', 'https', 'file', 'about', 'data', 'blob', 'ws', 'wss'])
 const handlers = new Map()
@@ -73,7 +77,8 @@ function toResponse(value) {
   return new Response(value.data ?? null, { status: value.statusCode ?? 200, headers })
 }
 
-async function onRequest(payload) {
+/** Answer a request Rust forwarded for a custom scheme (exported for tests). */
+export async function onRequest(payload) {
   const handler = handlers.get(payload.scheme)
   if (!handler) return { status: 404, body: `No handler registered for '${payload.scheme}'` }
   const method = payload.method ?? 'GET'
@@ -137,8 +142,24 @@ export const protocol = {
     })
   },
 
-  registerFileProtocol() {
-    throw new NotImplementedError('protocol.registerFileProtocol', { reason: 'unsupported', hint: 'Reading files needs Node `fs`; use protocol.handle() and return a Response.' })
+  /** The callback gets a path or `{ path, headers, statusCode }` (or `{ error }`, or nothing: 404). */
+  registerFileProtocol(scheme, handler) {
+    return adaptCallbackProtocol(scheme, handler, async (result) => {
+      const path = typeof result === 'string' ? result : result?.path
+      if (!path || (result?.error !== undefined && result.error !== 0)) return new Response(null, { status: 404 })
+      const { netFetch } = await import('./net.js')
+      let file
+      try {
+        file = await netFetch(pathToFileURL(path))
+      } catch (error) {
+        if (error?.name === 'NotImplementedError') throw error
+        return new Response(null, { status: error?.message === 'net::ERR_ACCESS_DENIED' ? 403 : 404 })
+      }
+      const headers = new Headers(file.headers)
+      for (const [name, value] of Object.entries(result?.headers ?? {})) headers.set(name, value)
+      if (result?.mimeType) headers.set('content-type', result.charset ? `${result.mimeType}; charset=${result.charset}` : result.mimeType)
+      return new Response(file.body, { status: result?.statusCode ?? 200, headers })
+    })
   },
 
   registerStreamProtocol() {

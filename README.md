@@ -66,14 +66,15 @@ runs JavaScript only inside webviews, so:
 - Electron APIs that are **synchronous** but async in Tauri (`app.getPath`,
   `app.getVersion`, `screen.getAllDisplays`, `BrowserWindow#getSize`, …) are
   pre-fetched before `ready` or cached from window events, so they stay
-  synchronous. The few that cannot (`clipboard.readText`,
-  `screen.getCursorScreenPoint`) return Promises — `await` works in both
-  runtimes (current Electron's clipboard is async too).
+  synchronous; `screen.getCursorScreenPoint` is answered over the
+  synchronous bridge. Clipboard reads return Promises, like current
+  Electron's, unless the app depends on Electron < 45, where they are
+  synchronous too.
 - **Rust is boilerplate**: `lib.rs` is one call to
   `tauri_plugin_electron::Builder::new().install(...)`. Which Electron
   modules exist is set by that plugin's Cargo features, each backed by an
   official Tauri plugin (dialog, clipboard, notification, shell, net,
-  global-shortcut, tray, protocol-client, login-item on by default;
+  global-shortcut, tray, protocol-client, login-item, power-save-blocker on by default;
   single-instance, updater, devtools opt-in, like in Electron).
 
 ## Use it in your project

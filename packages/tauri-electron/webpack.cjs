@@ -46,7 +46,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -202,6 +202,7 @@ class TauriElectronPlugin {
    * @param {boolean} [options.forwardMainConsole=true] Print the main window's console in the dev-server terminal.
    * @param {boolean} [options.forgeGlobals=true] Define Forge's `<NAME>_WEBPACK_ENTRY` globals for `pages`.
    * @param {false|string[]} [options.resources] App files `fs` can read in a build (see the Vite plugin).
+   * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
    */
   constructor(options = {}) {
     if (!options.main) throw new Error(`${NAME}: the \`main\` option (your Electron main script) is required`)
@@ -259,9 +260,12 @@ class TauriElectronPlugin {
       const common = shared && typeof shared === 'object' && !Array.isArray(shared) ? toArray(shared[name]) : toArray(shared)
       return [...common, ...own].map(fromContext)
     }
+    // Library preloads (electron-log, …): session preloads, which Electron runs before the window's own.
+    const libraryPreloads = sessionPreloads(context, options.sessionPreloads)
     const rendererPrefix = (name, page) => [
       ...(withRequire ? [MODULES.require] : []),
       MODULES.bootstrap,
+      ...libraryPreloads.map((preload) => preload.id),
       ...preloadsFor(name, page),
     ]
     const mainImports = [
@@ -294,7 +298,7 @@ class TauriElectronPlugin {
 
     // --- renderer pages from `pages` (Electron Forge entry points) ---------------------------
     // Where the app's own files are, for fs (read by bundler/main-node.js).
-    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appFilesConfig(context, { dev })) }
+    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appFilesConfig(context, { dev, sessionPreloads: libraryPreloads })) }
     const pageFile = (page) => page.filename ?? `${page.name}/index.html`
     for (const page of pages) {
       if (options.forgeGlobals !== false) {

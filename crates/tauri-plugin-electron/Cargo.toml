@@ -22,11 +22,13 @@ default = [
   "tray",
   "protocol-client",
   "login-item",
+  "power-save-blocker",
 ]
 # dialog.* (including the *Sync variants)
 dialog = ["dep:tauri-plugin-dialog"]
 # clipboard.*
-clipboard = ["dep:tauri-plugin-clipboard-manager"]
+# (arboard: clipboard.readHTML and the synchronous reads of Electron < 45)
+clipboard = ["dep:tauri-plugin-clipboard-manager", "dep:arboard"]
 # Notification
 notification = ["dep:tauri-plugin-notification"]
 # shell.openExternal / openPath / showItemInFolder
@@ -41,6 +43,9 @@ tray = ["tauri/tray-icon"]
 protocol-client = ["dep:tauri-plugin-deep-link"]
 # app.setLoginItemSettings / getLoginItemSettings
 login-item = ["dep:tauri-plugin-autostart"]
+# powerSaveBlocker with operating-system assertions (otherwise a Screen Wake
+# Lock in a visible window).
+power-save-blocker = ["dep:keepawake"]
 
 # --- opt-in ------------------------------------------------------------------------
 # app.requestSingleInstanceLock() / 'second-instance'. Electron apps allow several
@@ -106,3 +111,5 @@ tauri-plugin-global-shortcut = { version = "2", optional = true }
 tauri-plugin-autostart = { version = "2", optional = true }
 tauri-plugin-single-instance = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }
+arboard = { version = "3", optional = true }
+keepawake = { version = "0.6", optional = true }

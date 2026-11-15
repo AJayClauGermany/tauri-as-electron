@@ -1,14 +1,16 @@
 /**
  * screen: monitors are fetched before `ready` and refreshed in the
  * background on every call, so the sync getters return recent data.
- * getCursorScreenPoint() is async in Tauri, so it returns a Promise here.
+ * getCursorScreenPoint() is synchronous, answered by tauri-plugin-electron
+ * over the synchronous bridge.
  * Tauri has no monitor-change event: display-added / display-removed /
  * display-metrics-changed come from polling (every 2 s, only while someone
  * listens).
  */
-import { availableMonitors, primaryMonitor, cursorPosition } from '@tauri-apps/api/window'
+import { availableMonitors, primaryMonitor } from '@tauri-apps/api/window'
 import { EventEmitter, createEvent } from '../internal/emitter.js'
-import { inTauri, report } from '../internal/runtime.js'
+import { inTauri, report, warnOnce } from '../internal/runtime.js'
+import { syncRequest } from '../internal/native.js'
 
 let displays = []
 let primaryId = null
@@ -149,10 +151,16 @@ class Screen extends EventEmitter {
     return this.getDisplayNearestPoint({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 })
   }
 
-  /** Async in tauri-electron (sync in Electron) - `await` it. */
-  async getCursorScreenPoint() {
-    const position = await cursorPosition()
-    const display = this.getDisplayNearestPoint({ x: position.x, y: position.y })
+  /** In DIPs; `{ x: 0, y: 0 }` when the position cannot be read. */
+  getCursorScreenPoint() {
+    const position = readCursor()
+    if (!position) return { x: 0, y: 0 }
+    // `position` is in physical pixels: scale by the display it is on.
+    const display = displays.find((d) => {
+      const s = d.scaleFactor
+      const b = d.bounds
+      return position.x >= b.x * s && position.x < (b.x + b.width) * s && position.y >= b.y * s && position.y < (b.y + b.height) * s
+    }) ?? this.getDisplayNearestPoint(position)
     const scale = display?.scaleFactor ?? 1
     return { x: Math.round(position.x / scale), y: Math.round(position.y / scale) }
   }
@@ -164,6 +172,19 @@ class Screen extends EventEmitter {
   dipToScreenPoint(point) {
     return point
   }
+}
+
+/** The cursor in physical pixels, from tauri-plugin-electron's synchronous bridge. */
+function readCursor() {
+  if (!inTauri) return null
+  try {
+    const { status, text } = syncRequest('cursor')
+    if (status === 200) return JSON.parse(text)
+    warnOnce('screen-cursor', `screen.getCursorScreenPoint(): the cursor position is unavailable (${status} ${text}).`)
+  } catch (error) {
+    warnOnce('screen-cursor', `screen.getCursorScreenPoint(): tauri-plugin-electron's bridge did not answer (${error?.message ?? error}).`)
+  }
+  return null
 }
 
 export const screen = new Screen()

@@ -6,6 +6,13 @@ open-source Electron apps, to rank what to build next by **how many apps a
 gap blocks** and **how much work it is**. The ranked checklist that came
 out of it is [ROADMAP.md](ROADMAP.md).
 
+The status columns ("Now") are as of the survey. Items ticked in the roadmap
+since (wave A: `fs` descriptors and streams, `nativeImage` editing and disk
+paths, `session.cookies`, file-backed protocols, menu-bar visibility,
+`powerSaveBlocker`, synchronous `getCursorScreenPoint` and pre-45 clipboard
+reads, library session preloads) are tracked in
+[API-COVERAGE.md](API-COVERAGE.md).
+
 Method: shallow clones of each app's default branch (November 2026), then
 a regex scan of every source file that imports `electron` (tests, builds and
 vendored code excluded). The API catalogue is Electron 45.3's
