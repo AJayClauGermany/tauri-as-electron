@@ -48,6 +48,19 @@ describe('loadFile URL mapping', () => {
     expect(fileUrlToAppUrl('file:///src/my%20page.html')).toBe('src/my%20page.html')
     expect(fileUrlToAppUrl('https://example.com/')).toBe('https://example.com/')
   })
+
+  it('maps real paths under app.getAppPath() back to the project', () => {
+    globalThis.__TAURI_ELECTRON_APP__ = { root: '/home/me/app', entries: ['src', 'index.html'] }
+    try {
+      expect(fileToUrl('/home/me/app/index.html')).toBe('index.html')
+      expect(fileToUrl('/home/me/app/src/page.html')).toBe('src/page.html')
+      expect(fileToUrl('/home/me/application/x.html')).toBe('home/me/application/x.html') // not under the root
+      globalThis.__TAURI_ELECTRON_APP__ = { root: 'C:\\Users\\me\\app', entries: ['src'] }
+      expect(fileToUrl('c:\\users\\me\\app\\src\\page.html')).toBe('src/page.html')
+    } finally {
+      delete globalThis.__TAURI_ELECTRON_APP__
+    }
+  })
 })
 
 describe('window.open features', async () => {

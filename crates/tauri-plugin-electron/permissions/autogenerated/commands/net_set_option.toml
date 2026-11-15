@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-net-set-option"
+description = "Enables the net_set_option command without any pre-configured scope."
+commands.allow = ["net_set_option"]
+
+[[permission]]
+identifier = "deny-net-set-option"
+description = "Denies the net_set_option command without any pre-configured scope."
+commands.deny = ["net_set_option"]

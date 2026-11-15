@@ -22,6 +22,7 @@ import { TO_RENDERER, deferred, report, warnOnce, NotImplementedError, deseriali
 import { encode, decode } from '../internal/serialize.js'
 import { native, hasNativePlugin, processInfo } from '../internal/native.js'
 import { platform } from '../process.js'
+import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
 import { transferPorts } from './message-ports.js'
@@ -40,9 +41,13 @@ const isMac = platform === 'darwin'
 /** Events the renderer bootstrap only reports while the main process listens for them. */
 const RENDERER_EVENTS = new Set(['context-menu', 'before-input-event', 'console-message', 'will-navigate', 'will-frame-navigate', 'zoom-changed'])
 
-/** Turn a loadFile() path into an app-relative URL Tauri understands. */
+/**
+ * Turn a loadFile() path into an app-relative URL Tauri understands. Real
+ * paths under the app root (`path.join(app.getAppPath(), 'index.html')`)
+ * become project-relative first.
+ */
 export function fileToUrl(filePath, options = {}) {
-  let p = String(filePath).replace(/\\/g, '/')
+  let p = String(toProjectPath(String(filePath))).replace(/\\/g, '/')
   if (p.startsWith('file://')) p = p.slice('file://'.length)
   p = p.replace(/^\/+/, '')
   let url = encodeURI(p)

@@ -307,6 +307,54 @@
           "markdownDescription": "Denies the bridge_respond command without any pre-configured scope."
         },
         {
+          "description": "Enables the child_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-end",
+          "markdownDescription": "Enables the child_end command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-end",
+          "markdownDescription": "Denies the child_end command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_kill command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-kill",
+          "markdownDescription": "Enables the child_kill command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_kill command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-kill",
+          "markdownDescription": "Denies the child_kill command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_spawn command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-spawn",
+          "markdownDescription": "Enables the child_spawn command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_spawn command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-spawn",
+          "markdownDescription": "Denies the child_spawn command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-write",
+          "markdownDescription": "Enables the child_write command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-write",
+          "markdownDescription": "Denies the child_write command without any pre-configured scope."
+        },
+        {
           "description": "Enables the close_devtools command without any pre-configured scope.",
           "type": "string",
           "const": "allow-close-devtools",
@@ -319,6 +367,54 @@
           "markdownDescription": "Denies the close_devtools command without any pre-configured scope."
         },
         {
+          "description": "Enables the dns_lookup command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dns-lookup",
+          "markdownDescription": "Enables the dns_lookup command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dns_lookup command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dns-lookup",
+          "markdownDescription": "Denies the dns_lookup command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the dns_resolve command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dns-resolve",
+          "markdownDescription": "Enables the dns_resolve command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dns_resolve command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dns-resolve",
+          "markdownDescription": "Denies the dns_resolve command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the dns_reverse command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dns-reverse",
+          "markdownDescription": "Enables the dns_reverse command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dns_reverse command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dns-reverse",
+          "markdownDescription": "Denies the dns_reverse command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the dns_servers command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-dns-servers",
+          "markdownDescription": "Enables the dns_servers command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the dns_servers command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-dns-servers",
+          "markdownDescription": "Denies the dns_servers command without any pre-configured scope."
+        },
+        {
           "description": "Enables the is_devtools_open command without any pre-configured scope.",
           "type": "string",
           "const": "allow-is-devtools-open",
@@ -329,6 +425,102 @@
           "type": "string",
           "const": "deny-is-devtools-open",
           "markdownDescription": "Denies the is_devtools_open command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_connect command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-connect",
+          "markdownDescription": "Enables the net_connect command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_connect command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-connect",
+          "markdownDescription": "Denies the net_connect command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_destroy command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-destroy",
+          "markdownDescription": "Enables the net_destroy command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_destroy command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-destroy",
+          "markdownDescription": "Denies the net_destroy command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-end",
+          "markdownDescription": "Enables the net_end command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_end command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-end",
+          "markdownDescription": "Denies the net_end command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_listen command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-listen",
+          "markdownDescription": "Enables the net_listen command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_listen command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-listen",
+          "markdownDescription": "Denies the net_listen command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_pause command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-pause",
+          "markdownDescription": "Enables the net_pause command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_pause command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-pause",
+          "markdownDescription": "Denies the net_pause command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_set_option command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-set-option",
+          "markdownDescription": "Enables the net_set_option command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_set_option command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-set-option",
+          "markdownDescription": "Denies the net_set_option command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the net_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-net-write",
+          "markdownDescription": "Enables the net_write command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the net_write command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-net-write",
+          "markdownDescription": "Denies the net_write command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the node_fs command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-node-fs",
+          "markdownDescription": "Enables the node_fs command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the node_fs command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-node-fs",
+          "markdownDescription": "Denies the node_fs command without any pre-configured scope."
         },
         {
           "description": "Enables the open_devtools command without any pre-configured scope.",
@@ -379,10 +571,76 @@
           "markdownDescription": "Denies the trash_item command without any pre-configured scope."
         },
         {
+          "description": "Enables the udp_bind command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-udp-bind",
+          "markdownDescription": "Enables the udp_bind command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the udp_bind command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-udp-bind",
+          "markdownDescription": "Denies the udp_bind command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the udp_membership command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-udp-membership",
+          "markdownDescription": "Enables the udp_membership command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the udp_membership command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-udp-membership",
+          "markdownDescription": "Denies the udp_membership command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the udp_option command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-udp-option",
+          "markdownDescription": "Enables the udp_option command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the udp_option command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-udp-option",
+          "markdownDescription": "Denies the udp_option command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the udp_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-udp-send",
+          "markdownDescription": "Enables the udp_send command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the udp_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-udp-send",
+          "markdownDescription": "Denies the udp_send command without any pre-configured scope."
+        },
+        {
           "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`",
           "type": "string",
           "const": "default",
           "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`"
+        },
+        {
+          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
+          "type": "string",
+          "const": "node-child-process",
+          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
+        },
+        {
+          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`",
+          "type": "string",
+          "const": "node-fs",
+          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`"
+        },
+        {
+          "description": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`",
+          "type": "string",
+          "const": "node-net",
+          "markdownDescription": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`"
         }
       ]
     }

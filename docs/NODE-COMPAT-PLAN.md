@@ -4,7 +4,156 @@ Hand-off document for the agent that implements Node built-in support in
 tauri-electron. It records what was decided, what was measured, where each
 built-in should be implemented, the order of work, and the traps.
 
-Status: research only. Nothing described here is implemented yet.
+Status: **layers 1 (the `fs` proof of concept), 2 (the major modules), 3
+(the smaller modules) and 4 (networking, without `http2`) are implemented**;
+layer 5 is not started. See "Implementation status" below.
+
+## Implementation status
+
+Layer 1 (section 6) landed as planned, with these specifics:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| `fs`, `fs/promises`, `original-fs` | `src/node/fs.js`, `src/node/fs-promises.js`; Rust in `crates/tauri-plugin-electron/src/node_fs.rs` | Feature `node-fs`, permission set `electron:node-fs`. Sync over `node/fs/<op>` on the bridge (always answered from a spawned thread), async over the `node_fs` command with a framed raw body (`u32` LE header length, JSON `{ op, args }`, data), so no custom headers are needed. All operations from step 2, plus `exists` and `readdir` `recursive`. Errors map raw OS codes per platform (libc on Unix, libuv's table on Windows), `ErrorKind` as fallback. |
+| Caller check | `node_refusal` in `lib.rs` | `electron-main` only, and its webview must show the app's own page (`tauri:` / `tauri.localhost`, or the dev URL in debug builds). |
+| `buffer`, global `Buffer` | `src/node/buffer.js` | The `buffer` npm package, imported as `buffer/index.js` so the `buffer` alias does not apply to it. The global is installed on the main page only. |
+| `path.win32` | `src/node/path-win32.js` | Compared against Node's `path.win32` in `test/path.test.js`; differs only for `\\?\` verbatim paths. `path` itself stays POSIX. |
+| Registry for `require()` | `registerNodeModule` in `src/require.js`, `src/node/index.js` | The main page's first module (`virtual:tauri-electron/main`, `bundler/main-node.js`) imports `tauri-electron/node`, which registers `fs`, `fs/promises`, `original-fs`, `buffer`. Renderer pages keep the stub, whose hint now says fs is main-process only. |
+| App-relative paths (8.1) | `src/internal/app-files.js`, `appFilesConfig` / `stageAppFiles` in `bundler/shared.cjs` | The plugins publish `{ root, entries }` (top-level project entries minus dot-files, `src-tauri` and names such as `tmp`, `home`, `Users`) as `globalThis.__TAURI_ELECTRON_APP__`. An absolute path whose first segment is an entry, and that is not under a known real root, maps to the project (dev) or `<resource_dir>/app` (build; asked from Rust via `node/fs/resourceDir` if `process.resourcesPath` is not known yet). Writes there fail with `EROFS` in a build. `app.getAppPath()` returns the same root and `loadFile` maps paths under it back to project paths. Staging runs in production builds only, and only when `src-tauri/electron-resources/` exists; the `resources` plugin option overrides the default selection. |
+| Template, scaffolder, kitchen sink | | `node-fs` line, `bundle.resources: { "electron-resources/": "" }`, the staging folder with its `.gitignore`. Kitchen sink: 12 `fs` / `Buffer` checks in `src/checks-node.js`. |
+
+Measured after layer 1 (Linux, WebKitGTK 2.52.6): 102 unit tests pass;
+kitchen-sink smoke 124 pass, 0 fail, 4 unsupported, 30 manual on Tauri, both
+for a debug build and under `tauri dev`; 128 pass, 0 fail on real Electron
+with the same 12 checks.
+
+Layer 2 (section 7) followed, in the order planned:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| `events` made callable | `src/internal/emitter.js` | `EventEmitter` is a function constructor now, so pre-class code (`EventEmitter.call(this)` + `util.inherits`, as readable-stream does) works; classes still extend it. `on`/`addListener` and `off`/`removeListener` are one function each, as in Node: readable-stream overrides one name with a wrapper that calls the base under the other, which recursed forever when the base delegated through `this`. Subclasses that need to see new listeners use the `_newListener` hook (`powerMonitor`, `screen`) instead of overriding `on`. Node's statics added: `on` (async iterator), `captureRejectionSymbol`, `errorMonitor`, `listenerCount`, `addAbortListener`, … |
+| `util`, `util/types` | `src/node/util.js`, `src/node/util-types.js` | Written in-house rather than the `util` npm package (large dependency tree, pre-Map `inspect`). `inspect` ports Node's layout rules (array grouping, the `compact` nesting rule); `test/util.test.js` compares ~45 values, the `format` specifiers and `isDeepStrictEqual` against Node's own output. `sys` aliases `util`. |
+| `stream`, `stream/promises`, `string_decoder` | `src/node/stream.js`, `stream-promises.js`, `string-decoder.js` | readable-stream 4 (imported as `readable-stream/lib/stream.js`, so the default export is the legacy `Stream` constructor) and the `string_decoder` package. Their `require('events')` / `require('buffer')` resolve to tauri-electron's through the aliases; `require('process/')` stays the npm `process` shim. `stream/promises` comes from `Stream.promises`, not a second entry into the package. Webpack gets a CommonJS wrapper (`bundler/stream.cjs`) so `require('stream')` is the constructor itself; Vite builds give CommonJS dependencies the namespace (`require('stream').Readable` works, calling `require('stream')` itself does not). |
+| `os` | `src/node/os.js`, `crates/…/src/node_os.rs` | Feature `node-os` (`sysinfo` with only `system` and `network`). Bridge only, no command: `os` is synchronous in Node. Static facts are fetched once and cached. `uname` / `getpwuid_r` on Unix; CPU `times` from `/proc/stat` on Linux, zeros elsewhere. |
+| `child_process` | `src/node/child-process.js`, `crates/…/src/node_child_process.rs` | Feature `node-child-process`, permission set `electron:node-child-process`. `spawnSync` over the bridge (stdin in the body, a framed answer with both outputs); after a `timeout` / `maxBuffer` kill it returns what was read instead of waiting for pipes a grandchild holds, as Node does. `spawn` over `child_spawn` + a Channel; stdin writes are queued to a writer thread so commands never block; exit is polled every 10 ms so `kill()` can reach the child. Error shapes (`Command failed: …`, `spawn x ENOENT`, `ETIMEDOUT`) checked against Node. Errors common to the Rust modules moved to `node_common.rs`. |
+| `crypto` | `src/node/crypto.js` | @noble/hashes 2 (no BigInt literals, so the `safari13` target builds). Hash and Hmac are Transform streams too. `test/stream-crypto.test.js` compares every hash, HMAC, PBKDF2, HKDF and scrypt with `node:crypto`. Ciphers, signatures, key pairs, DH: `unimplemented`. |
+| `http`, `https` | `src/node/http-client.js`, `http.js`, `https.js` | Client only, on plugin-http with `maxRedirections: 0` (Node does not follow redirects). `IncomingMessage` is a Readable. reqwest's error text is mapped to `ECONNREFUSED` / `ENOTFOUND` / `ETIMEDOUT`. Servers came with layer 4. |
+
+Measured after layer 2 (same machine): 127 unit tests and 7 Rust tests
+pass; kitchen-sink smoke 141 pass, 0 fail, 4 unsupported, 31 manual on
+Tauri, for a debug build and under `tauri dev`; 145 pass, 0 fail on real
+Electron, with the 17 new checks in `src/checks-node-layer2.js`.
+
+Layer 3 (section 7) is pure JavaScript throughout:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| `assert`, `assert/strict` | `src/node/assert.js` | In-house on `util.isDeepStrictEqual` / `inspect`; messages, `operator`, `generatedMessage` and the `+ actual - expected` diff match Node on the 21 cases in `test/layer3.test.js`. `assert.ok(false)` shows the value, not the source expression. |
+| `zlib` | `src/node/zlib.js` | fflate: gzip, zlib, raw deflate, `unzip`; sync, callback (deferred to a macrotask, not a thread pool) and Transform streams; `crc32`. Round-trips with `node:zlib` both ways; error codes (`Z_DATA_ERROR`, `Z_BUF_ERROR`) match. Brotli: `unsupported`. |
+| `timers`, `timers/promises` | `src/node/timers.js`, `timers-promises.js` | Timeout objects (`ref` / `unref` / `refresh`, convert to the numeric id); `setImmediate` over a MessageChannel; AbortSignal support; `setInterval` async iterator. The main page's global timers are replaced by these (`setTimeout(...).unref()` is common in Node code), and `global` is defined there. |
+| `querystring`, `punycode`, `stream/web`, `stream/consumers`, `perf_hooks`, `constants`, `console`, `diagnostics_channel` | `src/node/*.js` | `punycode` from the npm package; `perf_hooks` adds `timerify`, histograms and `monitorEventLoopDelay` to the webview's `performance`; `console.Console` writes to any `{ write }`; `diagnostics_channel` includes tracing channels. |
+| `module`, `readline`, `readline/promises`, `async_hooks`, `tty`, `domain` | `src/node/*.js` | Partial, as planned: no module loader; no terminal; `AsyncLocalStorage` is synchronous only (no async context in a webview); `isatty()` false; `domain` catches synchronous errors only. |
+| CommonJS shapes | `rewriteBuiltinRequires` in `bundler/shared.cjs`; `bundler/*.cjs` | A Vite (rolldown) build gives CommonJS code an ES namespace for `require()` of an ES module, so `require('assert')(x)` and `new (require('events'))()` failed. The Vite plugin now rewrites `require('<shim>')` (outside strings and comments, dependencies included, build only) to take the default export, which for every shim is the complete Node-shaped module. Webpack uses CommonJS wrappers for `assert`, `assert/strict`, `console`, `constants`, `module` (and `stream`, `events`, `process` as before). |
+
+Measured after layer 3: 145 unit tests pass; kitchen-sink smoke 151 pass,
+0 fail on Tauri (debug build and `tauri dev`), 155 pass, 0 fail on real
+Electron, with 10 new checks in `src/checks-node-layer3.js`.
+
+Layer 4 (section 7) puts sockets in Rust and keeps the protocols above them
+in JavaScript:
+
+| Piece | Where | Notes |
+| --- | --- | --- |
+| Socket table | `crates/…/src/node_net.rs`, `node_net_commands.rs` | Features `node-net` (tokio, socket2, hickory-resolver) and `node-tls` (rustls with ring, as tauri-plugin-http; implies `node-net`); permission set `electron:node-net`. One `Net` state holds TCP / IPC sockets, servers and UDP sockets by id. `net_connect`, `net_listen`, `udp_bind` take a Channel; a server's channel also carries the events of the sockets it accepted (tagged `socket: id`), so one channel per server, not per connection. `net_write` resolves after the bytes are flushed (the JS stream's back-pressure), `net_pause` stops the reader task through a watch channel. Error codes for the socket errors were added to `node_common.rs` (libc on Unix, WSA codes mapped to libuv's numbers on Windows). |
+| `net` | `src/node/net.js` | `Socket` is a Duplex; `Server` hands accepted ids to `_createSocket()` (overridden by `tls`). IPC through `path`: Unix sockets, Windows named pipes. Not done: `BlockList`, `autoSelectFamily` racing (the OS order is used), `server.maxConnections` is enforced in JS after accept. |
+| `tls` | `src/node/tls.js`, `crates/…/src/node_tls.rs` | rustls; Mozilla's roots (webpki-roots) or `ca`. Accepted handshakes time out after 120 s (Node's `handshakeTimeout`). A `checkServerIdentity` option runs after the chain is trusted; the exported `checkServerIdentity()` fails any name rustls did not verify, rather than passing silently. With `rejectUnauthorized: false` a recording verifier still runs WebPKI and reports the failure as `authorizationError`. rustls errors map to OpenSSL's codes. Not done: STARTTLS (`{ socket }`), sessions, parsed `getPeerCertificate()` (raw DER and fingerprints only), `rootCertificates` (empty), TLS < 1.2. |
+| `dgram` | `src/node/dgram.js` | Bind, send (all of Node's overloads), `connect` (filtered in JS), broadcast, TTLs, multicast membership, buffer sizes. |
+| `dns`, `dns/promises` | `src/node/dns.js`, `crates/…/src/node_dns.rs` | `lookup` is the OS resolver (`getaddrinfo` via tokio's `lookup_host`), like Node. `resolve*`, `reverse`, `Resolver` (servers, `timeout`, `tries`, `ttl`) use hickory-resolver; `getServers()` is answered synchronously over the bridge. Not done: `lookupService`. |
+| `http` / `https` servers | `src/node/http-server.js` | HTTP/1.1 written in JS on `net.Server` / `tls.Server`, so `'connection'`, `'upgrade'`, `'connect'` and `req.socket` are real sockets. Keep-alive with `keepAliveTimeout`, pipelining (answered in order), chunked and `Content-Length` bodies both ways, trailers, `Expect: 100-continue` / `'checkContinue'`, HEAD / 204 / 304, `'clientError'` with 400 / 431, `closeAllConnections` / `closeIdleConnections`, `close()` closing idle connections as Node 19+. `ServerResponse` is a Writable; `OutgoingMessage` is an alias of it. |
+| `http2` | stub | Not done: an HTTP/2 server or client needs HPACK and stream multiplexing; a Rust implementation (`h2` crate) is the likely route. The stub's hint points at `net.fetch` / `https`, which negotiate HTTP/2 through reqwest already. |
+| Wiring | `bundler/shared.cjs`, `webpack.cjs`, `src/require.js`, `src/node/index.js` | `net`, `tls`, `dgram`, `dns`, `dns/promises` moved from the stub list to the aliases; outside the main page their stub names the feature (`"node-net"`, `"node-tls"`). The tests that used `net` as the example stub now use `vm`. |
+
+Tests: `test/net.test.js` runs `net`, `tls`, `dgram`, `dns` and the HTTP
+server against an in-memory stand-in for the Rust socket table (the same
+commands and events); the Rust side has its own loopback test. The kitchen
+sink's 15 checks in `src/checks-node-layer4.js` use loopback only: a TCP
+echo, refused and in-use ports, IPC, back-pressure over 1 MiB, UDP, `lookup`,
+a DNS server written with `dgram` that `Resolver.resolve4` queries, TLS with
+a private CA (`src/fixtures/tls-test-cert.js`) including untrusted and
+mismatched certificates, and HTTP / HTTPS servers.
+
+Measured after layer 4: 166 unit tests and 9 Rust tests pass; kitchen-sink
+smoke 166 pass, 0 fail on Tauri (debug build), 170 pass, 0 fail on real
+Electron, with 15 new checks in `src/checks-node-layer4.js`.
+
+Two bugs only the real app found, both now covered by unit tests: a socket
+nobody reads did not emit `'end'` (so `server.close()` never finished; Node
+calls `read(0)` after EOF, now so does `net.js`), and `net_pause` calls
+could be handled out of order, leaving Rust paused while JavaScript waited
+for data (now one call in flight at a time, always sending the latest
+state). An HTTP server bug, a half-closed client losing its second pipelined
+request, came from the same run, and `tauri dev` showed a TLS peer closing
+without `close_notify` surfacing as an unhandled `read EOF` error (it is an
+`'end'` now, as in Node). Under `tauri dev` the same 166 checks pass.
+
+Open points from layer 4:
+
+- `http.get` / `https.get` still go through tauri-plugin-http, so client
+  requests have no `socket` and cannot use a custom `ca` or `agent`. Moving
+  the client onto `net` / `tls` would fix both, at the cost of redirects /
+  proxies / HTTP/2 that reqwest gives today.
+- `http2`, STARTTLS, `dns.lookupService`, `net.BlockList`.
+- `tls.rootCertificates` is empty (webpki-roots has trust anchors, not
+  certificates), so `ca: [...tls.rootCertificates, extra]` loses the
+  defaults. A fix: a marker entry that Rust expands to the default roots.
+- `requestCert` without `ca` requests no client certificate; Node asks and
+  reports it unauthorized. Needs a custom rustls client verifier.
+- Every chunk crosses the Tauri IPC as base64 in a Channel message, and
+  every write is a command call: throughput is bounded by the IPC, not the
+  socket. The kitchen sink's 1 MiB transfer with a pause per chunk takes
+  ~180 ms on Tauri (WebKitGTK, debug build) and ~4 ms on Electron; bulk
+  transfers may want a binary path.
+
+Open points from layer 3:
+
+- `AsyncLocalStorage` loses its store after `await`. Proper support needs
+  async context propagation, which webviews do not offer (TC39 AsyncContext
+  is not shipped).
+- zlib's callback forms and streams run on the main page's thread.
+
+Open points from layer 2:
+
+- `exec` / `spawn` buffer the request body of `http` and queue stdin writes;
+  neither applies back-pressure yet.
+- Writing to a child whose stdin is closed drops the data (Node emits
+  `EPIPE`).
+- `os.cpus()[i].times` are zeros outside Linux; `os.constants.errno` uses
+  Linux numbers everywhere.
+- `http` connection errors: plugin-http reports "error sending request"
+  without the OS cause, so `ECONNREFUSED` often arrives as `ECONNRESET`.
+  Fixing it needs the error chain from Rust (our own command, or upstream).
+- The main window's `http:default` scope gained `http://*:*` /
+  `https://*:*`: URLPattern scopes without a port only match the default
+  port, so `net.request` / `http.get` to `localhost:3000` were refused before.
+- `child_process` on Windows (`cmd.exe` quoting, `taskkill` for `kill()`)
+  and `os` on macOS / Windows are unverified, like the rest of the native
+  code.
+
+Open points from layer 1:
+
+- Not verified on macOS (WKWebView) or Windows (WebView2): section 8.3 still applies.
+- The staging folder's `.gitignore` is copied to the resource directory
+  root as well (Tauri copies dot-files). Harmless; avoid it with a narrower
+  resource mapping if it matters.
+- electron-builder `files` / `extraResources` and Forge `extraResource` are
+  not read yet (section 8.1, step 2); only the default selection and the
+  `resources` option exist.
+- Staging is unit-tested for both plugins' shared code and end-to-end for
+  Vite; the webpack / rspack path (`beforeRun`) is not exercised by an
+  end-to-end build.
+- `nodeIntegration: true` renderers still cannot use `fs` (section 8.5).
+- `path` is not switched to `win32` on Windows (section 8.2).
+- Strict `connect-src` CSPs are untested with the bridge (section 8.3).
 
 ## 1. Goal and hard constraints
 
@@ -35,7 +184,7 @@ Constraints set by the project owner:
 
 | Piece | File | Role |
 | --- | --- | --- |
-| Built-in lists | `packages/tauri-electron/bundler/shared.cjs` | `NODE_SHIMS` (aliased to real implementations: `path`, `process`, `events`, `url`) and `NODE_BUILTINS` (stubbed) |
+| Built-in lists | `packages/tauri-electron/bundler/shared.cjs` | `NODE_SHIMS` (aliased to real implementations: `path`, `process`, `events`, `url`; since layer 1 also `fs`, `fs/promises`, `original-fs`, `buffer`, `path/win32`) and `NODE_BUILTINS` (stubbed) |
 | Vite plugin | `packages/tauri-electron/vite.js` | `resolve.alias` for `NODE_SHIMS`; `resolveId` + `load` produce the stub module for `NODE_BUILTINS` |
 | webpack / rspack plugin | `packages/tauri-electron/webpack.cjs`, `bundler/node-builtin.cjs` | Same, through `NormalModuleReplacementPlugin`-style redirects |
 | Runtime `require()` | `packages/tauri-electron/src/require.js` | `requireShim(id)` for CommonJS code in dev; `nodeBuiltin(name)` builds the throwing proxy |
@@ -124,7 +273,7 @@ and Tauri commands (async variants). "Plugin" means an official Tauri plugin.
 | `fs`, `fs/promises` | Rust | The proof of concept. Section 6. Do not build it on `@tauri-apps/plugin-fs`: that plugin is async-only and scope-restricted, and one Rust implementation behind both the sync and async variants keeps their behaviour and errors identical. |
 | `child_process` | Rust | `execSync`, `spawnSync`, `execFileSync` over the bridge on a worker thread. `spawn` / `exec` / `execFile` over a command plus a Tauri `Channel` for stdout / stderr / exit. Do not build it on `plugin-shell`: its scope model requires every command to be declared ahead of time. `fork()` stays unsupported (it needs Node). |
 | `http`, `https` (client) | JS over `plugin-http` | `net.request` in `src/main/net.js` already implements `ClientRequest` / `IncomingMessage`; `http.request` / `http.get` can wrap it. |
-| `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust, later | No official plugin. Each needs its own Rust implementation with handle tables and event channels. Defer until an app needs it. |
+| `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust sockets, JS protocols | No official plugin. One handle table with event channels in Rust; the HTTP server is JavaScript on top of `net` (done in layer 4). |
 | `readline` | JS, partial | Only `createInterface({ input: stream })` line splitting. No terminal. |
 | `worker_threads` | JS, partial, late | A partial adapter over Web Workers (section 4.2). Different semantics: no shared `require`, no worker script loaded from a real file path. Until then keep the stub with its hint. |
 | `module` | JS, partial | `createRequire` returning `requireShim`, `builtinModules`. |
@@ -268,8 +417,8 @@ Extend `handle_bridge` with one route family, for example `node/<module>/<op>`:
 ### 5.3 Rust layout and features
 
 - New modules in `crates/tauri-plugin-electron/src/` (`node_fs.rs`, later
-  `node_os.rs`, `node_child_process.rs`), each behind a Cargo feature:
-  `node-fs`, `node-os`, `node-child-process`.
+  `node_os.rs`, `node_child_process.rs`, `node_net.rs`), each behind a Cargo
+  feature: `node-fs`, `node-os`, `node-child-process`, `node-net`, `node-tls`.
 - **Decided: enabled for every migrated app, as explicit switches.** The node
   features are *not* part of the crate's `default` feature set. Instead the
   scaffolder (`scripts/create-app.mjs`) and the template write them out in
@@ -280,6 +429,8 @@ Extend `handle_bridge` with one route family, for example `node/<module>/<op>`:
     "node-fs",             # fs, fs/promises
     "node-os",             # os
     "node-child-process",  # child_process: runs arbitrary commands; delete to disable
+    "node-net",            # net, dgram, dns, http/https servers
+    "node-tls",            # tls, https servers; implies node-net
   ] }
   ```
 
@@ -381,8 +532,8 @@ These follow the layers in section 4.1.
   lines, fixing the named-import failure in section 3 for modules that stay
   unsupported.
 
-**Layer 4** (`net`, `tls`, `dns`, `dgram`, `http2`, HTTP servers) waits until
-an app needs it.
+**Layer 4** (`net`, `tls`, `dns`, `dgram`, HTTP servers) is implemented, see
+"Implementation status"; `http2` is not.
 
 Notes for the pure-JS modules:
 

@@ -12,6 +12,11 @@
 //!   `dialog.show*Sync` and `webPreferences.additionalArguments`.
 //! - **`protocol.handle()`**: schemes declared with [`Builder::protocol`]
 //!   are forwarded to the JavaScript handler registered in the main process.
+//! - **Node built-ins** that need the operating system (`fs`, `os` and
+//!   `child_process`, `net`, `dgram`, `dns`, `tls`, each behind a `node-*`
+//!   feature): the synchronous variants over the bridge
+//!   (`node/<module>/<op>`), the asynchronous ones over commands (`node_fs`,
+//!   `child_spawn`, `net_connect` & co.).
 //! - **DevTools** (`webContents.openDevTools()` and friends) and
 //!   **`shell.trashItem()`**.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
@@ -33,6 +38,26 @@ use std::{
 };
 
 mod features;
+#[cfg(feature = "node-child-process")]
+mod node_child_process;
+#[cfg(any(
+    feature = "node-fs",
+    feature = "node-os",
+    feature = "node-child-process",
+    feature = "node-net"
+))]
+mod node_common;
+#[cfg(feature = "node-net")]
+mod node_dns;
+#[cfg(feature = "node-fs")]
+mod node_fs;
+#[cfg(feature = "node-net")]
+mod node_net;
+mod node_net_commands;
+#[cfg(feature = "node-os")]
+mod node_os;
+#[cfg(feature = "node-tls")]
+mod node_tls;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -349,6 +374,173 @@ fn handle_bridge<R: Runtime>(
                 b"enable the `dialog` feature of tauri-plugin-electron".to_vec(),
             );
         }
+        p if p.starts_with("node/") => {
+            let query = request.uri().query().unwrap_or("").to_string();
+            handle_node(&app, &label, p, &query, request.body().clone(), responder);
+        }
+        _ => respond(responder, 404, "text/plain", Vec::new()),
+    }
+}
+
+/// Whether the webview shows the app's own frontend (the dev server in
+/// development, the embedded assets in a build), not a page it navigated to.
+fn is_app_page<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
+    let Some(url) = app.get_webview_window(label).and_then(|w| w.url().ok()) else {
+        return false;
+    };
+    if url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost") {
+        return true;
+    }
+    cfg!(debug_assertions)
+        && app
+            .config()
+            .build
+            .dev_url
+            .as_ref()
+            .is_some_and(|dev| dev.origin() == url.origin())
+}
+
+/// Why a native Node built-in may not run for this caller, if it may not.
+fn node_refusal<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<Value> {
+    if label != MAIN_LABEL {
+        return Some(
+            json!({ "code": "ERR_ACCESS_DENIED", "message": "Node built-ins that use the operating system are only available in the main process" }),
+        );
+    }
+    if !is_app_page(app, label) {
+        return Some(
+            json!({ "code": "ERR_ACCESS_DENIED", "message": "the main window is not showing the app's own page" }),
+        );
+    }
+    None
+}
+
+/// `node/<module>/<op>?a=<json>`: the `*Sync` functions of native-backed Node
+/// built-ins. Runs on its own thread: the handler runs on the main (UI) thread.
+fn handle_node<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    path: &str,
+    query: &str,
+    body: Vec<u8>,
+    responder: UriSchemeResponder,
+) {
+    if let Some(refusal) = node_refusal(app, label) {
+        return respond_json(responder, 403, &refusal);
+    }
+    let Some((module, op)) = path.trim_start_matches("node/").split_once('/') else {
+        return respond(responder, 404, "text/plain", Vec::new());
+    };
+    let args: Value = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("a="))
+        .map(|raw| serde_json::from_str(&percent_decode(raw)).unwrap_or(Value::Null))
+        .unwrap_or(Value::Null);
+    match module {
+        "fs" => {
+            #[cfg(feature = "node-fs")]
+            {
+                // Where a build's app files are, for app-relative paths used
+                // before `process.resourcesPath` is known.
+                if op == "resourceDir" {
+                    let dir = app
+                        .path()
+                        .resource_dir()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .ok();
+                    return respond_json(responder, 200, &json!(dir));
+                }
+                let op = op.to_string();
+                thread::spawn(move || match node_fs::run(&op, &args, &body) {
+                    Ok(node_fs::Output::Bytes(bytes)) => {
+                        respond(responder, 200, "application/octet-stream", bytes)
+                    }
+                    Ok(node_fs::Output::Json(value)) => respond_json(responder, 200, &value),
+                    Err(error) => respond_json(responder, 400, &json!(error)),
+                });
+            }
+            #[cfg(not(feature = "node-fs"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-fs" }),
+                );
+            }
+        }
+        "os" => {
+            #[cfg(feature = "node-os")]
+            {
+                let op = op.to_string();
+                thread::spawn(move || match node_os::run(&op, &args) {
+                    Ok(value) => respond_json(responder, 200, &value),
+                    Err(error) => respond_json(responder, 400, &json!(error)),
+                });
+            }
+            #[cfg(not(feature = "node-os"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-os" }),
+                );
+            }
+        }
+        // dns.getServers() is synchronous in Node.
+        "dns" => {
+            #[cfg(feature = "node-net")]
+            {
+                let _ = (args, body);
+                if op == "servers" {
+                    return respond_json(responder, 200, &node_dns::system_servers());
+                }
+                respond(responder, 404, "text/plain", Vec::new());
+            }
+            #[cfg(not(feature = "node-net"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-net" }),
+                );
+            }
+        }
+        "child_process" => {
+            #[cfg(feature = "node-child-process")]
+            {
+                if op != "spawnSync" {
+                    return respond(responder, 404, "text/plain", Vec::new());
+                }
+                // A blocking execSync only blocks the main window, like Node's.
+                thread::spawn(move || {
+                    match serde_json::from_value::<node_child_process::SpawnOptions>(args) {
+                        Ok(options) => respond(
+                            responder,
+                            200,
+                            "application/octet-stream",
+                            node_child_process::spawn_sync(&options, &body),
+                        ),
+                        Err(error) => respond_json(
+                            responder,
+                            400,
+                            &json!({ "code": "ERR_INVALID_ARG_VALUE", "message": error.to_string() }),
+                        ),
+                    }
+                });
+            }
+            #[cfg(not(feature = "node-child-process"))]
+            {
+                let _ = (op, args, body);
+                respond_json(
+                    responder,
+                    501,
+                    &json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-child-process" }),
+                );
+            }
+        }
         _ => respond(responder, 404, "text/plain", Vec::new()),
     }
 }
@@ -476,6 +668,137 @@ async fn trash_item(path: String) -> Result<(), String> {
     }
 }
 
+#[cfg(feature = "node-child-process")]
+type SharedChildren = Arc<node_child_process::Children>;
+
+/// Whether `child_process` may run for this caller.
+fn children<R: Runtime>(webview: &tauri::Webview<R>) -> Result<(), Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
+    if cfg!(feature = "node-child-process") {
+        Ok(())
+    } else {
+        Err(json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-child-process" }))
+    }
+}
+
+/// `child_process.spawn` / `exec` / `execFile`: start a child whose output
+/// and exit are streamed to `on_event`. Returns `{ id, pid }`.
+#[tauri::command]
+fn child_spawn<R: Runtime>(
+    webview: tauri::Webview<R>,
+    options: Value,
+    on_event: tauri::ipc::Channel<Value>,
+) -> Result<Value, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        let options: node_child_process::SpawnOptions = serde_json::from_value(options)
+            .map_err(|e| json!({ "code": "ERR_INVALID_ARG_VALUE", "message": e.to_string() }))?;
+        let table = webview.state::<SharedChildren>();
+        table.spawn(&options, on_event).map_err(|e| json!(e))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (options, on_event);
+        Ok(Value::Null)
+    }
+}
+
+/// Bytes (base64) for a child's stdin. False once stdin is closed.
+#[tauri::command]
+fn child_write<R: Runtime>(
+    webview: tauri::Webview<R>,
+    id: u32,
+    data: String,
+) -> Result<bool, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        let bytes = BASE64
+            .decode(data.as_bytes())
+            .map_err(|e| json!({ "message": e.to_string() }))?;
+        Ok(webview.state::<SharedChildren>().write(id, bytes))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (id, data);
+        Ok(false)
+    }
+}
+
+/// Close a child's stdin.
+#[tauri::command]
+fn child_end<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<(), Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    webview.state::<SharedChildren>().end(id);
+    #[cfg(not(feature = "node-child-process"))]
+    let _ = id;
+    Ok(())
+}
+
+/// `subprocess.kill(signal)`: false when the child is gone.
+#[tauri::command]
+fn child_kill<R: Runtime>(webview: tauri::Webview<R>, id: u32, signal: i32) -> Result<bool, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        webview
+            .state::<SharedChildren>()
+            .kill(id, signal)
+            .map_err(|e| json!(e))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (id, signal);
+        Ok(false)
+    }
+}
+
+/// `fs.promises.*` and the callback API: the same operations as the bridge's
+/// `node/fs/<op>`, off the main thread. The raw body is framed as described
+/// in `node_fs::parse_frame`; the answer is raw bytes (JSON for every
+/// operation but `read`).
+#[tauri::command]
+#[allow(clippy::result_large_err)]
+async fn node_fs<R: Runtime>(
+    webview: tauri::Webview<R>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<tauri::ipc::Response, Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
+    #[cfg(feature = "node-fs")]
+    {
+        let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
+            return Err(
+                json!({ "code": "ERR_INVALID_ARG_TYPE", "message": "node_fs expects a raw body" }),
+            );
+        };
+        let body = body.clone();
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let (op, args, data) = node_fs::parse_frame(&body)?;
+            node_fs::run(&op, &args, data)
+        })
+        .await
+        .map_err(|e| json!({ "code": "ERR_INTERNAL", "message": e.to_string() }))?;
+        match result {
+            Ok(node_fs::Output::Bytes(bytes)) => Ok(tauri::ipc::Response::new(bytes)),
+            Ok(node_fs::Output::Json(value)) => {
+                Ok(tauri::ipc::Response::new(value.to_string().into_bytes()))
+            }
+            Err(error) => Err(json!(error)),
+        }
+    }
+    #[cfg(not(feature = "node-fs"))]
+    {
+        let _ = request;
+        Err(json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-fs" }))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BridgeResponse {
@@ -590,10 +913,34 @@ impl Builder {
                 close_devtools,
                 is_devtools_open,
                 trash_item,
-                bridge_respond
+                bridge_respond,
+                node_fs,
+                child_spawn,
+                child_write,
+                child_end,
+                child_kill,
+                node_net_commands::net_connect,
+                node_net_commands::net_listen,
+                node_net_commands::net_write,
+                node_net_commands::net_end,
+                node_net_commands::net_destroy,
+                node_net_commands::net_pause,
+                node_net_commands::net_set_option,
+                node_net_commands::udp_bind,
+                node_net_commands::udp_send,
+                node_net_commands::udp_option,
+                node_net_commands::udp_membership,
+                node_net_commands::dns_lookup,
+                node_net_commands::dns_resolve,
+                node_net_commands::dns_reverse,
+                node_net_commands::dns_servers
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                #[cfg(feature = "node-child-process")]
+                app.manage(SharedChildren::default());
+                #[cfg(feature = "node-net")]
+                app.manage(Arc::new(node_net::Net::default()));
                 if default_capabilities {
                     for capability in features::capabilities() {
                         app.add_capability(capability)?;

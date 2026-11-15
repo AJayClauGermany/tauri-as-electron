@@ -1,0 +1,22 @@
+"$schema" = "schemas/schema.json"
+
+[[set]]
+identifier = "node-net"
+description = "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows."
+permissions = [
+  "allow-net-connect",
+  "allow-net-listen",
+  "allow-net-write",
+  "allow-net-end",
+  "allow-net-destroy",
+  "allow-net-pause",
+  "allow-net-set-option",
+  "allow-udp-bind",
+  "allow-udp-send",
+  "allow-udp-option",
+  "allow-udp-membership",
+  "allow-dns-lookup",
+  "allow-dns-resolve",
+  "allow-dns-reverse",
+  "allow-dns-servers",
+]

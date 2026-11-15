@@ -96,20 +96,9 @@ export function diffDisplays(before, after) {
 }
 
 class Screen extends EventEmitter {
-  on(name, listener) {
-    super.on(name, listener)
+  /** Called by EventEmitter for every way of adding a listener (on, once, addListener, prepend*). */
+  _newListener(name) {
     if (DISPLAY_EVENTS.has(name)) this._startPolling()
-    return this
-  }
-
-  once(name, listener) {
-    super.once(name, listener)
-    if (DISPLAY_EVENTS.has(name)) this._startPolling()
-    return this
-  }
-
-  addListener(name, listener) {
-    return this.on(name, listener)
   }
 
   _listeningForDisplays() {

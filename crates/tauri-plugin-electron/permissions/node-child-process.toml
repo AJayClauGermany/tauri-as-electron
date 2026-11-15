@@ -1,0 +1,6 @@
+"$schema" = "schemas/schema.json"
+
+[[set]]
+identifier = "node-child-process"
+description = "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows."
+permissions = ["allow-child-spawn", "allow-child-write", "allow-child-end", "allow-child-kill"]

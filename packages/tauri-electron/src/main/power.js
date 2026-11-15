@@ -40,16 +40,9 @@ class PowerMonitor extends EventEmitter {
     }, report('powerMonitor battery'))
   }
 
-  on(name, listener) {
-    super.on(name, listener)
+  /** Called by EventEmitter for every way of adding a listener (on, once, addListener, prepend*). */
+  _newListener(name) {
     if (name === 'resume') this._watchResume()
-    return this
-  }
-
-  once(name, listener) {
-    super.once(name, listener)
-    if (name === 'resume') this._watchResume()
-    return this
   }
 
   /** Heuristic: a 5 s timer that fires 30+ s late means the system slept. */

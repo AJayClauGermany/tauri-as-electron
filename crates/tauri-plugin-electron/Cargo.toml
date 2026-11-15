@@ -52,6 +52,21 @@ updater = ["dep:tauri-plugin-updater"]
 # private APIs on macOS, so not App Store compatible).
 devtools = ["tauri/devtools"]
 
+# --- Node built-ins backed by Rust ---------------------------------------------------
+# Not in `default`: apps list them explicitly in src-tauri/Cargo.toml (the
+# scaffolder and the template do), so the native access an app has is visible
+# and a dependent app does not gain it silently on update.
+# fs, fs/promises (and original-fs): file system access from the main process.
+node-fs = []
+# os: host, user, memory, CPUs, network interfaces.
+node-os = ["dep:sysinfo"]
+# child_process: runs arbitrary commands, like Electron's main process can.
+node-child-process = []
+# net, dgram, dns, and the servers of http / https: sockets from the main process.
+node-net = ["dep:tokio", "dep:socket2", "dep:hickory-resolver"]
+# tls (and https servers): TLS over node-net's sockets, with rustls.
+node-tls = ["node-net", "dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:rustls-pki-types"]
+
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
 
@@ -69,6 +84,21 @@ tauri-plugin-deep-link = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.23"
+# Sockets for net / dgram / dns (feature node-net); Tauri already runs tokio.
+tokio = { version = "1", optional = true, features = ["net", "io-util", "sync", "rt", "time", "macros"] }
+socket2 = { version = "0.6", optional = true, features = ["all"] }
+hickory-resolver = { version = "0.26", optional = true, default-features = false, features = ["tokio", "system-config"] }
+# tls (feature node-tls): the rustls / ring stack tauri-plugin-http already uses.
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12", "logging"] }
+webpki-roots = { version = "1", optional = true }
+rustls-pki-types = { version = "1.12", optional = true, features = ["std"] }
+# os.cpus(), totalmem(), freemem(), loadavg(), uptime(), networkInterfaces() (feature node-os).
+sysinfo = { version = "0.40", optional = true, default-features = false, features = ["system", "network"] }
+
+[target.'cfg(unix)'.dependencies]
+# access(2) and errno constants for the Node `fs` error codes (feature node-fs).
+libc = "0.2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 trash = "5"
