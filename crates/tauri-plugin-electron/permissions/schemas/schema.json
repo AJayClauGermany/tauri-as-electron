@@ -463,6 +463,30 @@
           "markdownDescription": "Denies the dns_servers command without any pre-configured scope."
         },
         {
+          "description": "Enables the fs_unwatch command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fs-unwatch",
+          "markdownDescription": "Enables the fs_unwatch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fs_unwatch command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fs-unwatch",
+          "markdownDescription": "Denies the fs_unwatch command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the fs_watch command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fs-watch",
+          "markdownDescription": "Enables the fs_watch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fs_watch command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fs-watch",
+          "markdownDescription": "Denies the fs_watch command without any pre-configured scope."
+        },
+        {
           "description": "Enables the is_devtools_open command without any pre-configured scope.",
           "type": "string",
           "const": "allow-is-devtools-open",
@@ -619,6 +643,42 @@
           "markdownDescription": "Denies the process_info command without any pre-configured scope."
         },
         {
+          "description": "Enables the safe_storage_decrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-safe-storage-decrypt",
+          "markdownDescription": "Enables the safe_storage_decrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the safe_storage_decrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-safe-storage-decrypt",
+          "markdownDescription": "Denies the safe_storage_decrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the safe_storage_encrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-safe-storage-encrypt",
+          "markdownDescription": "Enables the safe_storage_encrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the safe_storage_encrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-safe-storage-encrypt",
+          "markdownDescription": "Denies the safe_storage_encrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the safe_storage_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-safe-storage-status",
+          "markdownDescription": "Enables the safe_storage_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the safe_storage_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-safe-storage-status",
+          "markdownDescription": "Denies the safe_storage_status command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_menu_visible command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-menu-visible",
@@ -703,10 +763,10 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`",
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`"
         },
         {
           "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
@@ -715,10 +775,10 @@
           "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
         },
         {
-          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`",
+          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`\n- `allow-fs-watch`\n- `allow-fs-unwatch`",
           "type": "string",
           "const": "node-fs",
-          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`"
+          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`\n- `allow-fs-watch`\n- `allow-fs-unwatch`"
         },
         {
           "description": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`",

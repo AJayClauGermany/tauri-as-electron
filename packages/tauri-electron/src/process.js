@@ -41,7 +41,11 @@ export const processShim = {
   argv: [],
   execPath: '',
   pid: 0,
-  versions: { 'tauri-electron': '0.1.0' },
+  // `node`: the Node API level the shims follow. Libraries parse it
+  // (readdirp 3, under chokidar 3, at import time). No `electron` key: apps
+  // test `process.versions.electron` to tell real Electron apart.
+  versions: { node: '22.0.0', 'tauri-electron': '0.1.0' },
+  version: 'v22.0.0',
   resourcesPath: '',
   defaultApp: false,
   sandboxed: false,

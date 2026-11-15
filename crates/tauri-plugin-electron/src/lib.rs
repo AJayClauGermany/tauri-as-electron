@@ -57,6 +57,8 @@ mod node_common;
 mod node_dns;
 #[cfg(feature = "node-fs")]
 mod node_fs;
+#[cfg(feature = "node-fs")]
+mod node_fs_watch;
 #[cfg(feature = "node-net")]
 mod node_net;
 mod node_net_commands;
@@ -66,6 +68,8 @@ mod node_os;
 mod node_tls;
 #[cfg(all(desktop, feature = "power-save-blocker"))]
 mod power;
+#[cfg(feature = "safe-storage")]
+mod safe_storage;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -424,11 +428,70 @@ fn handle_bridge<R: Runtime>(
                 );
             }
         }
+        // safeStorage.encryptString() & co., synchronous like Electron's.
+        p if p.starts_with("safe-storage/") => {
+            let query = request.uri().query().unwrap_or("").to_string();
+            handle_safe_storage(&app, &label, p, &query, request.body().clone(), responder);
+        }
         p if p.starts_with("node/") => {
             let query = request.uri().query().unwrap_or("").to_string();
             handle_node(&app, &label, p, &query, request.body().clone(), responder);
         }
         _ => respond(responder, 404, "text/plain", Vec::new()),
+    }
+}
+
+/// `safe-storage/<op>`: `status` (JSON), `encrypt` (text in, bytes out),
+/// `decrypt` (bytes in, text out), `plain-text?on=<bool>`. Main process only.
+fn handle_safe_storage<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    path: &str,
+    query: &str,
+    body: Vec<u8>,
+    responder: UriSchemeResponder,
+) {
+    if label != MAIN_LABEL {
+        return respond(
+            responder,
+            403,
+            "text/plain",
+            b"safeStorage is main-process only".to_vec(),
+        );
+    }
+    #[cfg(feature = "safe-storage")]
+    {
+        let op = path.trim_start_matches("safe-storage/").to_string();
+        let on = query.split('&').any(|pair| pair == "on=true");
+        let app = app.clone();
+        // The first call may wait for the keychain: never on the main thread.
+        thread::spawn(move || {
+            let storage = app.state::<safe_storage::SafeStorage>();
+            let result = match op.as_str() {
+                "status" => Ok(storage.status().to_string().into_bytes()),
+                "encrypt" => storage.encrypt(&body),
+                "decrypt" => storage.decrypt(&body),
+                "plain-text" => {
+                    storage.set_use_plain_text(on);
+                    Ok(Vec::new())
+                }
+                other => Err(format!("unknown safeStorage operation '{other}'")),
+            };
+            match result {
+                Ok(bytes) => respond(responder, 200, "application/octet-stream", bytes),
+                Err(error) => respond(responder, 500, "text/plain", error.into_bytes()),
+            }
+        });
+    }
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = (app, path, query, body);
+        respond(
+            responder,
+            501,
+            "text/plain",
+            b"enable the `safe-storage` feature of tauri-plugin-electron".to_vec(),
+        );
     }
 }
 
@@ -499,6 +562,15 @@ fn handle_node<R: Runtime>(
                         .map(|p| p.to_string_lossy().into_owned())
                         .ok();
                     return respond_json(responder, 200, &json!(dir));
+                }
+                // fs.watch: the watcher exists when fs.watch() returns. Off
+                // the main thread: a recursive watch walks the whole tree.
+                if op == "watch" {
+                    thread::spawn(move || match node_fs_watch::watch(&args) {
+                        Ok(value) => respond_json(responder, 200, &value),
+                        Err(error) => respond_json(responder, 400, &json!(error)),
+                    });
+                    return;
                 }
                 let op = op.to_string();
                 thread::spawn(move || match node_fs::run(&op, &args, &body) {
@@ -946,6 +1018,100 @@ async fn node_fs<R: Runtime>(
     }
 }
 
+/// `fs.watch`: send the events of the watcher the bridge's `node/fs/watch`
+/// created to `on_event`. False when it is gone.
+#[tauri::command]
+fn fs_watch<R: Runtime>(
+    webview: tauri::Webview<R>,
+    id: u32,
+    on_event: tauri::ipc::Channel<Value>,
+) -> Result<bool, Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
+    #[cfg(feature = "node-fs")]
+    return Ok(node_fs_watch::attach(id, on_event));
+    #[cfg(not(feature = "node-fs"))]
+    {
+        let _ = (id, on_event);
+        Err(json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-fs" }))
+    }
+}
+
+/// `watcher.close()`.
+#[tauri::command]
+fn fs_unwatch(id: u32) -> bool {
+    #[cfg(feature = "node-fs")]
+    return node_fs_watch::unwatch(id);
+    #[cfg(not(feature = "node-fs"))]
+    {
+        let _ = id;
+        false
+    }
+}
+
+// safeStorage's asynchronous variants (and isAsyncEncryptionAvailable): the
+// same state as the bridge's `safe-storage/<op>`, off the main thread.
+
+#[cfg(feature = "safe-storage")]
+fn safe_storage_state<R: Runtime>(
+    webview: &tauri::Webview<R>,
+) -> Result<tauri::State<'_, safe_storage::SafeStorage>, String> {
+    if webview.label() != MAIN_LABEL {
+        return Err("safeStorage is main-process only".into());
+    }
+    Ok(webview.state::<safe_storage::SafeStorage>())
+}
+
+#[cfg(not(feature = "safe-storage"))]
+const SAFE_STORAGE_OFF: &str = "enable the `safe-storage` feature of tauri-plugin-electron";
+
+#[tauri::command]
+async fn safe_storage_status<R: Runtime>(webview: tauri::Webview<R>) -> Result<Value, String> {
+    #[cfg(feature = "safe-storage")]
+    return Ok(safe_storage_state(&webview)?.status());
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = webview;
+        Err(SAFE_STORAGE_OFF.into())
+    }
+}
+
+#[tauri::command]
+async fn safe_storage_encrypt<R: Runtime>(
+    webview: tauri::Webview<R>,
+    text: String,
+) -> Result<tauri::ipc::Response, String> {
+    #[cfg(feature = "safe-storage")]
+    return safe_storage_state(&webview)?
+        .encrypt(text.as_bytes())
+        .map(tauri::ipc::Response::new);
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = (webview, text);
+        Err(SAFE_STORAGE_OFF.into())
+    }
+}
+
+/// Ciphertext as base64 (JSON arrays of bytes are wasteful).
+#[tauri::command]
+async fn safe_storage_decrypt<R: Runtime>(
+    webview: tauri::Webview<R>,
+    data: String,
+) -> Result<String, String> {
+    #[cfg(feature = "safe-storage")]
+    {
+        let bytes = BASE64.decode(data.as_bytes()).map_err(|e| e.to_string())?;
+        let plain = safe_storage_state(&webview)?.decrypt(&bytes)?;
+        String::from_utf8(plain).map_err(|e| e.to_string())
+    }
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = (webview, data);
+        Err(SAFE_STORAGE_OFF.into())
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BridgeResponse {
@@ -1068,7 +1234,12 @@ impl Builder {
                 clipboard_read_html,
                 power_blocker_start,
                 power_blocker_stop,
+                safe_storage_status,
+                safe_storage_encrypt,
+                safe_storage_decrypt,
                 node_fs,
+                fs_watch,
+                fs_unwatch,
                 child_spawn,
                 child_write,
                 child_end,
@@ -1093,6 +1264,8 @@ impl Builder {
                 app.manage(SharedBridge::default());
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
+                #[cfg(feature = "safe-storage")]
+                app.manage(safe_storage::SafeStorage::new(&app.package_info().name));
                 #[cfg(feature = "node-child-process")]
                 app.manage(SharedChildren::default());
                 #[cfg(feature = "node-net")]
@@ -1113,6 +1286,7 @@ impl Builder {
                     #[cfg(feature = "node-fs")]
                     if matches!(payload.event(), PageLoadEvent::Started) {
                         node_fs::close_all();
+                        node_fs_watch::close_all();
                     }
                     return;
                 }

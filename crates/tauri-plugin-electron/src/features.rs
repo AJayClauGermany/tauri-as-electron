@@ -29,6 +29,7 @@ pub fn enabled() -> Vec<&'static str> {
         "protocol-client",
         "login-item",
         "power-save-blocker",
+        "safe-storage",
         "single-instance",
         "updater",
         "devtools",

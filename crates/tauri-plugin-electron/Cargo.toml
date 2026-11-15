@@ -23,6 +23,7 @@ default = [
   "protocol-client",
   "login-item",
   "power-save-blocker",
+  "safe-storage",
 ]
 # dialog.* (including the *Sync variants)
 dialog = ["dep:tauri-plugin-dialog"]
@@ -46,6 +47,9 @@ login-item = ["dep:tauri-plugin-autostart"]
 # powerSaveBlocker with operating-system assertions (otherwise a Screen Wake
 # Lock in a visible window).
 power-save-blocker = ["dep:keepawake"]
+# safeStorage: a random key kept in the OS keychain (Keychain, Credential
+# Manager, Secret Service) and AES-256-GCM.
+safe-storage = ["dep:keyring", "dep:aes-gcm"]
 
 # --- opt-in ------------------------------------------------------------------------
 # app.requestSingleInstanceLock() / 'second-instance'. Electron apps allow several
@@ -62,7 +66,8 @@ devtools = ["tauri/devtools"]
 # scaffolder and the template do), so the native access an app has is visible
 # and a dependent app does not gain it silently on update.
 # fs, fs/promises (and original-fs): file system access from the main process.
-node-fs = []
+# fs.watch / fs.promises.watch use the notify crate (inotify, FSEvents, ReadDirectoryChangesW).
+node-fs = ["dep:notify"]
 # os: host, user, memory, CPUs, network interfaces.
 node-os = ["dep:sysinfo"]
 # child_process: runs arbitrary commands, like Electron's main process can.
@@ -99,6 +104,10 @@ tokio-rustls = { version = "0.26", optional = true, default-features = false, fe
 webpki-roots = { version = "1", optional = true }
 rustls-pki-types = { version = "1.12", optional = true, features = ["std"] }
 # os.cpus(), totalmem(), freemem(), loadavg(), uptime(), networkInterfaces() (feature node-os).
+# fs.watch (feature node-fs).
+notify = { version = "8", optional = true }
+# safeStorage (feature safe-storage).
+aes-gcm = { version = "0.10", optional = true }
 sysinfo = { version = "0.40", optional = true, default-features = false, features = ["system", "network"] }
 
 [target.'cfg(unix)'.dependencies]
@@ -113,3 +122,5 @@ tauri-plugin-single-instance = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }
 arboard = { version = "3", optional = true }
 keepawake = { version = "0.6", optional = true }
+# safeStorage's key (feature safe-storage): Keychain, Credential Manager, Secret Service.
+keyring = { version = "3.6", optional = true, features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }

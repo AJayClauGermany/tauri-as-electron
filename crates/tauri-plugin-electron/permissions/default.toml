@@ -17,4 +17,7 @@ permissions = [
   "allow-clipboard-read-html",
   "allow-power-blocker-start",
   "allow-power-blocker-stop",
+  "allow-safe-storage-status",
+  "allow-safe-storage-encrypt",
+  "allow-safe-storage-decrypt",
 ]

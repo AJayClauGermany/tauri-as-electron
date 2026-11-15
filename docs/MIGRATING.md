@@ -250,6 +250,7 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `webPreferences.nodeIntegration: true` | No Node.js in any webview. `process.env` is filled in for such renderers, nothing else. |
 | `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
 | `fs`, `os`, `child_process` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
+| `safeStorage` ciphertext | Encrypted with a key tauri-plugin-electron keeps in the OS keychain, not Electron's: values an Electron build of the app stored cannot be decrypted. Re-encrypt from the plain value (ask the user again for a stored password or token). |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
 
@@ -322,8 +323,13 @@ A module whose feature is off throws `NotImplementedError` (reason
 - Streams: `createReadStream` (`start`, `end`, `highWaterMark`, `fd`) and
   `createWriteStream` (`flags`, `start`, `fd`, `flush`), readable-stream
   streams over descriptors.
+- Watching: `fs.watch` (`recursive`, `encoding`, `signal`; `'rename'` and
+  `'change'` events as in Node, from the notify crate), `fs.promises.watch`
+  (an async iterator) and `fs.watchFile` / `unwatchFile` (polling with
+  `stat`). chokidar 3 and 4 work on top. `ref()` / `unref()` and
+  `persistent` do nothing: a webview has no event loop to keep alive.
 - Not yet (they throw `NotImplementedError`, reason `unimplemented`):
-  `watch` / `watchFile`, `cp`, `opendir`, `link`, `chown`.
+  `cp`, `opendir`, `link`, `chown`.
 - Main process only. A renderer that calls `fs` gets a `NotImplementedError`
   (reason `permission`): move the file access to `ipcMain.handle`, as with a
   sandboxed Electron renderer.
