@@ -5,7 +5,7 @@ no-op (so boilerplate keeps running; warns once) · ❌ not implemented yet,
 but Tauri could support it (throws `NotImplementedError` with
 `reason: 'unimplemented'`, or warns once for `on`/`once`) · 🚫 not possible
 on Tauri and not planned (`reason: 'unsupported'`: Node.js built-ins,
-Chromium-only features, Electron's view hierarchy).
+Chromium-only features).
 
 Every `NotImplementedError` carries a `reason` (`unimplemented`,
 `unsupported`, `feature`, `plugin`, `permission`) and a hint; see
