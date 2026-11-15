@@ -7,8 +7,9 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri_plugin_electron::Builder::new()
-        // "kitchen": exercised by the protocol.handle() checks.
-        .protocol("kitchen")
+        // "kitchen" (the protocol.handle() checks), found in src/main.js by the
+        // bundler plugin: src-tauri/electron-schemes.json, passed on by build.rs.
+        .protocols(tauri_plugin_electron::bundled_schemes!())
         .install(tauri::Builder::default())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-message-box-close"
+description = "Enables the message_box_close command without any pre-configured scope."
+commands.allow = ["message_box_close"]
+
+[[permission]]
+identifier = "deny-message-box-close"
+description = "Denies the message_box_close command without any pre-configured scope."
+commands.deny = ["message_box_close"]

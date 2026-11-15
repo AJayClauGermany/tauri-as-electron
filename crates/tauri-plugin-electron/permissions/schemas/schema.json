@@ -475,6 +475,30 @@
           "markdownDescription": "Denies the is_devtools_open command without any pre-configured scope."
         },
         {
+          "description": "Enables the message_box command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-message-box",
+          "markdownDescription": "Enables the message_box command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the message_box command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-message-box",
+          "markdownDescription": "Denies the message_box command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the message_box_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-message-box-close",
+          "markdownDescription": "Enables the message_box_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the message_box_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-message-box-close",
+          "markdownDescription": "Denies the message_box_close command without any pre-configured scope."
+        },
+        {
           "description": "Enables the net_connect command without any pre-configured scope.",
           "type": "string",
           "const": "allow-net-connect",
@@ -703,10 +727,10 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`",
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`"
         },
         {
           "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",

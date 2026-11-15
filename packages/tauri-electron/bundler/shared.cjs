@@ -292,6 +292,109 @@ function stageAppFiles(root, { resources, exclude = [] } = {}) {
   return count
 }
 
+// --- custom schemes (protocol.handle) ---------------------------------------------------------
+
+/**
+ * Schemes Tauri must know when the app is built: tauri-plugin-electron
+ * registers each one as a URI scheme protocol, forwarded to the handler
+ * `protocol.handle()` registers at runtime. The bundler plugins find them
+ * in the app's source and write them to `src-tauri/electron-schemes.json`,
+ * which the app's build.rs hands to `tauri_plugin_electron::bundled_schemes!()`.
+ */
+const SCHEMES_FILE = path.join('src-tauri', 'electron-schemes.json')
+
+/** Schemes that libraries register on their own, by package name. */
+const LIBRARY_SCHEMES = {
+  '@sentry/electron': ['sentry-ipc'],
+}
+
+/** Never registered: the webview's own schemes and Tauri's. */
+const RESERVED_SCHEMES = new Set([
+  'http', 'https', 'file', 'about', 'data', 'blob', 'ws', 'wss', 'javascript', 'mailto', 'ftp',
+  'tauri', 'tauri-electron', 'ipc', 'asset', 'chrome', 'chrome-extension', 'devtools', 'view-source',
+])
+
+const SCHEME_NAME = /^[a-z][a-z0-9+.-]*$/
+const QUOTED_SCHEME = /['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/
+// protocol.handle('x', …), protocol.registerFileProtocol('x', …), session.protocol.handle('x', …)
+const HANDLE_CALL = /\bprotocol\s*\.\s*(?:handle|register(?:String|Buffer|File|Http|Stream)Protocol)\s*\(\s*['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/g
+// protocol.registerSchemesAsPrivileged([{ scheme: 'x', … }, …])
+const PRIVILEGED_CALL = /\bregisterSchemesAsPrivileged\s*\(\s*\[([\s\S]*?)\]\s*\)/g
+const SCHEME_PROPERTY = /\bscheme\s*:\s*['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/g
+const SCANNED_SOURCE = /\.(?:[cm]?[jt]sx?|vue|svelte)$/i
+
+/** The custom schemes a piece of source code passes to `protocol`. */
+function schemesInSource(code) {
+  const found = new Set()
+  if (!code.includes('rotocol') && !code.includes('registerSchemesAsPrivileged')) return found
+  for (const match of code.matchAll(HANDLE_CALL)) found.add(match[1].toLowerCase())
+  for (const call of code.matchAll(PRIVILEGED_CALL)) {
+    for (const match of call[1].matchAll(SCHEME_PROPERTY)) found.add(match[1].toLowerCase())
+  }
+  return found
+}
+
+function scanForSchemes(dir, found, depth = 0) {
+  let names
+  try {
+    names = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return
+  }
+  for (const entry of names) {
+    if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (depth < 12) scanForSchemes(full, found, depth + 1)
+    } else if (SCANNED_SOURCE.test(entry.name)) {
+      try {
+        if (fs.statSync(full).size > 4 * 1024 * 1024) continue
+        for (const scheme of schemesInSource(fs.readFileSync(full, 'utf8'))) found.add(scheme)
+      } catch {
+        /* unreadable: skip */
+      }
+    }
+  }
+}
+
+/**
+ * Every custom scheme the app uses: found in its source (outside
+ * dependencies, `src-tauri` and build output), those of libraries it
+ * depends on, and `extra` (the plugins' `schemes` option; `false` turns
+ * the collection off). Sorted, lower case, reserved schemes left out.
+ */
+function collectSchemes(root, extra) {
+  if (extra === false) return []
+  const found = new Set()
+  scanForSchemes(root, found)
+  const pkg = readPackageJson(root)
+  const deps = { ...pkg.optionalDependencies, ...pkg.devDependencies, ...pkg.dependencies }
+  for (const [name, schemes] of Object.entries(LIBRARY_SCHEMES)) if (deps[name]) schemes.forEach((s) => found.add(s))
+  for (const scheme of [extra ?? []].flat()) if (scheme) found.add(String(scheme).toLowerCase())
+  return [...found].filter((s) => SCHEME_NAME.test(s) && !RESERVED_SCHEMES.has(s)).sort()
+}
+
+/**
+ * Write the schemes to `src-tauri/electron-schemes.json` (only when the
+ * project has a `src-tauri` folder, and only when they changed, so Cargo
+ * does not rebuild for nothing). Returns the schemes, or null when nothing
+ * was written.
+ */
+function writeSchemes(root, extra) {
+  if (extra === false || !fs.existsSync(path.join(root, 'src-tauri'))) return null
+  const schemes = collectSchemes(root, extra)
+  const file = path.join(root, SCHEMES_FILE)
+  const text = JSON.stringify(schemes) + '\n'
+  let current = null
+  try {
+    current = fs.readFileSync(file, 'utf8')
+  } catch {
+    /* not written yet */
+  }
+  if (current !== text) fs.writeFileSync(file, text)
+  return schemes
+}
+
 module.exports = {
   NODE_BUILTINS,
   NODE_SHIMS,
@@ -305,4 +408,8 @@ module.exports = {
   electronMajor,
   sessionPreloads,
   stageAppFiles,
+  SCHEMES_FILE,
+  schemesInSource,
+  collectSchemes,
+  writeSchemes,
 }

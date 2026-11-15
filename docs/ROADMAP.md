@@ -91,7 +91,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   Etcher, SiYuan, Upscayl, Insomnia's worker window); 4 more use Node in
   preloads (Signal, Beekeeper, Logseq, Insomnia). The highest-leverage item
   here.* Effort M.
-- [ ] **B2. `electron-updater` shim.** Alias `electron-updater` (like
+- [x] **B2. `electron-updater` shim.** Alias `electron-updater` (like
   `electron`) to a module on `tauri-plugin-updater` that exposes its
   `autoUpdater`: `checkForUpdates`, `checkForUpdatesAndNotify`,
   `downloadUpdate`, `quitAndInstall`, `autoDownload`,
@@ -100,6 +100,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `download-progress`, `update-downloaded`, `error`). The feed stays in
   `tauri.conf.json`; `setFeedURL` is recorded. *Apps 19, the most-used
   helper package.* Effort M.
+  *Done: `tauri-electron/electron-updater`, aliased by both bundler plugins; Tauri's update format and endpoints (channel and feed URL go to the endpoint as headers), cancelling stops waiting, not the transfer.*
 - [ ] **B3. `safeStorage` with a real key.** A random key kept in the OS
   keychain (`keyring` crate: Keychain, Credential Manager, Secret Service),
   AES-256-GCM in Rust, `encryptString` / `decryptString` synchronous over
@@ -134,7 +135,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   supports them). The Rust hook is synchronous, so answer from decisions
   the main page pushed ahead (or block on a bridge round trip, off the
   main thread). *Apps 14.* Effort M.
-- [ ] **B8. Window controls for `titleBarOverlay`.** On Windows and Linux,
+- [x] **B8. Window controls for `titleBarOverlay`.** On Windows and Linux,
   `titleBarStyle: 'hidden'` + `titleBarOverlay` gives Electron apps native
   minimize / maximize / close buttons; here frameless windows have none.
   Draw them in the renderer bootstrap (colour, symbol colour and height
@@ -142,30 +143,33 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `navigator.windowControlsOverlay` geometry consistent. *Apps 8 (VS Code,
   SiYuan, Zettlr, Heroic, Trilium, Tabby, Mattermost, Super
   Productivity).* Effort M.
+  *Done: buttons in a shadow root, maximize icon follows the window; `navigator.windowControlsOverlay` and `--titlebar-area-*` custom properties (WebKit has no `env(titlebar-area-*)`).*
 - [ ] **B9. `Notification` click and actions on desktop.** `click`,
   `action`, `close`, `reply` need a backend that reports activation
   (notify-rust actions on Linux, toast activation on Windows,
   UNUserNotificationCenter on macOS); `plugin-notification` does not on
   desktop. *Apps 7 (Signal, VS Code, Mattermost, Heroic, Zettlr, SiYuan,
   Bitwarden).* Effort M–L.
-- [ ] **B10. Custom schemes without editing Rust.** The bundler plugins
+- [x] **B10. Custom schemes without editing Rust.** The bundler plugins
   collect scheme names from `protocol.registerSchemesAsPrivileged` and
   `protocol.handle` calls and write them where
   `tauri_plugin_electron::Builder` reads them (a generated file or the
   plugin's section of `tauri.conf.json`). Covers schemes that libraries
   add on their own (`@sentry/electron`'s `sentry-ipc`). *Apps 15.*
   Effort S–M.
+  *Done: `src-tauri/electron-schemes.json`, passed on by the app's build.rs to `Builder::protocols(bundled_schemes!())` (template and kitchen sink); found by scanning the app's source, so schemes built from variables need the `schemes` option.*
 - [ ] **B11. `powerMonitor` system events.** `suspend`, `resume`,
   `lock-screen`, `unlock-screen`, `shutdown`, plus
   `getSystemIdleTime` / `getSystemIdleState` (logind and the screensaver
   D-Bus API on Linux, `NSWorkspace` notifications and `CGEventSource` on
   macOS, `WM_POWERBROADCAST` / WTS and `GetLastInputInfo` on Windows).
   *Apps 8 events, 5 idle time.* Effort M.
-- [ ] **B12. `dialog.showMessageBox` beyond three buttons.**
+- [x] **B12. `dialog.showMessageBox` beyond three buttons.**
   `checkboxLabel` / `checkboxChecked`, more than three buttons, `defaultId`,
   `cancelId`: fall back to a small modal `BrowserWindow` when the native
   dialog cannot express the options. *Apps 8 use `checkboxLabel`.*
   Effort M.
+  *Done: a window served by the bridge scheme (no IPC permission), parented and disabling its parent; also for `showMessageBoxSync` (blocks on the bridge). The native dialog stays for three buttons or fewer without a checkbox.*
 - [ ] **B13. `session.setProxy` / `app.setProxy`** through
   `proxy_url` when windows are created (with B6's Rust-side creation);
   `resolveProxy` then reports the configured proxy. *Apps 4.* Effort S

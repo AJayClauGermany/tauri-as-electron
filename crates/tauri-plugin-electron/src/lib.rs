@@ -44,6 +44,8 @@ use std::{
 mod clipboard;
 mod cookies;
 mod features;
+#[cfg(desktop)]
+mod message_box;
 #[cfg(feature = "node-child-process")]
 mod node_child_process;
 #[cfg(any(
@@ -354,6 +356,53 @@ fn handle_bridge<R: Runtime>(
                 json!({ "kind": "sync-ipc", "from": label, "body": body }),
                 SYNC_TIMEOUT,
             );
+        }
+        // dialog.showMessageBoxSync() with options native dialogs lack:
+        // blocks until the message-box window answers.
+        "dialog/message-window" => {
+            #[cfg(desktop)]
+            {
+                if label != MAIN_LABEL {
+                    respond(
+                        responder,
+                        403,
+                        "text/plain",
+                        b"dialogs are main-process only".to_vec(),
+                    );
+                    return;
+                }
+                let body = request.body().clone();
+                thread::spawn(move || {
+                    let answer = serde_json::from_slice::<message_box::Options>(&body)
+                        .map_err(|e| e.to_string())
+                        .and_then(|options| message_box::open(&app, options))
+                        .and_then(|receiver| receiver.recv().map_err(|e| e.to_string()));
+                    match answer {
+                        Ok(value) => respond_json(responder, 200, &value),
+                        Err(error) => respond(responder, 500, "text/plain", error.into_bytes()),
+                    }
+                });
+            }
+            #[cfg(not(desktop))]
+            respond(
+                responder,
+                501,
+                "text/plain",
+                b"not supported on this platform".to_vec(),
+            );
+        }
+        // The message-box window's own page, size and answer.
+        p if p.starts_with("message-box/") => {
+            #[cfg(desktop)]
+            {
+                let query = request.uri().query().unwrap_or("").to_string();
+                match message_box::bridge(&app, &label, p, &query) {
+                    Some((content_type, body)) => respond(responder, 200, &content_type, body),
+                    None => respond(responder, 404, "text/plain", Vec::new()),
+                }
+            }
+            #[cfg(not(desktop))]
+            respond(responder, 404, "text/plain", Vec::new());
         }
         p if p.starts_with("dialog/") => {
             #[cfg(all(desktop, feature = "dialog"))]
@@ -777,6 +826,44 @@ async fn cookies_remove<R: Runtime>(
     cookies::remove(&cookie_webview(&app, &label)?, &url, &name)
 }
 
+/// `dialog.showMessageBox()` with options native dialogs lack (more than
+/// three buttons, `checkboxLabel`, `defaultId`): a small window. Resolves to
+/// `{ response, checkboxChecked }` when it closes.
+#[tauri::command]
+async fn message_box<R: Runtime>(
+    webview: tauri::Webview<R>,
+    options: Value,
+) -> Result<Value, String> {
+    if webview.label() != MAIN_LABEL {
+        return Err("dialogs are main-process only".into());
+    }
+    #[cfg(desktop)]
+    {
+        let options: message_box::Options =
+            serde_json::from_value(options).map_err(|e| e.to_string())?;
+        let receiver = message_box::open(webview.app_handle(), options)?;
+        tauri::async_runtime::spawn_blocking(move || receiver.recv().map_err(|e| e.to_string()))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = options;
+        Err("not supported on this platform".into())
+    }
+}
+
+/// Dismiss a message box (`showMessageBox`'s `signal` aborted): it answers `cancelId`.
+#[tauri::command]
+fn message_box_close<R: Runtime>(webview: tauri::Webview<R>, id: String) {
+    #[cfg(desktop)]
+    if webview.label() == MAIN_LABEL {
+        message_box::close(webview.app_handle(), &id);
+    }
+    #[cfg(not(desktop))]
+    let _ = (webview, id);
+}
+
 /// `clipboard.readHTML()`.
 #[tauri::command]
 async fn clipboard_read_html() -> Result<String, String> {
@@ -1031,6 +1118,17 @@ impl Builder {
         self
     }
 
+    /// Declare several schemes, typically the ones the bundler plugins found
+    /// in the app's JavaScript: `.protocols(tauri_plugin_electron::bundled_schemes!())`.
+    pub fn protocols<I, S>(mut self, schemes: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.protocols.extend(schemes.into_iter().map(Into::into));
+        self
+    }
+
     /// Register the plugin on an app builder, together with the official
     /// Tauri plugins of the enabled Cargo features (dialog, clipboard, ...,
     /// and opt-in ones such as `single-instance` and `updater`). Call it on
@@ -1066,6 +1164,8 @@ impl Builder {
                 cookies_set,
                 cookies_remove,
                 clipboard_read_html,
+                message_box,
+                message_box_close,
                 power_blocker_start,
                 power_blocker_stop,
                 node_fs,
@@ -1091,6 +1191,8 @@ impl Builder {
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                #[cfg(desktop)]
+                app.manage(message_box::Boxes::default());
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
                 #[cfg(feature = "node-child-process")]
@@ -1141,7 +1243,11 @@ impl Builder {
                 }
             })
             .register_asynchronous_uri_scheme_protocol(BRIDGE_SCHEME, handle_bridge);
-        for scheme in self.protocols {
+        let mut schemes = self.protocols;
+        schemes.retain(|scheme| scheme != BRIDGE_SCHEME);
+        schemes.sort();
+        schemes.dedup();
+        for scheme in schemes {
             let name = scheme.clone();
             builder = builder.register_asynchronous_uri_scheme_protocol(
                 scheme,
@@ -1152,7 +1258,64 @@ impl Builder {
     }
 }
 
+/// The schemes in `electron-schemes.json`, as the app's build script hands
+/// them over (see [`bundled_schemes!`]). Invalid entries are skipped.
+pub fn schemes_from_json(json: Option<&str>) -> Vec<String> {
+    let Some(json) = json else {
+        return Vec::new();
+    };
+    let list: Vec<String> = serde_json::from_str(json).unwrap_or_default();
+    list.into_iter()
+        .map(|s| s.to_ascii_lowercase())
+        .filter(|s| {
+            let mut chars = s.chars();
+            chars.next().is_some_and(|c| c.is_ascii_lowercase())
+                && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "+.-".contains(c))
+        })
+        .collect()
+}
+
+/// The custom schemes the bundler plugins found in the app's JavaScript
+/// (`protocol.handle('app', …)`, `protocol.registerSchemesAsPrivileged`,
+/// and schemes of known libraries such as `@sentry/electron`'s
+/// `sentry-ipc`). They write `src-tauri/electron-schemes.json`; the app's
+/// build.rs passes it on as the `TAURI_ELECTRON_SCHEMES` compile-time
+/// variable:
+///
+/// ```ignore
+/// // build.rs
+/// println!("cargo:rerun-if-changed=electron-schemes.json");
+/// if let Ok(json) = std::fs::read_to_string("electron-schemes.json") {
+///     println!("cargo:rustc-env=TAURI_ELECTRON_SCHEMES={}", json.trim());
+/// }
+/// // lib.rs
+/// tauri_plugin_electron::Builder::new().protocols(tauri_plugin_electron::bundled_schemes!())
+/// ```
+///
+/// A macro so that the variable is read when the *app* is compiled.
+#[macro_export]
+macro_rules! bundled_schemes {
+    () => {
+        $crate::schemes_from_json(::core::option_env!("TAURI_ELECTRON_SCHEMES"))
+    };
+}
+
 /// The plugin with no custom protocols.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new().build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::schemes_from_json;
+
+    #[test]
+    fn schemes_from_the_bundler() {
+        assert!(schemes_from_json(None).is_empty());
+        assert!(schemes_from_json(Some("not json")).is_empty());
+        assert_eq!(
+            schemes_from_json(Some(r#"["app", "Sentry-IPC", "bad scheme", "1x", ""]"#)),
+            vec!["app", "sentry-ipc"]
+        );
+    }
 }
