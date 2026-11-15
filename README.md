@@ -31,6 +31,8 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 | [`docs/MIGRATING.md`](docs/MIGRATING.md) | Step-by-step guide for porting an Electron app, and how to read the errors you may hit. |
 | [`docs/API-COVERAGE.md`](docs/API-COVERAGE.md) | What is implemented, partial, or missing, and the behavioural differences. |
 | [`docs/TARGET-APPS.md`](docs/TARGET-APPS.md) | The Electron APIs VS Code and GitHub Desktop rely on, and where each one stands. |
+| [`docs/APP-SURVEY.md`](docs/APP-SURVEY.md) | How 30 open-source Electron apps use Electron, what blocks each of them, and the scripts behind it ([`scripts/survey`](scripts/survey)). |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | The ranked checklist of what to build next, from that survey. |
 
 No UI framework is assumed: the template and kitchen sink are plain HTML,
 CSS and JavaScript. A bundler is needed only to alias `electron`: Vite by
@@ -140,7 +142,9 @@ npm run smoke --workspace kitchen-sink -- --electron
 
 The API surface is driven by two large Electron apps, VS Code and GitHub
 Desktop: [TARGET-APPS.md](docs/TARGET-APPS.md) lists every Electron API on
-their main code path and where it stands. On Linux the kitchen sink
+their main code path and where it stands. A wider
+[survey of 30 open-source Electron apps](docs/APP-SURVEY.md) ranks what
+comes next in [ROADMAP.md](docs/ROADMAP.md). On Linux the kitchen sink
 currently reports **112 automatic checks passing on Tauri** and 4 reported
 as *unsupported* (`desktopCapturer`, `utilityProcess`, `contentTracing`,
 and a check that asserts those errors say why), plus 30 interactive checks

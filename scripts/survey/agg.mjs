@@ -1,0 +1,16 @@
+import fs from 'node:fs'
+const r = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+const apps = Object.keys(r)
+const agg = {}
+for (const a of apps) for (const k of Object.keys(r[a].apis)) (agg[k] ??= []).push(a)
+const rows = Object.entries(agg).filter(([k]) => /[.#]/.test(k)).sort((x, y) => y[1].length - x[1].length || x[0].localeCompare(y[0]))
+fs.writeFileSync(process.argv[3], rows.map(([k, v]) => `${v.length}\t${k}\t${v.join(',')}`).join('\n'))
+const mods = Object.entries(agg).filter(([k]) => !/[.#]/.test(k)).sort((x, y) => y[1].length - x[1].length)
+console.log('MODULES', mods.map(([k, v]) => `${k}:${v.length}`).join(' '))
+const flags = {}; for (const a of apps) for (const k of Object.keys(r[a].flags)) (flags[k] ??= []).push(a)
+console.log('\nFLAGS'); for (const [k, v] of Object.entries(flags).sort((x, y) => y[1].length - x[1].length)) console.log(v.length, k, v.join(','))
+const nm = {}; for (const a of apps) for (const k of Object.keys(r[a].nodeMods)) (nm[k] ??= []).push(a)
+console.log('\nNODE', Object.entries(nm).sort((x, y) => y[1].length - x[1].length).map(([k, v]) => `${k}:${v.length}`).join(' '))
+const nd = {}; for (const a of apps) for (const k of r[a].nativeDeps) (nd[k] ??= []).push(a)
+console.log('\nDEPS'); for (const [k, v] of Object.entries(nd).sort((x, y) => y[1].length - x[1].length)) console.log(v.length, k, v.join(','))
+console.log('\nVERSIONS', apps.map((a) => `${a}=${r[a].electronVersion}`).join(' '))

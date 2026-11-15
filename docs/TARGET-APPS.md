@@ -1,5 +1,9 @@
 # Target apps: VS Code and GitHub Desktop
 
+> The survey was later widened to 30 open-source Electron apps:
+> [APP-SURVEY.md](APP-SURVEY.md), with the next work ranked in
+> [ROADMAP.md](ROADMAP.md).
+
 To decide which parts of Electron's API matter most, we read the Electron
 usage of two large, popular Electron apps and listed every API on their
 **main code path**: startup, windows, IPC, menus, dialogs, quitting and
