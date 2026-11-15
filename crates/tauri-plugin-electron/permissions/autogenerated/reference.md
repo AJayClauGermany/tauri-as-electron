@@ -72,6 +72,32 @@ Denies the bridge_respond command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-child-disconnect`
+
+</td>
+<td>
+
+Enables the child_disconnect command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-disconnect`
+
+</td>
+<td>
+
+Denies the child_disconnect command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-child-end`
 
 </td>
@@ -117,6 +143,32 @@ Enables the child_kill command without any pre-configured scope.
 <td>
 
 Denies the child_kill command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-child-send`
+
+</td>
+<td>
+
+Enables the child_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-send`
+
+</td>
+<td>
+
+Denies the child_send command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1377,7 +1429,7 @@ Denies the udp_send command without any pre-configured scope.
 </td>
 <td>
 
-Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can (and a Node.js runtime for `child_process.fork` / `utilityProcess.fork`), and write to, read from, signal and message it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>

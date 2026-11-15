@@ -28,6 +28,8 @@ const COMMANDS: &[&str] = &[
     "child_write",
     "child_end",
     "child_kill",
+    "child_send",
+    "child_disconnect",
     "net_connect",
     "net_listen",
     "net_write",
