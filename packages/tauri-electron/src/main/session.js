@@ -7,44 +7,23 @@
  * through tauri-plugin-electron (the webview's cookie store), and so do
  * downloads (./downloads.js) and permission requests (./permissions.js) of
  * windows it creates. `setProxy` applies to windows created afterwards
- * (./proxy.js). Request interception (webRequest) has no API in Tauri:
- * listeners are stored but never called.
+ * (./proxy.js). `webRequest` listeners apply where tauri-electron sees the
+ * request (./web-request.js); `setCertificateVerifyProc` to the webview's
+ * certificate errors (./tls-auth.js).
  */
 import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { NotImplementedError, MAIN_LABEL, report, warnOnce } from '../internal/runtime.js'
 import { native, hasNativePlugin } from '../internal/native.js'
 import { platform } from '../process.js'
-import { netFetch, setDefaultProxy, OWN_PROXY } from './net.js'
+import { netFetch, setDefaultProxy, OWN_PROXY, VIA_SESSION } from './net.js'
 import { protocol } from './protocol.js'
 import { BrowserWindow, webContentsFromLabel } from './browser-window.js'
 import { dialog } from './dialog.js'
 import { configureDownloads, downloadURL } from './downloads.js'
 import { configurePermissions, syncPermissionHandler } from './permissions.js'
 import { parseProxyConfig, describeProxy } from './proxy.js'
-
-const WEB_REQUEST_EVENTS = [
-  'onBeforeRequest',
-  'onBeforeSendHeaders',
-  'onSendHeaders',
-  'onHeadersReceived',
-  'onResponseStarted',
-  'onBeforeRedirect',
-  'onCompleted',
-  'onErrorOccurred',
-]
-
-class WebRequest {
-  constructor() {
-    this._listeners = {}
-    for (const name of WEB_REQUEST_EVENTS) {
-      this[name] = (filterOrListener, maybeListener) => {
-        const listener = maybeListener === undefined ? filterOrListener : maybeListener
-        if (listener) warnOnce(`webRequest.${name}`, `session.webRequest.${name}() listeners are stored but never called: Tauri cannot intercept webview requests from JavaScript.`)
-        this._listeners[name] = listener ?? null
-      }
-    }
-  }
-}
+import { WebRequest, configureWebRequest } from './web-request.js'
+import { configureTlsAuth } from './tls-auth.js'
 
 /** Whether `domain` is `parent` or one of its subdomains (leading dots ignored). */
 function withinDomain(domain, parent) {
@@ -200,7 +179,7 @@ export class Session extends EventEmitter {
     this._handlers = {}
     this._downloadPath = ''
     this._proxy = null
-    this.webRequest = new WebRequest()
+    this.webRequest = new WebRequest(this)
     this.cookies = new Cookies(this)
     this.protocol = protocol
     this.serviceWorkers = new EventEmitter()
@@ -256,7 +235,8 @@ export class Session extends EventEmitter {
   setPermissionCheckHandler(handler) { this._handlers.permissionCheck = handler }
   setDisplayMediaRequestHandler(handler) { this._handlers.displayMedia = handler }
   setDevicePermissionHandler(handler) { this._handlers.devicePermission = handler }
-  setCertificateVerifyProc(proc) { this._handlers.certificateVerify = proc }
+  /** Asked when a window's webview rejects a certificate, before 'certificate-error' (./tls-auth.js). */
+  setCertificateVerifyProc(proc) { this._handlers.certificateVerify = typeof proc === 'function' ? proc : null }
   setBluetoothPairingHandler(handler) { this._handlers.bluetoothPairing = handler }
   setUSBProtectedClassesHandler(handler) { this._handlers.usbProtectedClasses = handler }
 
@@ -297,8 +277,8 @@ export class Session extends EventEmitter {
   disableNetworkEmulation() {}
   // Each session uses its own proxy settings only (the default session's are applied by netFetch).
   fetch(input, init) {
-    if (this === defaultSession) return netFetch(input, init)
-    return netFetch(input, { ...init, [OWN_PROXY]: true, ...(this._proxy && init?.proxy === undefined ? { proxy: { all: this._proxy.url } } : {}) })
+    if (this === defaultSession) return netFetch(input, { ...init, [VIA_SESSION]: this })
+    return netFetch(input, { ...init, [OWN_PROXY]: true, [VIA_SESSION]: this, ...(this._proxy && init?.proxy === undefined ? { proxy: { all: this._proxy.url } } : {}) })
   }
 
   /**
@@ -358,6 +338,13 @@ configureDownloads({
   saveDialog: (...args) => dialog.showSaveDialog(...args),
 })
 configurePermissions({ defaultSession, webContentsFromLabel: (label) => webContentsFromLabel(label) })
+configureWebRequest({
+  defaultSession,
+  webContentsFromLabel: (label) => webContentsFromLabel(label),
+  fromPartition: (partition) => session.fromPartition(partition),
+  windows: () => BrowserWindow.getAllWindows(),
+})
+configureTlsAuth({ defaultSession, webContentsFromLabel: (label) => webContentsFromLabel(label) })
 
 export const session = {
   get defaultSession() {

@@ -33,6 +33,9 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-download-control`
 - `allow-download-commit`
 - `allow-download-discard`
+- `allow-web-request-listeners`
+- `allow-web-request-respond`
+- `allow-tls-auth-respond`
 
 ## Permission Table
 
@@ -1398,6 +1401,32 @@ Denies the sqlite command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-tls-auth-respond`
+
+</td>
+<td>
+
+Enables the tls_auth_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-tls-auth-respond`
+
+</td>
+<td>
+
+Denies the tls_auth_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-trash-item`
 
 </td>
@@ -1521,6 +1550,58 @@ Enables the udp_send command without any pre-configured scope.
 <td>
 
 Denies the udp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-web-request-listeners`
+
+</td>
+<td>
+
+Enables the web_request_listeners command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-web-request-listeners`
+
+</td>
+<td>
+
+Denies the web_request_listeners command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-web-request-respond`
+
+</td>
+<td>
+
+Enables the web_request_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-web-request-respond`
+
+</td>
+<td>
+
+Denies the web_request_respond command without any pre-configured scope.
 
 </td>
 </tr>

@@ -957,6 +957,8 @@ export class BrowserWindow extends EventEmitter {
       permissionHandler: typeof this._session?._handlers?.permissionRequest === 'function',
       // The session chose its proxy (setProxy), so a window without one goes direct.
       proxyConfigured: Boolean(this._session?._proxyConfigured),
+      // The session.webRequest events with a listener (http(s) requests of the page).
+      webRequest: this._session?.webRequest?._events?.() ?? [],
     })
     const previous = this._native
     this._native = native

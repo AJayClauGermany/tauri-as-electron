@@ -28,7 +28,10 @@
 //!   and `powerSaveBlocker` (operating-system assertions).
 //! - **BrowserWindows created in Rust** (`create_window`), for what Tauri only
 //!   offers on the webview builder: downloads (`will-download`, `downloadURL`)
-//!   and `setPermissionRequestHandler`.
+//!   and `setPermissionRequestHandler`; and for the platform webview's own
+//!   events: `session.webRequest` for page requests (`web_request.rs`),
+//!   `certificate-error`, `login` and `select-client-certificate`
+//!   (`tls_auth.rs`).
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
 //!   events for every window, including remote pages), macOS `activate`,
 //!   `open-file` / `open-url`, and `second-instance` (with the
@@ -89,6 +92,8 @@ mod power;
 mod power_monitor;
 #[cfg(feature = "safe-storage")]
 mod safe_storage;
+mod tls_auth;
+mod web_request;
 mod windows;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -1593,7 +1598,10 @@ impl Builder {
                 native_modules::keytar,
                 native_modules::sqlite,
                 native_modules::pty_attach,
-                native_modules::pty_control
+                native_modules::pty_control,
+                web_request::web_request_listeners,
+                web_request::web_request_respond,
+                tls_auth::tls_auth_respond
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
@@ -1601,6 +1609,8 @@ impl Builder {
                 app.manage(message_box::Boxes::default());
                 app.manage(node_windows::NodeWindows::default());
                 windows::manage(app);
+                app.manage(web_request::WebRequests::default());
+                app.manage(tls_auth::TlsAuth::default());
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
                 #[cfg(all(desktop, feature = "notification"))]

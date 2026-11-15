@@ -222,6 +222,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   for custom schemes and `net.fetch`. Mostly used to relax CSP / CORS or
   set headers for remote pages. *Apps 18 (FreeTube depends on it to talk
   to YouTube).* Effort L, partial at best.
+  *Partly done: listeners apply wherever tauri-electron sees the request. `net.fetch` / `net.request` / `session.fetch`: every event (cancel, redirect, request and response header and `statusLine` rewrites; redirects are followed in JavaScript so onBeforeRedirect fires and each hop goes through onBeforeRequest; onCompleted when the body has been read). `protocol.handle()` schemes: every event around the handler (a redirect is served in place, a cancelled request gets an empty 403). http(s) requests of pages: Windows holds them in WebView2's `WebResourceRequested` (cancel, redirect, request headers; onResponseStarted / onCompleted reported; onHeadersReceived cannot apply); Linux only reports them (onSendHeaders, onBeforeRedirect, onResponseStarted, onCompleted, onErrorOccurred: WebKitGTK cannot change a request from the UI process); macOS reports nothing. A listener that could change a request is only called where its answer applies. So FreeTube's header rewrites of page requests work on Windows only (not verified there).*
 - [ ] **C8. `printToPDF` and `capturePage`** per platform through
   `with_webview` (WKWebView `createPDF` / `takeSnapshot`, WebView2
   `PrintToPdf` / `CapturePreview`, WebKitGTK print operation to a file /
@@ -230,12 +231,13 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 - [ ] **C9. Screen capture.** `desktopCapturer.getSources` and
   `setDisplayMediaRequestHandler` for screen sharing; depends on each
   webview's `getDisplayMedia` support. *Apps 8 (the chat apps).* Effort L.
-- [ ] **C10. TLS and auth events.** `certificate-error`,
+- [x] **C10. TLS and auth events.** `certificate-error`,
   `setCertificateVerifyProc`, `select-client-certificate`, `login`
   (WebView2 `ServerCertificateErrorDetected` / `BasicAuthenticationRequested`,
   WebKitGTK `load-failed-with-tls-errors` / `authenticate`; WKWebView's
   navigation delegate belongs to wry). Mostly used to accept self-signed
   servers. *Apps 12 and 7.* Effort L.
+  *Done for Linux and Windows: `certificate-error` (webContents, then app; the session's `setCertificateVerifyProc` is asked first, but only about certificates the webview rejected), `login` (webContents, then app; cancelled without `preventDefault()`, as in Electron) and `select-client-certificate` (Windows only; the first certificate without `preventDefault()`). Linux: WebKitGTK `load-failed-with-tls-errors` (main frames; a trusted certificate is allowed for its host and the page loaded again) and `authenticate` (Basic, Digest, NTLM, Negotiate); Windows: WebView2 `ServerCertificateErrorDetected`, `BasicAuthenticationRequested`, `ClientCertificateRequested` (not verified). An untrusted certificate fails the load with `did-fail-load` (-202 & co.) and `loadURL()` rejects. macOS emits none of them (wry owns the WKNavigationDelegate). `net.request` emits `login` for Basic challenges; `net.fetch` does not consult `setCertificateVerifyProc`.*
 
 ## Leave as they are
 

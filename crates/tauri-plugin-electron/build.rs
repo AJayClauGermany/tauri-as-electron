@@ -56,6 +56,9 @@ const COMMANDS: &[&str] = &[
     "sqlite",
     "pty_attach",
     "pty_control",
+    "web_request_listeners",
+    "web_request_respond",
+    "tls_auth_respond",
 ];
 
 fn main() {
