@@ -67,7 +67,7 @@ round of work; **now** is the current status. See
 | `app.isInApplicationsFolder` / `moveToApplicationsFolder` | macOS “move to Applications” | ⚪ | ⚪ returns `false` |
 | `webUtils.getPathForFile` | Drag a repository folder onto the window | 🟡 | ✅ paths from Tauri's native file drop |
 | `dialog.showCertificateTrustDialog` | Untrusted certificates (Windows/macOS) | ❌ | ❌ |
-| `app.on('certificate-error')` | Same | ❌ never emitted | ❌ never emitted |
+| `app.on('certificate-error')` | Same | ❌ never emitted | 🟡 Linux and Windows (not macOS) |
 | `shell.beep`, `app.dock.bounce` | Notify when the window is not focused | 🟡 | 🟡 |
 
 ### VS Code only
@@ -91,7 +91,7 @@ round of work; **now** is the current status. See
 | `Menu.sendActionToFirstResponder`, `app.dock.setMenu`, `setJumpList`, `addRecentDocument` | Platform integration | ⚪ | ⚪ |
 | `BrowserWindow.setTitleBarOverlay`, `setWindowButtonPosition`, `setTouchBar`, `addTabbedWindow`, `setRepresentedFilename`, `setDocumentEdited` | Platform chrome | ⚪ / ❌ (`TouchBar` threw) | ⚪ (accepted, cached) |
 | `BrowserWindow.getNativeWindowHandle` | Native window integration on Windows | ❌ | ❌ |
-| `webContents.session.webRequest` (CSP and header rewrites) | Webviews and the integrated browser | ❌ | ⚪ listeners stored, not applied |
+| `webContents.session.webRequest` (CSP and header rewrites) | Webviews and the integrated browser | ❌ | 🟡 applied to `net.fetch` and custom schemes; page requests rewritten on Windows only |
 | `session.fromPartition`, `clearStorageData` | Integrated-browser sessions | ❌ | 🟡 in-memory partitions → `incognito`; persistent ones share the default store except on macOS 14+ |
 | `desktopCapturer`, `contentTracing`, `webContents.capturePage`, `debugger`, `WebContentsView` | Screenshots, profiling, the integrated browser | ❌ | ❌ |
 | `app.getGPUFeatureStatus`, `getGPUInfo`, `getAppMetrics` | Diagnostics, process explorer | 🟡 | 🟡 placeholder values |
