@@ -64,8 +64,12 @@ mod node_net_commands;
 mod node_os;
 #[cfg(feature = "node-tls")]
 mod node_tls;
+#[cfg(all(desktop, feature = "notification"))]
+mod notification;
 #[cfg(all(desktop, feature = "power-save-blocker"))]
 mod power;
+#[cfg(all(desktop, feature = "power-monitor"))]
+mod power_monitor;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -422,6 +426,18 @@ fn handle_bridge<R: Runtime>(
                     "text/plain",
                     b"enable the `clipboard` feature of tauri-plugin-electron".to_vec(),
                 );
+            }
+        }
+        // powerMonitor.getSystemIdleTime() / getSystemIdleState(), synchronous in Electron.
+        "power/idle" => {
+            #[cfg(all(desktop, feature = "power-monitor"))]
+            thread::spawn(move || {
+                respond_json(responder, 200, &app.state::<power_monitor::Monitor>().idle())
+            });
+            #[cfg(not(all(desktop, feature = "power-monitor")))]
+            {
+                let _ = app;
+                respond_json(responder, 200, &json!({ "idle": null, "locked": null }));
             }
         }
         p if p.starts_with("node/") => {
@@ -815,6 +831,47 @@ async fn power_blocker_stop<R: Runtime>(app: AppHandle<R>, id: u32) -> bool {
     }
 }
 
+/// `new Notification(options).show()` with `click` / `action` / `close` reported
+/// to the main process (`tauri-electron:notification`).
+#[tauri::command]
+async fn notification_show<R: Runtime>(app: AppHandle<R>, options: Value) -> Result<(), String> {
+    #[cfg(all(desktop, feature = "notification"))]
+    {
+        let options = serde_json::from_value(options).map_err(|e| e.to_string())?;
+        notification::show(&app, &app.state::<notification::State>(), options)
+    }
+    #[cfg(not(all(desktop, feature = "notification")))]
+    {
+        let _ = (app, options);
+        Err("enable the `notification` feature of tauri-plugin-electron".into())
+    }
+}
+
+/// `notification.close()`.
+#[tauri::command]
+async fn notification_close<R: Runtime>(app: AppHandle<R>, id: i32) -> Result<(), String> {
+    #[cfg(all(desktop, feature = "notification"))]
+    return notification::close(&app, id);
+    #[cfg(not(all(desktop, feature = "notification")))]
+    {
+        let _ = (app, id);
+        Err("enable the `notification` feature of tauri-plugin-electron".into())
+    }
+}
+
+/// Start reporting powerMonitor's system events (`tauri-electron:power-monitor`);
+/// returns the events this platform reports. Async: connecting to D-Bus blocks.
+#[tauri::command]
+async fn power_monitor_start<R: Runtime>(app: AppHandle<R>) -> Vec<&'static str> {
+    #[cfg(all(desktop, feature = "power-monitor"))]
+    return app.state::<power_monitor::Monitor>().start(&app);
+    #[cfg(not(all(desktop, feature = "power-monitor")))]
+    {
+        let _ = app;
+        Vec::new()
+    }
+}
+
 #[cfg(feature = "node-child-process")]
 type SharedChildren = Arc<node_child_process::Children>;
 
@@ -1068,6 +1125,9 @@ impl Builder {
                 clipboard_read_html,
                 power_blocker_start,
                 power_blocker_stop,
+                notification_show,
+                notification_close,
+                power_monitor_start,
                 node_fs,
                 child_spawn,
                 child_write,
@@ -1093,6 +1153,10 @@ impl Builder {
                 app.manage(SharedBridge::default());
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
+                #[cfg(all(desktop, feature = "notification"))]
+                app.manage(notification::State::default());
+                #[cfg(all(desktop, feature = "power-monitor"))]
+                app.manage(power_monitor::Monitor::default());
                 #[cfg(feature = "node-child-process")]
                 app.manage(SharedChildren::default());
                 #[cfg(feature = "node-net")]

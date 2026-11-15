@@ -142,12 +142,13 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `navigator.windowControlsOverlay` geometry consistent. *Apps 8 (VS Code,
   SiYuan, Zettlr, Heroic, Trilium, Tabby, Mattermost, Super
   Productivity).* Effort M.
-- [ ] **B9. `Notification` click and actions on desktop.** `click`,
+- [x] **B9. `Notification` click and actions on desktop.** `click`,
   `action`, `close`, `reply` need a backend that reports activation
   (notify-rust actions on Linux, toast activation on Windows,
   UNUserNotificationCenter on macOS); `plugin-notification` does not on
   desktop. *Apps 7 (Signal, VS Code, Mattermost, Heroic, Zettlr, SiYuan,
   Bitwarden).* Effort M–L.
+  *Done: shown from Rust through tauri-plugin-notification 2.8's desktop action tracking (its `on_action` handler forwards to the main process): `click` and `action` on Linux, Windows and macOS, `close` on Linux. `reply` is not emitted (no desktop backend reports inline replies); Windows reports clicks only while the toast is on screen.*
 - [ ] **B10. Custom schemes without editing Rust.** The bundler plugins
   collect scheme names from `protocol.registerSchemesAsPrivileged` and
   `protocol.handle` calls and write them where
@@ -155,12 +156,13 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   plugin's section of `tauri.conf.json`). Covers schemes that libraries
   add on their own (`@sentry/electron`'s `sentry-ipc`). *Apps 15.*
   Effort S–M.
-- [ ] **B11. `powerMonitor` system events.** `suspend`, `resume`,
+- [x] **B11. `powerMonitor` system events.** `suspend`, `resume`,
   `lock-screen`, `unlock-screen`, `shutdown`, plus
   `getSystemIdleTime` / `getSystemIdleState` (logind and the screensaver
   D-Bus API on Linux, `NSWorkspace` notifications and `CGEventSource` on
   macOS, `WM_POWERBROADCAST` / WTS and `GetLastInputInfo` on Windows).
   *Apps 8 events, 5 idle time.* Effort M.
+  *Done for Linux (logind and screen-saver signals over D-Bus, feature `power-monitor`) and idle time everywhere (Mutter / ScreenSaver, `CGEventSource`, `GetLastInputInfo`). macOS and Windows events are still open (they need a native window or run-loop observer); `resume` falls back to the timer heuristic there.*
 - [ ] **B12. `dialog.showMessageBox` beyond three buttons.**
   `checkboxLabel` / `checkboxChecked`, more than three buttons, `defaultId`,
   `cancelId`: fall back to a small modal `BrowserWindow` when the native

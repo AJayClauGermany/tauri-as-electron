@@ -18,6 +18,9 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-clipboard-read-html`
 - `allow-power-blocker-start`
 - `allow-power-blocker-stop`
+- `allow-notification-show`
+- `allow-notification-close`
+- `allow-power-monitor-start`
 
 ## Permission Table
 
@@ -629,6 +632,58 @@ Denies the node_fs command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-notification-close`
+
+</td>
+<td>
+
+Enables the notification_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-notification-close`
+
+</td>
+<td>
+
+Denies the notification_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-notification-show`
+
+</td>
+<td>
+
+Enables the notification_show command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-notification-show`
+
+</td>
+<td>
+
+Denies the notification_show command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-open-devtools`
 
 </td>
@@ -700,6 +755,32 @@ Enables the power_blocker_stop command without any pre-configured scope.
 <td>
 
 Denies the power_blocker_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-power-monitor-start`
+
+</td>
+<td>
+
+Enables the power_monitor_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-power-monitor-start`
+
+</td>
+<td>
+
+Denies the power_monitor_start command without any pre-configured scope.
 
 </td>
 </tr>

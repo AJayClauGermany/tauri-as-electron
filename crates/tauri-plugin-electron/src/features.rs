@@ -29,6 +29,7 @@ pub fn enabled() -> Vec<&'static str> {
         "protocol-client",
         "login-item",
         "power-save-blocker",
+        "power-monitor",
         "single-instance",
         "updater",
         "devtools",
@@ -46,6 +47,7 @@ pub fn enabled() -> Vec<&'static str> {
                 "global-shortcut"
                     | "login-item"
                     | "power-save-blocker"
+                    | "power-monitor"
                     | "single-instance"
                     | "updater"
             )

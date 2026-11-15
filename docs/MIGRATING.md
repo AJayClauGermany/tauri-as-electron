@@ -252,6 +252,8 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `fs`, `os`, `child_process` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
+| `Notification` `click` / `action` / `close` / `reply` | `click` and `action` work on desktop; `close` is reported on Linux only; `reply` is never emitted (keep a fallback, such as opening a window). |
+| `powerMonitor` `suspend` / `lock-screen` / … | Reported on Linux (logind and the screen saver over D-Bus); on macOS and Windows only `resume` (detected from timer drift). Idle time works everywhere. |
 
 ## 4. Node.js code
 

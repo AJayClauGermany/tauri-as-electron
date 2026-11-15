@@ -2,11 +2,16 @@
  * powerMonitor and powerSaveBlocker. Neither has an official Tauri plugin,
  * so both are best effort with web APIs:
  *
- * - powerMonitor: battery state from the Battery Status API where the
- *   webview has it (WebView2); idle state/time and thermal state report
- *   'unknown' / 0. 'resume' is detected heuristically (a timer that fires
- *   much later than scheduled means the machine slept); 'suspend',
- *   'lock-screen', 'unlock-screen' and 'shutdown' are never emitted.
+ * - powerMonitor: 'suspend', 'resume', 'lock-screen', 'unlock-screen' and
+ *   'shutdown' from tauri-plugin-electron (feature `power-monitor`, on by
+ *   default; logind and the screen saver over D-Bus on Linux), and
+ *   getSystemIdleTime() / getSystemIdleState() over the synchronous bridge
+ *   (Mutter / org.freedesktop.ScreenSaver on Linux, CGEventSource on macOS,
+ *   GetLastInputInfo on Windows). Where the system does not report 'resume'
+ *   (macOS, Windows, no D-Bus), it is detected heuristically: a timer that
+ *   fires much later than scheduled means the machine slept. Battery state
+ *   comes from the Battery Status API where the webview has it (WebView2);
+ *   the thermal state is 'unknown'.
  * - powerSaveBlocker: an operating-system assertion held by
  *   tauri-plugin-electron (feature `power-save-blocker`, on by default:
  *   IOPMAssertion, SetThreadExecutionState, logind / ScreenSaver
@@ -15,12 +20,15 @@
  *   only holds while that window is visible.
  */
 import { EventEmitter, createEvent } from '../internal/emitter.js'
-import { report, warnOnce } from '../internal/runtime.js'
-import { native, hasNativePlugin, hasFeature } from '../internal/native.js'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { inTauri, isMainProcess, report, warnOnce } from '../internal/runtime.js'
+import { native, hasNativePlugin, hasFeature, loadProcessInfo, syncRequest } from '../internal/native.js'
 import { BrowserWindow } from './browser-window.js'
 
 const RESUME_CHECK_MS = 5000
 const RESUME_GAP_MS = 30000
+/** Events the operating system reports through tauri-plugin-electron. */
+const SYSTEM_EVENTS = new Set(['suspend', 'resume', 'lock-screen', 'unlock-screen', 'shutdown'])
 
 class PowerMonitor extends EventEmitter {
   constructor() {
@@ -28,6 +36,8 @@ class PowerMonitor extends EventEmitter {
     this._onBattery = false
     this._battery = null
     this._resumeTimer = null
+    this._native = null // Promise of the Set of events the system reports
+    this._systemEvents = new Set()
     this._initBattery()
   }
 
@@ -47,7 +57,35 @@ class PowerMonitor extends EventEmitter {
 
   /** Called by EventEmitter for every way of adding a listener (on, once, addListener, prepend*). */
   _newListener(name) {
-    if (name === 'resume') this._watchResume()
+    if (!SYSTEM_EVENTS.has(name)) return
+    this._startNative()
+    if (name === 'resume' && !this._systemEvents.has('resume')) this._watchResume()
+  }
+
+  /** Ask tauri-plugin-electron to report system events (once). */
+  _startNative() {
+    if (this._native || !inTauri || !isMainProcess) return
+    this._native = loadProcessInfo()
+      .then(async () => {
+        if (!hasNativePlugin() || !hasFeature('power-monitor')) return new Set()
+        await getCurrentWebviewWindow().listen('tauri-electron:power-monitor', ({ payload }) => {
+          if (SYSTEM_EVENTS.has(payload?.event)) this.emit(payload.event, createEvent())
+        })
+        return new Set(await native('power_monitor_start'))
+      })
+      .catch((error) => {
+        report('powerMonitor events')(error)
+        return new Set()
+      })
+      .then((events) => {
+        this._systemEvents = events
+        // The system reports resume: the heuristic would report it twice.
+        if (events.has('resume') && this._resumeTimer) {
+          clearInterval(this._resumeTimer)
+          this._resumeTimer = null
+        }
+        return events
+      })
   }
 
   /** Heuristic: a 5 s timer that fires 30+ s late means the system slept. */
@@ -66,12 +104,29 @@ class PowerMonitor extends EventEmitter {
     }, RESUME_CHECK_MS)
   }
 
-  getSystemIdleState() {
-    return 'unknown'
+  /** `{ idle: seconds | null, locked: boolean | null }` from tauri-plugin-electron. */
+  _idle() {
+    if (!inTauri || !hasNativePlugin() || !hasFeature('power-monitor')) return { idle: null, locked: null }
+    try {
+      const { status, text } = syncRequest('power/idle')
+      return status === 200 ? JSON.parse(text) : { idle: null, locked: null }
+    } catch {
+      return { idle: null, locked: null }
+    }
+  }
+
+  getSystemIdleState(idleThreshold) {
+    const threshold = Number(idleThreshold)
+    if (!(threshold >= 0)) throw new TypeError('Invalid idle threshold, must be greater than 0')
+    const { idle, locked } = this._idle()
+    if (locked) return 'locked'
+    if (typeof idle !== 'number') return 'unknown'
+    return idle >= threshold ? 'idle' : 'active'
   }
 
   getSystemIdleTime() {
-    return 0
+    const { idle } = this._idle()
+    return typeof idle === 'number' ? idle : 0
   }
 
   getCurrentThermalState() {

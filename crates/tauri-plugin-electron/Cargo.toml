@@ -23,13 +23,14 @@ default = [
   "protocol-client",
   "login-item",
   "power-save-blocker",
+  "power-monitor",
 ]
 # dialog.* (including the *Sync variants)
 dialog = ["dep:tauri-plugin-dialog"]
 # clipboard.*
 # (arboard: clipboard.readHTML and the synchronous reads of Electron < 45)
 clipboard = ["dep:tauri-plugin-clipboard-manager", "dep:arboard"]
-# Notification
+# Notification (with click / action / close events on desktop)
 notification = ["dep:tauri-plugin-notification"]
 # shell.openExternal / openPath / showItemInFolder
 shell = ["dep:tauri-plugin-opener"]
@@ -46,6 +47,10 @@ login-item = ["dep:tauri-plugin-autostart"]
 # powerSaveBlocker with operating-system assertions (otherwise a Screen Wake
 # Lock in a visible window).
 power-save-blocker = ["dep:keepawake"]
+# powerMonitor's suspend / resume / lock-screen / unlock-screen / shutdown
+# events and getSystemIdleTime / getSystemIdleState (D-Bus on Linux; idle
+# time only on macOS and Windows).
+power-monitor = ["dep:zbus"]
 
 # --- opt-in ------------------------------------------------------------------------
 # app.requestSingleInstanceLock() / 'second-instance'. Electron apps allow several
@@ -113,3 +118,8 @@ tauri-plugin-single-instance = { version = "2", optional = true }
 tauri-plugin-updater = { version = "2", optional = true }
 arboard = { version = "3", optional = true }
 keepawake = { version = "0.6", optional = true }
+
+# logind and screen-saver signals for powerMonitor (feature power-monitor);
+# already in the build through tauri-plugin-notification and keepawake.
+[target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
+zbus = { version = "5", optional = true }

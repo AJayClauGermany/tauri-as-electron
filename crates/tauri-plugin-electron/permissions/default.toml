@@ -17,4 +17,7 @@ permissions = [
   "allow-clipboard-read-html",
   "allow-power-blocker-start",
   "allow-power-blocker-stop",
+  "allow-notification-show",
+  "allow-notification-close",
+  "allow-power-monitor-start",
 ]
