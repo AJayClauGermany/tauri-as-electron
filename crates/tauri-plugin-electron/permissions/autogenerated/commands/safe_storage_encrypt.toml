@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-safe-storage-encrypt"
+description = "Enables the safe_storage_encrypt command without any pre-configured scope."
+commands.allow = ["safe_storage_encrypt"]
+
+[[permission]]
+identifier = "deny-safe-storage-encrypt"
+description = "Denies the safe_storage_encrypt command without any pre-configured scope."
+commands.deny = ["safe_storage_encrypt"]

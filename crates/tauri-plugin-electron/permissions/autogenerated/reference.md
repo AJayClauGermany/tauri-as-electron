@@ -23,6 +23,9 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-notification-show`
 - `allow-notification-close`
 - `allow-power-monitor-start`
+- `allow-safe-storage-status`
+- `allow-safe-storage-encrypt`
+- `allow-safe-storage-decrypt`
 
 ## Permission Table
 
@@ -393,6 +396,58 @@ Enables the dns_servers command without any pre-configured scope.
 <td>
 
 Denies the dns_servers command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-fs-unwatch`
+
+</td>
+<td>
+
+Enables the fs_unwatch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-fs-unwatch`
+
+</td>
+<td>
+
+Denies the fs_unwatch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-fs-watch`
+
+</td>
+<td>
+
+Enables the fs_watch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-fs-watch`
+
+</td>
+<td>
+
+Denies the fs_watch command without any pre-configured scope.
 
 </td>
 </tr>
@@ -861,6 +916,84 @@ Enables the process_info command without any pre-configured scope.
 <td>
 
 Denies the process_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-safe-storage-decrypt`
+
+</td>
+<td>
+
+Enables the safe_storage_decrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-safe-storage-decrypt`
+
+</td>
+<td>
+
+Denies the safe_storage_decrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-safe-storage-encrypt`
+
+</td>
+<td>
+
+Enables the safe_storage_encrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-safe-storage-encrypt`
+
+</td>
+<td>
+
+Denies the safe_storage_encrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-safe-storage-status`
+
+</td>
+<td>
+
+Enables the safe_storage_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-safe-storage-status`
+
+</td>
+<td>
+
+Denies the safe_storage_status command without any pre-configured scope.
 
 </td>
 </tr>

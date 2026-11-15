@@ -22,4 +22,7 @@ permissions = [
   "allow-notification-show",
   "allow-notification-close",
   "allow-power-monitor-start",
+  "allow-safe-storage-status",
+  "allow-safe-storage-encrypt",
+  "allow-safe-storage-decrypt",
 ]

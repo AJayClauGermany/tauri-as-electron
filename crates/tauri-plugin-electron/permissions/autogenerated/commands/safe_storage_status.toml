@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-safe-storage-status"
+description = "Enables the safe_storage_status command without any pre-configured scope."
+commands.allow = ["safe_storage_status"]
+
+[[permission]]
+identifier = "deny-safe-storage-status"
+description = "Denies the safe_storage_status command without any pre-configured scope."
+commands.deny = ["safe_storage_status"]

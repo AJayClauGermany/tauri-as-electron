@@ -23,8 +23,11 @@
  * and stderr. `createReadStream` / `createWriteStream` are readable-stream
  * streams over them.
  *
- * Not implemented yet (they throw NotImplementedError): `watch`,
- * `watchFile`, `cp`, `opendir`, `link`, `chown`.
+ * `watch` / `promises.watch` (notify, in Rust) and `watchFile` (polling)
+ * are in ./fs-watch.js.
+ *
+ * Not implemented yet (they throw NotImplementedError): `cp`, `opendir`,
+ * `link`, `chown`.
  */
 import { Buffer } from './buffer.js'
 import { native, hasFeature, featureError } from '../internal/native.js'
@@ -35,6 +38,7 @@ import { platform } from '../process.js'
 import { fileURLToPath } from '../url.js'
 import { EventEmitter } from '../internal/emitter.js'
 import { Readable, Writable } from './stream.js'
+import { createWatchApi } from './fs-watch.js'
 
 const FEATURE = 'node-fs'
 const isWindows = platform === 'win32'
@@ -1133,7 +1137,6 @@ export const promises = {
 for (const [name, hint] of [
   ['opendir', 'fs.opendir is not implemented yet: use readdir.'],
   ['cp', 'fs.cp is not implemented yet: use copyFile, mkdir and readdir.'],
-  ['watch', 'fs.watch is not implemented yet.'],
   ['link', 'Hard links are not implemented yet.'],
   ['chown', 'chown is not implemented yet.'],
   ['lchown', 'lchown is not implemented yet.'],
@@ -1144,6 +1147,21 @@ for (const [name, hint] of [
   const fail = notYet(`fs.promises.${name}`, hint)
   promises[name] = async (...args) => fail(...args)
 }
+
+// --- watching (./fs-watch.js) -----------------------------------------------------------------------------
+
+const watching = createWatchApi({
+  target,
+  callSync,
+  nodeError,
+  stat: promises.stat,
+  makeStats,
+  invalidArgType,
+  getOptions,
+  checkEncoding,
+})
+export const { FSWatcher, StatWatcher, watch, watchFile, unwatchFile } = watching
+promises.watch = watching.watchAsync
 
 // --- the callback API --------------------------------------------------------------------------------------
 
@@ -1189,9 +1207,6 @@ export function exists(path, callback) {
 
 // --- not implemented yet ---------------------------------------------------------------------------------------
 
-export const watch = notYet('fs.watch', 'fs.watch is not implemented yet.')
-export const watchFile = notYet('fs.watchFile', 'fs.watchFile is not implemented yet.')
-export const unwatchFile = notYet('fs.unwatchFile', 'fs.watchFile is not implemented yet.')
 export const cpSync = notYet('fs.cpSync', 'fs.cp is not implemented yet: use copyFileSync, mkdirSync and readdirSync.')
 export const cp = notYet('fs.cp', 'fs.cp is not implemented yet: use copyFile, mkdir and readdir.')
 export const opendirSync = notYet('fs.opendirSync', 'fs.opendir is not implemented yet: use readdirSync.')
@@ -1204,7 +1219,7 @@ export const chown = notYet('fs.chown', 'chown is not implemented yet.')
 // --- default export: the module object, as require('fs') returns it -------------------------------------
 
 const fs = {
-  constants, F_OK, R_OK, W_OK, X_OK, Stats, BigIntStats, Dirent, ReadStream, WriteStream, FileHandle, promises,
+  constants, F_OK, R_OK, W_OK, X_OK, Stats, BigIntStats, Dirent, ReadStream, WriteStream, FileHandle, FSWatcher, StatWatcher, promises,
   readFileSync, writeFileSync, appendFileSync, existsSync, statSync, lstatSync, accessSync, mkdirSync,
   readdirSync, rmSync, unlinkSync, rmdirSync, renameSync, copyFileSync, realpathSync, mkdtempSync,
   truncateSync, chmodSync, utimesSync, readlinkSync, symlinkSync,

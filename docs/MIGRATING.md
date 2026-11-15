@@ -251,6 +251,7 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
 | `fs`, `os`, `child_process` in a renderer (`nodeIntegration: true`, `sandbox: false`) | Work, as in Electron, in windows created with those options, when the bundler plugin loads the Node layer in renderer pages: option `rendererNode` (default `'auto'` detects the options in your sources; set `true` if it misses them, e.g. options built at runtime). Sandboxed windows (the default) get a `NotImplementedError`: expose what the page needs with `ipcMain.handle`. |
 | `@electron/remote` | Works without changes: the bundler plugins alias it to tauri-electron's implementation. Keep `initialize()` and `enable(webContents)` in the main process. Every access is a synchronous round trip, as in Electron, so prefer IPC in hot paths. |
+| `safeStorage` ciphertext | Encrypted with a key tauri-plugin-electron keeps in the OS keychain, not Electron's: values an Electron build of the app stored cannot be decrypted. Re-encrypt from the plain value (ask the user again for a stored password or token). |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
 | `Notification` `click` / `action` / `close` / `reply` | `click` and `action` work on desktop; `close` is reported on Linux only; `reply` is never emitted (keep a fallback, such as opening a window). |
@@ -325,8 +326,13 @@ A module whose feature is off throws `NotImplementedError` (reason
 - Streams: `createReadStream` (`start`, `end`, `highWaterMark`, `fd`) and
   `createWriteStream` (`flags`, `start`, `fd`, `flush`), readable-stream
   streams over descriptors.
+- Watching: `fs.watch` (`recursive`, `encoding`, `signal`; `'rename'` and
+  `'change'` events as in Node, from the notify crate), `fs.promises.watch`
+  (an async iterator) and `fs.watchFile` / `unwatchFile` (polling with
+  `stat`). chokidar 3 and 4 work on top. `ref()` / `unref()` and
+  `persistent` do nothing: a webview has no event loop to keep alive.
 - Not yet (they throw `NotImplementedError`, reason `unimplemented`):
-  `watch` / `watchFile`, `cp`, `opendir`, `link`, `chown`.
+  `cp`, `opendir`, `link`, `chown`.
 - Main process, and renderer windows created with `nodeIntegration: true` or
   `sandbox: false` (see the table above). A sandboxed renderer that calls `fs`
   gets a `NotImplementedError` (reason `permission`): move the file access to

@@ -51,10 +51,11 @@ half (`tauri-electron`) at the same ref.
 | `login-item` | on | `app.setLoginItemSettings` / `getLoginItemSettings` | `tauri-plugin-autostart` |
 | `power-save-blocker` | on | `powerSaveBlocker` with operating-system assertions | `keepawake` crate |
 | `power-monitor` | on | `powerMonitor` system events (logind / screen saver on Linux) and idle time | `zbus` on Linux (already in the build) |
+| `safe-storage` | on | `safeStorage` with a key in the OS keychain (AES-256-GCM) | `keyring`, `aes-gcm` crates |
 | `single-instance` | off | `app.requestSingleInstanceLock`, `second-instance` | `tauri-plugin-single-instance` |
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |
-| `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process | none (`std::fs`, in this crate) |
+| `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process (`fs.watch` included) | `notify` crate (`std::fs` for the rest) |
 | `node-os` | off, listed by the template | Node's `os` | `sysinfo` crate |
 | `node-child-process` | off, listed by the template | Node's `child_process` | none (`std::process`, in this crate) |
 | `node-net` | off, listed by the template | Node's `net`, `dgram`, `dns`, and the HTTP servers | `tokio`, `socket2`, `hickory-resolver` |
@@ -98,6 +99,8 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `dialog.showOpenDialogSync`, `showSaveDialogSync`, `showMessageBoxSync` | Blocking `tauri-plugin-dialog` calls behind the scheme (main window only; `dialog` feature) |
 | `dialog.showMessageBox` / `showMessageBoxSync` with more than three buttons or `checkboxLabel` | A small window (`src/message_box.rs`) whose page the scheme serves (`message-box/<id>`); the page reports its size and the answer over the same scheme. `message_box` / `message_box_close` commands, `dialog/message-window` on the scheme for the blocking variant |
 | Node's `fs` (`node-fs` feature) | `fs.*Sync`: `node/fs/<op>` on the scheme, answered from a worker thread. `fs.promises` and callbacks: the `node_fs` command (raw body, off the main thread). One implementation (`src/node_fs.rs`) behind both. Refused unless the caller is `electron-main` showing the app's own page |
+| `fs.watch`, `fs.promises.watch` (`node-fs` feature) | `node/fs/watch` on the scheme creates a notify watcher synchronously (events are kept until JavaScript attaches); the `fs_watch` command attaches a Channel that carries `rename` / `change` events, `fs_unwatch` stops it (`src/node_fs_watch.rs`) |
+| `safeStorage` (`safe-storage` feature) | A random 256-bit key in the OS keychain (`keyring`: Keychain, Credential Manager, Secret Service), read on a worker thread with a 10 s limit; AES-256-GCM. `encryptString` / `decryptString` over `safe-storage/<op>` on the scheme, the async variants over `safe_storage_*` commands; main window only (`src/safe_storage.rs`) |
 | Node's `os` (`node-os` feature) | `node/os/<op>` on the scheme (`src/node_os.rs`) |
 | Node's `child_process` (`node-child-process` feature) | `spawnSync`: `node/child_process/spawnSync` on the scheme, stdin in the request body, both outputs in the answer. `spawn`: the `child_spawn` command with a Channel for output and exit, then `child_write`, `child_end`, `child_kill` (`src/node_child_process.rs`) |
 | Node's `net`, `tls`, `dgram`, `dns` (`node-net`, `node-tls` features) | A handle table of tokio sockets (`src/node_net.rs`). `net_connect`, `net_listen`, `udp_bind` take a Channel that carries data, end, errors and accepted connections; `net_write` resolves once the bytes are flushed; `net_pause` stops reading in Rust. TLS is rustls on the same sockets (`src/node_tls.rs`); `dns_lookup` is the OS resolver, `dns_resolve` / `dns_reverse` use hickory-resolver (`src/node_dns.rs`) |

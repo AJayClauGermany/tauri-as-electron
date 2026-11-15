@@ -102,7 +102,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `tauri.conf.json`; `setFeedURL` is recorded. *Apps 19, the most-used
   helper package.* Effort M.
   *Done: `tauri-electron/electron-updater`, aliased by both bundler plugins; Tauri's update format and endpoints (channel and feed URL go to the endpoint as headers), cancelling stops waiting, not the transfer.*
-- [ ] **B3. `safeStorage` with a real key.** A random key kept in the OS
+- [x] **B3. `safeStorage` with a real key.** A random key kept in the OS
   keychain (`keyring` crate: Keychain, Credential Manager, Secret Service),
   AES-256-GCM in Rust, `encryptString` / `decryptString` synchronous over
   the bridge plus the async variants, `getSelectedStorageBackend`
@@ -110,9 +110,11 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `setUsePlainTextEncryption`. Ciphertext is not compatible with
   Electron's. *Apps 12 (Signal, Element, Mattermost, Bruno, Joplin, Wire,
   VS Code, ...).* The same crate backs a `keytar` shim (C5). Effort M.
-- [ ] **B4. `fs.watch` / `fs.watchFile` / `fs.promises.watch`** on the
+  *Done: feature `safe-storage`, on by default; the key is read on a worker thread (at most 10 s); `getSelectedStorageBackend` reports `gnome_libsecret` for any Secret Service (KWallet included), never `kwallet*`. Linux verified (no Secret Service: `basic_text`, plain-text mode); macOS / Windows keychains compile-checked only.*
+- [x] **B4. `fs.watch` / `fs.watchFile` / `fs.promises.watch`** on the
   `notify` crate, events over a Channel; then check chokidar (v3 and v4)
   on top. *Apps 17 watch files; chokidar is a dependency of 9.* Effort M.
+  *Done: the watcher is created synchronously over the bridge and its events kept until the Channel attaches, so nothing after `fs.watch()` is missed; `fs.watchFile` polls with `stat`. chokidar 3 and 4 pass the kitchen sink (add / change / unlink / addDir) on Linux; `process.versions.node` (`22.0.0`) was added for readdirp 3.*
 - [x] **B5. `@electron/remote` shim.** Alias `@electron/remote` (and
   `/main`, `/renderer`) to renderer-side proxies over the synchronous
   bridge for the subset apps use: `getCurrentWindow`,
