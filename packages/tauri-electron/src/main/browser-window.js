@@ -11,7 +11,6 @@
  * bootstrap (src/renderer/bootstrap.js). Navigation events for every page,
  * remote ones included, come from tauri-plugin-electron's page-load hook.
  */
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { emitTo } from '@tauri-apps/api/event'
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi'
 import { Menu as TauriMenu } from '@tauri-apps/api/menu'
@@ -28,6 +27,8 @@ import { IpcMain } from './ipc-main.js'
 import { transferPorts } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
+import { createWebviewWindow } from './native-window.js'
+import { downloadURL } from './downloads.js'
 
 const windows = new Map()
 
@@ -720,8 +721,9 @@ export class WebContents extends EventEmitter {
     return Promise.reject(new NotImplementedError('webContents.savePage', { reason: 'unsupported' }))
   }
 
-  downloadURL() {
-    throw new NotImplementedError('webContents.downloadURL', { reason: 'unimplemented', hint: 'Fetch with net.fetch() and write the file with @tauri-apps/plugin-fs.' })
+  /** Emits the session's 'will-download' (./downloads.js). */
+  downloadURL(url, options) {
+    downloadURL(this.session, this, url, options)
   }
 
   close() {
@@ -930,7 +932,9 @@ export class BrowserWindow extends EventEmitter {
   }
 
   _spawnNative(label, url) {
-    const native = new WebviewWindow(label, this._nativeOptions(url))
+    const native = createWebviewWindow(label, this._nativeOptions(url), {
+      permissionHandler: typeof this._session?._handlers?.permissionRequest === 'function',
+    })
     const previous = this._native
     this._native = native
     this._creating = false

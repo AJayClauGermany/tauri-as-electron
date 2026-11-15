@@ -17,4 +17,11 @@ permissions = [
   "allow-clipboard-read-html",
   "allow-power-blocker-start",
   "allow-power-blocker-stop",
+  "allow-create-window",
+  "allow-permission-handler",
+  "allow-permission-respond",
+  "allow-download-url",
+  "allow-download-control",
+  "allow-download-commit",
+  "allow-download-discard",
 ]

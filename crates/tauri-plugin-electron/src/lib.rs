@@ -22,6 +22,9 @@
 //!   `clipboard.readHTML` (and the synchronous clipboard reads of Electron
 //!   < 45), `screen.getCursorScreenPoint()` (synchronous, over the bridge)
 //!   and `powerSaveBlocker` (operating-system assertions).
+//! - **BrowserWindows created in Rust** (`create_window`), for what Tauri only
+//!   offers on the webview builder: downloads (`will-download`, `downloadURL`)
+//!   and `setPermissionRequestHandler`.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
 //!   events for every window, including remote pages), macOS `activate`,
 //!   `open-file` / `open-url`, and `second-instance` (with the
@@ -43,6 +46,7 @@ use std::{
 #[cfg(all(desktop, feature = "clipboard"))]
 mod clipboard;
 mod cookies;
+mod downloads;
 mod features;
 #[cfg(feature = "node-child-process")]
 mod node_child_process;
@@ -64,8 +68,10 @@ mod node_net_commands;
 mod node_os;
 #[cfg(feature = "node-tls")]
 mod node_tls;
+mod permissions;
 #[cfg(all(desktop, feature = "power-save-blocker"))]
 mod power;
+mod windows;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -1087,10 +1093,18 @@ impl Builder {
                 node_net_commands::dns_lookup,
                 node_net_commands::dns_resolve,
                 node_net_commands::dns_reverse,
-                node_net_commands::dns_servers
+                node_net_commands::dns_servers,
+                windows::create_window,
+                windows::permission_handler,
+                windows::permission_respond,
+                windows::download_url,
+                windows::download_control,
+                windows::download_commit,
+                windows::download_discard
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                windows::manage(app);
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
                 #[cfg(feature = "node-child-process")]
@@ -1116,6 +1130,10 @@ impl Builder {
                     }
                     return;
                 }
+                // The origin permission decisions are kept for (Windows / macOS).
+                webview
+                    .state::<permissions::Permissions>()
+                    .page_loaded(webview.label(), payload.url().as_str());
                 let event = match payload.event() {
                     PageLoadEvent::Started => "started",
                     PageLoadEvent::Finished => "finished",

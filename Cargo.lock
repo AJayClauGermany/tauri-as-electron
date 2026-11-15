@@ -4845,6 +4845,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "trash",
+ "webkit2gtk",
  "webpki-roots",
 ]
 

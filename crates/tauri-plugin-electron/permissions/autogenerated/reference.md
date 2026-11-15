@@ -18,6 +18,13 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-clipboard-read-html`
 - `allow-power-blocker-start`
 - `allow-power-blocker-stop`
+- `allow-create-window`
+- `allow-permission-handler`
+- `allow-permission-respond`
+- `allow-download-url`
+- `allow-download-control`
+- `allow-download-commit`
+- `allow-download-discard`
 
 ## Permission Table
 
@@ -291,6 +298,32 @@ Denies the cookies_set command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-create-window`
+
+</td>
+<td>
+
+Enables the create_window command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-create-window`
+
+</td>
+<td>
+
+Denies the create_window command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-dns-lookup`
 
 </td>
@@ -388,6 +421,110 @@ Enables the dns_servers command without any pre-configured scope.
 <td>
 
 Denies the dns_servers command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-commit`
+
+</td>
+<td>
+
+Enables the download_commit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-commit`
+
+</td>
+<td>
+
+Denies the download_commit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-control`
+
+</td>
+<td>
+
+Enables the download_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-control`
+
+</td>
+<td>
+
+Denies the download_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-discard`
+
+</td>
+<td>
+
+Enables the download_discard command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-discard`
+
+</td>
+<td>
+
+Denies the download_discard command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-url`
+
+</td>
+<td>
+
+Enables the download_url command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-url`
+
+</td>
+<td>
+
+Denies the download_url command without any pre-configured scope.
 
 </td>
 </tr>
@@ -648,6 +785,58 @@ Enables the open_devtools command without any pre-configured scope.
 <td>
 
 Denies the open_devtools command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-permission-handler`
+
+</td>
+<td>
+
+Enables the permission_handler command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-permission-handler`
+
+</td>
+<td>
+
+Denies the permission_handler command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-permission-respond`
+
+</td>
+<td>
+
+Enables the permission_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-permission-respond`
+
+</td>
+<td>
+
+Denies the permission_respond command without any pre-configured scope.
 
 </td>
 </tr>

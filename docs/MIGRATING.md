@@ -251,6 +251,9 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
 | `fs`, `os`, `child_process` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
+| `session.on('will-download')` / `item.setSavePath()` | Works; the file is written to a temporary file and moved to the save path when it is complete, so the path can also be set after the handler returns. Downloads the page starts cannot be paused; on Windows and macOS their total size is unknown and `cancel()` discards the file when the transfer ends. `downloadURL()` is a transfer in Rust (the `net` feature) with the window's cookies. |
+| `session.setPermissionRequestHandler` | Applied. On Linux each request waits for the callback, as in Electron. On Windows and macOS the webview needs an answer at once: the first request of a permission per window and origin gets the platform's own prompt while the handler runs, and its answer applies to the requests after it. |
+| `session.setProxy` / `app.setProxy` | One `http://` or `socks5://` proxy for windows created afterwards and `net.fetch` (Tauri sets a webview's proxy at creation). No PAC scripts or bypass rules. On macOS, enable the `macos-proxy` feature of `tauri-plugin-electron` (macOS 14+). |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
 
 ## 4. Node.js code
