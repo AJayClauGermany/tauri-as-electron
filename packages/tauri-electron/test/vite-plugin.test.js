@@ -44,8 +44,8 @@ describe('moduleScripts', () => {
 
 /** Drive the plugin's hooks the way Vite does, without a Vite build. */
 function plugin(options, { dev = false } = {}) {
-  // rendererNode: 'auto' would scan this package's own sources.
-  const p = tauriElectron({ rendererNode: false, ...options })
+  // rendererNode: 'auto' (and worker threads) would scan this package's own sources.
+  const p = tauriElectron({ rendererNode: false, workers: false, ...options })
   p.config({})
   p.configResolved({ root: process.cwd(), command: dev ? 'serve' : 'build' })
   return p
@@ -124,15 +124,15 @@ describe('Node built-ins', () => {
   it('resolve to a stub module instead of failing the build', () => {
     const build = plugin({})
     const dev = plugin({}, { dev: true })
-    for (const id of ['vm', 'node:vm', 'worker_threads', 'node:http2']) {
+    for (const id of ['v8', 'node:v8', 'cluster', 'node:http2']) {
       const resolved = build.resolveId(id)
       expect(resolved).toContain(id.replace(/^node:/, ''))
       const stub = `nodeBuiltin(${JSON.stringify(id.replace(/^node:/, ''))})`
       expect(build.load(resolved)).toBe(`module.exports = require('tauri-electron/require').${stub}\n`)
       expect(dev.load(resolved)).toContain(`export default ${stub}`)
     }
-    expect(NODE_BUILTINS).toContain('vm')
-    for (const id of ['child_process', 'zlib', 'assert', 'timers', 'net', 'dns/promises', 'tls', 'dgram']) expect(NODE_BUILTINS).not.toContain(id)
+    expect(NODE_BUILTINS).toContain('v8')
+    for (const id of ['child_process', 'zlib', 'assert', 'timers', 'net', 'dns/promises', 'tls', 'dgram', 'vm', 'worker_threads']) expect(NODE_BUILTINS).not.toContain(id)
   })
 
   it('leaves the shimmed built-ins to the aliases and unknown ids to Vite', () => {

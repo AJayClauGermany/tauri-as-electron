@@ -70,8 +70,10 @@ describe('redirect', () => {
   })
 
   it('stubs other Node built-ins, one module per built-in', () => {
-    expect(at('vm')).toBe(`${nodeBuiltin}?vm`)
-    expect(at('node:worker_threads')).toBe(`${nodeBuiltin}?worker_threads`)
+    expect(at('v8')).toBe(`${nodeBuiltin}?v8`)
+    expect(at('node:cluster')).toBe(`${nodeBuiltin}?cluster`)
+    expect(at('vm')).toMatch(/src[\\/]node[\\/]vm\.js$/)
+    expect(at('node:worker_threads')).toMatch(/src[\\/]node[\\/]worker-threads\.js$/)
     expect(at('net')).toMatch(/src[\\/]node[\\/]net\.js$/)
     expect(at('node:dns/promises')).toMatch(/src[\\/]node[\\/]dns-promises\.js$/)
     expect(at('path', { aliasPath: false })).toBe(`${nodeBuiltin}?path`)
@@ -136,12 +138,12 @@ describe.each([
     expect(main).not.toMatch(/\bMAIN_WINDOW_WEBPACK_ENTRY\b/)
     expect(main).toContain(`path.join("/src", 'index.html')`)
     expect(main).toContain('"/src/main.js"')
-    // electron → tauri-electron; fs → tauri-electron's fs; vm → the stub
+    // electron → tauri-electron; fs → tauri-electron's fs; v8 → the stub
     // that explains itself; no Node require().
     expect(main).toContain(moduleId('src/index.js'))
     expect(main).toContain(moduleId('src/node/fs.js'))
     expect(main).not.toContain('node-builtin.cjs?fs"') // as a module id
-    expect(main).toContain('node-builtin.cjs?vm')
+    expect(main).toContain('node-builtin.cjs?v8')
     expect(main).toContain('registerNodeModule(') // bundler/main-node.js: fs & co. for require()
     expect(main).toMatch(/__TAURI_ELECTRON_APP__ = .*"entries":\[/) // where the app's files are (DefinePlugin)
     expect(main).toMatch(/const \{ app, BrowserWindow \} = __webpack_require__\(/)

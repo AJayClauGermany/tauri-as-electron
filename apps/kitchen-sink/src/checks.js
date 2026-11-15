@@ -38,6 +38,7 @@ import { waveBBundlerChecks } from './checks-wave-b-bundler.js'
 import { waveBRendererChecks } from './checks-wave-b-renderer.js'
 import { waveBNative1Checks } from './checks-wave-b-native1.js'
 import { waveBWindowChecks } from './checks-wave-b-windows.js'
+import { waveCWorkersVmChecks } from './checks-wave-c-workers-vm.js'
 
 const isElectron = Boolean(process.versions.electron)
 
@@ -131,14 +132,14 @@ const coreChecks = [
     assert(require('url').fileURLToPath('file:///a/b%20c') === '/a/b c', "require('url')")
     return 'same modules as import'
   } },
-  { id: "require('fs') works, require('vm') explains itself", run: () => {
+  { id: "require('fs') works, require('v8') explains itself", run: () => {
     if (typeof require !== 'function') return isElectron ? 'n/a: ESM main process on Electron' : 'no require()'
     // fs is implemented (tauri-plugin-electron's "node-fs" feature).
     assert(require('fs').existsSync(app.getPath('temp')) === true, "require('fs').existsSync")
     try {
       // Other built-ins load; their members throw when called (the same in dev
       // and in production builds, which turn require() into imports).
-      require('vm').runInNewContext('1')
+      require('v8').serialize('1')
     } catch (error) {
       if (isElectron) return 'n/a: Node is available on Electron'
       assert(error.name === 'NotImplementedError' && error.reason === 'unsupported', `${error.name} ${error.reason}`)
@@ -577,7 +578,7 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
-export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks, ...waveBBundlerChecks, ...waveBRendererChecks, ...waveBNative1Checks, ...waveBWindowChecks]
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks, ...waveBBundlerChecks, ...waveBRendererChecks, ...waveBNative1Checks, ...waveBWindowChecks, ...waveCWorkersVmChecks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'
