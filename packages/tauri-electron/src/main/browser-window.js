@@ -891,10 +891,15 @@ export class BrowserWindow extends EventEmitter {
   _rendererConfig() {
     const prefs = this._options.webPreferences ?? {}
     const info = processInfo()
-    // Electron's defaults: contextIsolation and sandbox on, nodeIntegration off.
+    // Electron's defaults: contextIsolation and sandbox on, nodeIntegration
+    // off. Before Electron 20, preloads were not sandboxed by default.
     const contextIsolation = prefs.contextIsolation !== false
     const nodeIntegration = Boolean(prefs.nodeIntegration)
-    const sandbox = prefs.sandbox ?? !nodeIntegration
+    const electronMajor = globalThis.__TAURI_ELECTRON_APP__?.electron
+    const sandbox = prefs.sandbox ?? !(nodeIntegration || (typeof electronMajor === 'number' && electronMajor < 20))
+    // Node built-ins for the page (nodeIntegration) or its unsandboxed preload,
+    // which share one world here. tauri-plugin-electron grants the window.
+    const node = !sandbox
     return {
       id: this.webContents.id,
       argv: [info?.execPath ?? '', ...(prefs.additionalArguments ?? []).map(String)],
@@ -902,11 +907,13 @@ export class BrowserWindow extends EventEmitter {
       pid: info?.pid ?? 0,
       // A context-isolated preload's `process.env` is not reachable from the
       // page in Electron. tauri-electron has no isolated world, so the
-      // environment is only exposed when isolation is off anyway.
-      env: contextIsolation && !nodeIntegration ? {} : info?.env ?? {},
+      // environment is only exposed when isolation is off anyway, or when
+      // the window has Node (and can read it from the system anyway).
+      env: contextIsolation && !node ? {} : info?.env ?? {},
       contextIsolation,
       nodeIntegration,
       sandbox,
+      node,
       zoomFactor: this.webContents._zoomFactor,
       titleBarOverlay: this._titleBarOverlayConfig(),
     }

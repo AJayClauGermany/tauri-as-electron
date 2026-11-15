@@ -18,7 +18,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { applyProcessInfo, installProcessShim } from '../process.js'
 import { isRenderer, report } from '../internal/runtime.js'
-import { syncRequest } from '../internal/native.js'
+import { windowConfig } from './window-config.js'
 import { postToMain, rendererReady, commandHandlers } from './ipc-renderer.js'
 import { registerFilePath } from './web-utils.js'
 import { installWindowControls } from './window-controls.js'
@@ -35,14 +35,6 @@ function lifecycle(name, data) {
   })
 }
 
-function readWindowConfig() {
-  try {
-    const { status, text } = syncRequest('window-config')
-    return status === 200 ? JSON.parse(text) : null
-  } catch {
-    return null // no tauri-plugin-electron
-  }
-}
 
 // --- lifecycle -------------------------------------------------------------------
 
@@ -468,7 +460,7 @@ function trackFileDrops() {
 }
 
 if (isRenderer) {
-  const config = readWindowConfig()
+  const config = windowConfig()
   if (config) {
     applyProcessInfo(config, {
       type: 'renderer',

@@ -595,6 +595,30 @@
           "markdownDescription": "Denies the node_fs command without any pre-configured scope."
         },
         {
+          "description": "Enables the notification_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-close",
+          "markdownDescription": "Enables the notification_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-close",
+          "markdownDescription": "Denies the notification_close command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_show command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-show",
+          "markdownDescription": "Enables the notification_show command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_show command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-show",
+          "markdownDescription": "Denies the notification_show command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_devtools command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-devtools",
@@ -629,6 +653,18 @@
           "type": "string",
           "const": "deny-power-blocker-stop",
           "markdownDescription": "Denies the power_blocker_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the power_monitor_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-power-monitor-start",
+          "markdownDescription": "Enables the power_monitor_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the power_monitor_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-power-monitor-start",
+          "markdownDescription": "Denies the power_monitor_start command without any pre-configured scope."
         },
         {
           "description": "Enables the process_info command without any pre-configured scope.",
@@ -727,28 +763,28 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`",
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`"
         },
         {
-          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
+          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
           "type": "string",
           "const": "node-child-process",
-          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
+          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
         },
         {
-          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`",
+          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`",
           "type": "string",
           "const": "node-fs",
-          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`"
+          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`"
         },
         {
-          "description": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`",
+          "description": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`",
           "type": "string",
           "const": "node-net",
-          "markdownDescription": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`"
+          "markdownDescription": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`"
         }
       ]
     }

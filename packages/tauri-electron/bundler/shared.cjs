@@ -66,6 +66,13 @@ const NODE_SHIMS = {
   'dns/promises': 'tauri-electron/dns/promises',
 }
 
+/** Electron helper packages tauri-electron replaces (aliased like `electron`). */
+const PACKAGE_SHIMS = {
+  '@electron/remote': 'tauri-electron/remote',
+  '@electron/remote/renderer': 'tauri-electron/remote/renderer',
+  '@electron/remote/main': 'tauri-electron/remote/main',
+}
+
 /** Dev-server endpoint the hidden main window posts its console output to. */
 const LOG_ENDPOINT = '/__tauri-electron/log'
 
@@ -81,7 +88,7 @@ const PATH_GLOBALS =
 
 // `require('x')` of a shimmed built-in, outside comments and strings.
 const BUILTIN_REQUIRE =
-  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|\brequire\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
+  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|(?<![.$\w])require\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
 
 /**
  * In a Vite (rolldown) build, CommonJS code that `require()`s an ES module
@@ -230,6 +237,57 @@ function electronMajor(root) {
   }
 }
 
+// --- Node built-ins in renderer pages -------------------------------------------------------
+
+/** `nodeIntegration: true` or `sandbox: false` in a BrowserWindow's webPreferences. */
+const NODE_WINDOW = /\bnodeIntegration\s*:\s*(?:true|!0)\b|\bsandbox\s*:\s*(?:false|!1)\b/
+const SCANNED_SOURCE = /\.(?:[cm]?[jt]sx?)$/i
+const SCAN_LIMIT = 5000
+
+/** Whether a project source file (outside dependencies and build output) asks for Node in a window. */
+function sourcesAskForNode(root) {
+  let seen = 0
+  const visit = (dir) => {
+    let names
+    try {
+      names = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return false
+    }
+    for (const entry of names) {
+      if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (visit(full)) return true
+      } else if (SCANNED_SOURCE.test(entry.name)) {
+        if (++seen > SCAN_LIMIT) return false
+        try {
+          if (fs.statSync(full).size < 2_000_000 && NODE_WINDOW.test(fs.readFileSync(full, 'utf8'))) return true
+        } catch {
+          /* unreadable: skip */
+        }
+      }
+    }
+    return false
+  }
+  return visit(root)
+}
+
+/**
+ * Whether renderer pages load the Node layer (tauri-electron/renderer-node),
+ * which installs Node built-ins in windows the main process created with
+ * `nodeIntegration: true` or `sandbox: false`. `option` is the plugins'
+ * `rendererNode` option: true, false, or `'auto'` (default): when the app
+ * depends on Electron < 20 (unsandboxed preloads by default) or its sources
+ * mention `nodeIntegration: true` / `sandbox: false`.
+ */
+function rendererNode(root, option = 'auto') {
+  if (option === true || option === false) return option
+  const electron = electronMajor(root)
+  if (electron !== null && electron < 20) return true
+  return sourcesAskForNode(root)
+}
+
 /** Where the bundler plugins stage app files; tauri.conf.json maps it to the resource folder. */
 const STAGING_DIR = path.join('src-tauri', 'electron-resources')
 
@@ -321,7 +379,7 @@ const HANDLE_CALL = /\bprotocol\s*\.\s*(?:handle|register(?:String|Buffer|File|H
 // protocol.registerSchemesAsPrivileged([{ scheme: 'x', … }, …])
 const PRIVILEGED_CALL = /\bregisterSchemesAsPrivileged\s*\(\s*\[([\s\S]*?)\]\s*\)/g
 const SCHEME_PROPERTY = /\bscheme\s*:\s*['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/g
-const SCANNED_SOURCE = /\.(?:[cm]?[jt]sx?|vue|svelte)$/i
+const SCHEME_SOURCE = /\.(?:[cm]?[jt]sx?|vue|svelte)$/i
 
 /** The custom schemes a piece of source code passes to `protocol`. */
 function schemesInSource(code) {
@@ -346,7 +404,7 @@ function scanForSchemes(dir, found, depth = 0) {
     const full = path.join(dir, entry.name)
     if (entry.isDirectory()) {
       if (depth < 12) scanForSchemes(full, found, depth + 1)
-    } else if (SCANNED_SOURCE.test(entry.name)) {
+    } else if (SCHEME_SOURCE.test(entry.name)) {
       try {
         if (fs.statSync(full).size > 4 * 1024 * 1024) continue
         for (const scheme of schemesInSource(fs.readFileSync(full, 'utf8'))) found.add(scheme)
@@ -398,6 +456,7 @@ function writeSchemes(root, extra) {
 module.exports = {
   NODE_BUILTINS,
   NODE_SHIMS,
+  PACKAGE_SHIMS,
   LOG_ENDPOINT,
   STAGING_DIR,
   rewritePathGlobals,
@@ -407,6 +466,7 @@ module.exports = {
   appFilesConfig,
   electronMajor,
   sessionPreloads,
+  rendererNode,
   stageAppFiles,
   SCHEMES_FILE,
   schemesInSource,

@@ -80,7 +80,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 
 ## Wave B: one session each, broad reach
 
-- [ ] **B1. Node built-ins in renderers.** Windows created with
+- [x] **B1. Node built-ins in renderers.** Windows created with
   `nodeIntegration: true` (or `contextIsolation: false`) and preloads with
   `sandbox: false` get the main page's Node layer (`fs`, `os`,
   `child_process`, `net`, ...) and a global `require`. Needs: the bridge's
@@ -91,6 +91,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   Etcher, SiYuan, Upscayl, Insomnia's worker window); 4 more use Node in
   preloads (Signal, Beekeeper, Logseq, Insomnia). The highest-leverage item
   here.* Effort M.
+  *Done: `set_window_config` (main window only) records the grant and adds an `electron-node-<label>` capability; `node_refusal` accepts granted windows showing the app's page. The bundler plugins load `tauri-electron/renderer-node` before the preloads (`rendererNode`, default `'auto'`), which installs the Node layer only in granted windows. Electron < 20's unsandboxed default is honoured. Not in workers; no `module` global in pages.*
 - [x] **B2. `electron-updater` shim.** Alias `electron-updater` (like
   `electron`) to a module on `tauri-plugin-updater` that exposes its
   `autoUpdater`: `checkForUpdates`, `checkForUpdatesAndNotify`,
@@ -112,7 +113,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 - [ ] **B4. `fs.watch` / `fs.watchFile` / `fs.promises.watch`** on the
   `notify` crate, events over a Channel; then check chokidar (v3 and v4)
   on top. *Apps 17 watch files; chokidar is a dependency of 9.* Effort M.
-- [ ] **B5. `@electron/remote` shim.** Alias `@electron/remote` (and
+- [x] **B5. `@electron/remote` shim.** Alias `@electron/remote` (and
   `/main`, `/renderer`) to renderer-side proxies over the synchronous
   bridge for the subset apps use: `getCurrentWindow`,
   `getCurrentWebContents`, `app`, `dialog`, `shell`, `Menu` / `MenuItem`
@@ -120,6 +121,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `initialize` / `enable` on the main side. Callbacks and returned objects
   become remote references. *Apps 10.* Most of them also need B1.
   Effort M–L.
+  *Done: `tauri-electron/remote` (`/main`, `/renderer`), aliased by both bundler plugins and `require()`. Synchronous requests over `sendSync`; per-page reference tables with release on garbage collection; callbacks async, promises resolved in the renderer, errors rethrown. No `instanceof` against remote classes, no key enumeration of proxies.*
 - [ ] **B6. Downloads.** `session.on('will-download')`, `DownloadItem`
   (`setSavePath`, `getFilename`, `getURL`, `getTotalBytes`,
   `getReceivedBytes`, `cancel`, `updated`, `done`),

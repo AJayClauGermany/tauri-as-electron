@@ -14,7 +14,8 @@
 //!   are forwarded to the JavaScript handler registered in the main process.
 //! - **Node built-ins** that need the operating system (`fs`, `os` and
 //!   `child_process`, `net`, `dgram`, `dns`, `tls`, each behind a `node-*`
-//!   feature): the synchronous variants over the bridge
+//!   feature; in the main window and in windows created with `nodeIntegration`
+//!   or `sandbox: false`, see `node_windows.rs`): the synchronous variants over the bridge
 //!   (`node/<module>/<op>`), the asynchronous ones over commands (`node_fs`,
 //!   `child_spawn`, `net_connect` & co.).
 //! - **DevTools** (`webContents.openDevTools()` and friends),
@@ -66,6 +67,7 @@ mod node_net_commands;
 mod node_os;
 #[cfg(feature = "node-tls")]
 mod node_tls;
+mod node_windows;
 #[cfg(all(desktop, feature = "notification"))]
 mod notification;
 #[cfg(all(desktop, feature = "power-save-blocker"))]
@@ -516,16 +518,20 @@ fn is_app_page<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
 }
 
 /// Why a native Node built-in may not run for this caller, if it may not.
+/// The main window, and renderer windows created with `nodeIntegration` or an
+/// unsandboxed preload (see `node_windows.rs`), while they show the app's page.
 fn node_refusal<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<Value> {
-    if label != MAIN_LABEL {
+    let main = label == MAIN_LABEL;
+    if !main && !app.state::<node_windows::NodeWindows>().is_granted(label) {
         return Some(
-            json!({ "code": "ERR_ACCESS_DENIED", "message": "Node built-ins that use the operating system are only available in the main process" }),
+            json!({ "code": "ERR_ACCESS_DENIED", "message": "Node built-ins that use the operating system are only available in the main process and in windows created with nodeIntegration (or sandbox: false)" }),
         );
     }
     if !is_app_page(app, label) {
-        return Some(
-            json!({ "code": "ERR_ACCESS_DENIED", "message": "the main window is not showing the app's own page" }),
-        );
+        return Some(json!({
+            "code": "ERR_ACCESS_DENIED",
+            "message": if main { "the main window is not showing the app's own page" } else { "the window is not showing the app's own page" },
+        }));
     }
     None
 }
@@ -733,13 +739,37 @@ fn process_info<R: Runtime>(app: AppHandle<R>) -> ProcessInfo {
     }
 }
 
+/// What a window's renderer bootstrap reads before the preload runs, and
+/// (`node: true`) whether it gets Node built-ins. Only the main process may
+/// configure windows: a renderer must not grant itself Node.
 #[tauri::command]
-fn set_window_config(bridge: State<'_, SharedBridge>, label: String, config: Option<Value>) {
+fn set_window_config<R: Runtime>(
+    webview: tauri::Webview<R>,
+    bridge: State<'_, SharedBridge>,
+    label: String,
+    config: Option<Value>,
+) -> Result<(), String> {
+    if webview.label() != MAIN_LABEL {
+        return Err("windows are configured by the main process only".into());
+    }
+    let node = config
+        .as_ref()
+        .and_then(|c| c.get("node"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if node {
+        node_windows::grant(webview.app_handle(), &label)?;
+    } else {
+        webview
+            .state::<node_windows::NodeWindows>()
+            .revoke(&label);
+    }
     let mut map = bridge.window_config.lock().unwrap();
     match config {
         Some(config) => map.insert(label, config),
         None => map.remove(&label),
     };
+    Ok(())
 }
 
 #[tauri::command]
@@ -1253,6 +1283,7 @@ impl Builder {
                 app.manage(SharedBridge::default());
                 #[cfg(desktop)]
                 app.manage(message_box::Boxes::default());
+                app.manage(node_windows::NodeWindows::default());
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
                 #[cfg(all(desktop, feature = "notification"))]
