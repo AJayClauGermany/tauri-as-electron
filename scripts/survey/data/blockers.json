@@ -1,0 +1,1117 @@
+{
+ "AFFiNE": {
+  "hits": {
+   "fsFd": 1,
+   "fsStream": 9,
+   "safeStorage": 2,
+   "utility": 1,
+   "protoFile": 1,
+   "protoHandle": 1,
+   "webRequest": 1,
+   "capturePage": 1,
+   "views": 1,
+   "workerThreads": 1,
+   "sendSync": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "ioredis",
+   "jszip",
+   "tree-kill"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log",
+   "electron-window-state",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "crypto",
+   "fs/promises",
+   "path",
+   "os",
+   "fs",
+   "url",
+   "child_process",
+   "worker_threads"
+  ]
+ },
+ "FreeTube": {
+  "hits": {
+   "protoHandle": 1,
+   "webRequest": 2,
+   "cookies": 1,
+   "login": 1,
+   "views": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [],
+  "libs": [
+   "electron-updater",
+   "electron-context-menu"
+  ],
+  "nodeMods": [
+   "path",
+   "child_process",
+   "fs",
+   "fs/promises",
+   "util",
+   "zlib"
+  ]
+ },
+ "HeroicGamesLauncher": {
+  "hits": {
+   "fsStream": 5,
+   "notifClick": 1,
+   "protoHandle": 2,
+   "webRequest": 1,
+   "webviewTag": 3,
+   "titleBarOverlay": 2,
+   "safeStorage": 1,
+   "fsFd": 1,
+   "login": 3
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "axios"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-store"
+  ],
+  "nodeMods": [
+   "os",
+   "path",
+   "process",
+   "crypto",
+   "child_process",
+   "fs",
+   "fs/promises",
+   "events",
+   "zlib",
+   "https",
+   "util"
+  ]
+ },
+ "Rocket.Chat.Electron": {
+  "hits": {
+   "fsWatch": 1,
+   "webviewTag": 5,
+   "capture": 13,
+   "fsStream": 1,
+   "sendSync": 2,
+   "certErr": 2,
+   "download": 1,
+   "protoHandle": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": false,
+  "native": [
+   "fsevents",
+   "chokidar",
+   "axios",
+   "archiver",
+   "electron-dl",
+   "electron-notarize"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-store",
+   "electron-log",
+   "electron-dl"
+  ],
+  "nodeMods": [
+   "child_process",
+   "fs",
+   "fs/promises",
+   "path",
+   "os",
+   "https",
+   "crypto",
+   "tls",
+   "util",
+   "url",
+   "zlib",
+   "process"
+  ]
+ },
+ "Signal-Desktop": {
+  "hits": {
+   "capture": 4,
+   "fsWatch": 2,
+   "protoHandle": 4,
+   "protoFile": 2,
+   "fsStream": 20,
+   "safeStorage": 1,
+   "printToPDF": 1,
+   "http2": 3,
+   "vm": 1,
+   "sendSync": 7,
+   "workerThreads": 5
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "@napi-rs/canvas",
+   "ws",
+   "node-fetch",
+   "got",
+   "@signalapp/libsignal-client",
+   "@signalapp/ringrtc",
+   "fs-xattr",
+   "node-addon-api",
+   "execa"
+  ],
+  "libs": [],
+  "nodeMods": [
+   "fs",
+   "fs/promises",
+   "path",
+   "url",
+   "crypto",
+   "os",
+   "events",
+   "stream",
+   "vm",
+   "child_process",
+   "util",
+   "zlib",
+   "v8",
+   "worker_threads",
+   "assert",
+   "dns"
+  ]
+ },
+ "Trilium": {
+  "hits": {
+   "fsStream": 16,
+   "printToPDF": 2,
+   "webviewTag": 10,
+   "sendSync": 1,
+   "protoHandle": 1,
+   "webRequest": 3,
+   "safeStorage": 1,
+   "fsFd": 7,
+   "capture": 1,
+   "utility": 1,
+   "download": 1,
+   "titleBarOverlay": 1,
+   "fsWatch": 2,
+   "workerThreads": 2,
+   "vm": 2
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": false,
+  "native": [
+   "better-sqlite3",
+   "chokidar",
+   "yauzl",
+   "archiver",
+   "jszip",
+   "electron-dl"
+  ],
+  "libs": [
+   "electron-dl"
+  ],
+  "nodeMods": [
+   "child_process",
+   "fs",
+   "module",
+   "os",
+   "path",
+   "url",
+   "worker_threads",
+   "stream",
+   "events",
+   "fs/promises",
+   "http",
+   "crypto"
+  ]
+ },
+ "Zettlr": {
+  "hits": {
+   "titleBarOverlay": 2,
+   "fsWatch": 9,
+   "printToPDF": 1,
+   "fsStream": 1,
+   "protoHandle": 1,
+   "sendSync": 2
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "fsevents",
+   "chokidar",
+   "fix-path",
+   "adm-zip",
+   "archiver"
+  ],
+  "libs": [],
+  "nodeMods": [
+   "path",
+   "fs",
+   "child_process",
+   "url",
+   "events",
+   "crypto",
+   "stream",
+   "tls"
+  ]
+ },
+ "beekeeper-studio": {
+  "hits": {
+   "fsWatch": 3,
+   "protoHandle": 1,
+   "fsStream": 3,
+   "utility": 1,
+   "fork": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": true,
+  "native": [
+   "better-sqlite3",
+   "chokidar",
+   "ws",
+   "axios",
+   "ssh2",
+   "pg",
+   "mysql2",
+   "oracledb",
+   "mssql",
+   "mongodb",
+   "redis",
+   "cassandra-driver",
+   "@duckdb/node-api",
+   "cross-spawn",
+   "execa",
+   "@electron/remote",
+   "jszip"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log"
+  ],
+  "nodeMods": [
+   "child_process",
+   "path",
+   "fs",
+   "url",
+   "fs/promises",
+   "os",
+   "tls"
+  ]
+ },
+ "bruno": {
+  "hits": {
+   "fsStream": 8,
+   "workerThreads": 7,
+   "webviewTag": 9,
+   "cookies": 4,
+   "http2": 1,
+   "vm": 3,
+   "fsWatch": 5,
+   "protoHandle": 1,
+   "webRequest": 1,
+   "certErr": 1,
+   "safeStorage": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "@lydell/node-pty",
+   "chokidar",
+   "@grpc/grpc-js",
+   "ws",
+   "node-fetch",
+   "axios",
+   "iconv-lite",
+   "node-addon-api",
+   "system-ca",
+   "shell-env",
+   "adm-zip",
+   "archiver",
+   "simple-git"
+  ],
+  "libs": [
+   "electron-store"
+  ],
+  "nodeMods": [
+   "fs",
+   "path",
+   "crypto",
+   "os",
+   "http",
+   "https",
+   "net",
+   "child_process",
+   "url",
+   "fs/promises"
+  ]
+ },
+ "clients": {
+  "hits": {
+   "cookies": 1,
+   "protoFile": 1,
+   "protoHandle": 1,
+   "fsStream": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "node-fetch",
+   "bufferutil",
+   "utf-8-validate",
+   "node-forge",
+   "electron-reload",
+   "jszip",
+   "open"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-store",
+   "electron-log"
+  ],
+  "nodeMods": [
+   "child_process",
+   "path",
+   "http",
+   "fs",
+   "os",
+   "events",
+   "url"
+  ]
+ },
+ "drawio-desktop": {
+  "hits": {
+   "fsFd": 3,
+   "webRequest": 1,
+   "printToPDF": 1,
+   "capturePage": 1,
+   "fsWatch": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [],
+  "libs": [
+   "electron-updater",
+   "electron-store",
+   "electron-log",
+   "electron-context-menu"
+  ],
+  "nodeMods": [
+   "fs",
+   "path",
+   "url",
+   "zlib",
+   "child_process",
+   "events"
+  ]
+ },
+ "element-desktop": {
+  "hits": {
+   "fsWatch": 1,
+   "fsStream": 2,
+   "capture": 2,
+   "protoFile": 1,
+   "webRequest": 1,
+   "safeStorage": 1,
+   "download": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "chokidar",
+   "auto-launch",
+   "tar"
+  ],
+  "libs": [
+   "electron-store",
+   "electron-window-state",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "fs/promises",
+   "path",
+   "os",
+   "url",
+   "stream",
+   "child_process",
+   "fs",
+   "crypto"
+  ]
+ },
+ "etcher": {
+  "hits": {
+   "webviewTag": 2,
+   "webRequest": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "drivelist",
+   "ws",
+   "axios",
+   "bufferutil",
+   "utf-8-validate",
+   "@electron/remote"
+  ],
+  "libs": [
+   "electron-updater",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "path",
+   "fs",
+   "os"
+  ]
+ },
+ "ferdium-app": {
+  "hits": {
+   "webviewTag": 2,
+   "capture": 1,
+   "webRequest": 1,
+   "download": 2,
+   "certErr": 1,
+   "login": 2,
+   "sendSync": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "sqlite3",
+   "node-mac-permissions",
+   "macos-notification-state",
+   "auto-launch",
+   "@electron/remote",
+   "tar",
+   "electron-dl",
+   "simple-git"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-window-state",
+   "electron-dl",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "child_process",
+   "path",
+   "fs",
+   "crypto",
+   "net",
+   "url",
+   "events",
+   "os"
+  ]
+ },
+ "github-desktop": {
+  "hits": {
+   "certErr": 5,
+   "fsStream": 7,
+   "sendSync": 2,
+   "vm": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": false,
+  "native": [
+   "keytar",
+   "registry-js",
+   "dugite",
+   "node-addon-api"
+  ],
+  "libs": [
+   "electron-window-state"
+  ],
+  "nodeMods": [
+   "path",
+   "os",
+   "fs/promises",
+   "fs"
+  ]
+ },
+ "hyper": {
+  "hits": {
+   "vm": 2,
+   "fsWatch": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "node-pty",
+   "native-reg",
+   "chokidar",
+   "got",
+   "electron-fetch",
+   "node-addon-api",
+   "electron-mksnapshot",
+   "shell-env",
+   "sudo-prompt",
+   "@electron/remote",
+   "open"
+  ],
+  "libs": [
+   "electron-store"
+  ],
+  "nodeMods": [
+   "child_process",
+   "fs",
+   "os",
+   "path",
+   "util",
+   "module",
+   "events",
+   "url"
+  ]
+ },
+ "insomnia": {
+  "hits": {
+   "webRequest": 1,
+   "sendSync": 2,
+   "protoFile": 1,
+   "protoHandle": 1,
+   "certErr": 1,
+   "cookies": 1,
+   "utility": 1,
+   "fsStream": 8,
+   "fork": 1,
+   "safeStorage": 1,
+   "fsFd": 1,
+   "webviewTag": 2,
+   "capturePage": 1,
+   "fsWatch": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": false,
+  "native": [
+   "@grpc/grpc-js",
+   "ws",
+   "iconv-lite",
+   "node-forge",
+   "isomorphic-git"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log",
+   "electron-context-menu",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "fs",
+   "fs/promises",
+   "inspector",
+   "os",
+   "path",
+   "crypto",
+   "stream",
+   "url",
+   "async_hooks",
+   "child_process",
+   "util",
+   "zlib",
+   "querystring",
+   "tls",
+   "http",
+   "module"
+  ]
+ },
+ "joplin": {
+  "hits": {
+   "workerThreads": 2,
+   "fsStream": 7,
+   "vm": 1,
+   "webRequest": 1,
+   "printToPDF": 1,
+   "safeStorage": 2,
+   "protoHandle": 1,
+   "fsFd": 5,
+   "fsWatch": 2,
+   "fork": 1,
+   "cookies": 2
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "sqlite3",
+   "keytar",
+   "sharp",
+   "chokidar",
+   "node-notifier",
+   "node-fetch",
+   "axios",
+   "nan",
+   "pg",
+   "execa",
+   "@electron/remote",
+   "tar",
+   "adm-zip",
+   "7zip-bin",
+   "open"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-window-state",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "url",
+   "path",
+   "timers",
+   "os",
+   "fs",
+   "fs/promises",
+   "tls",
+   "dgram",
+   "crypto"
+  ]
+ },
+ "logseq": {
+  "hits": {
+   "workerThreads": 1,
+   "http2": 1,
+   "vm": 1,
+   "fork": 4,
+   "fsWatch": 1,
+   "protoFile": 1,
+   "webRequest": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "better-sqlite3",
+   "keytar",
+   "ws",
+   "node-fetch",
+   "jszip",
+   "electron-dl",
+   "open"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log",
+   "electron-window-state",
+   "electron-dl"
+  ],
+  "nodeMods": [
+   "fs",
+   "path",
+   "child_process",
+   "os",
+   "module",
+   "events"
+  ]
+ },
+ "marktext": {
+  "hits": {
+   "fsStream": 1,
+   "fsWatch": 3,
+   "printToPDF": 1,
+   "sendSync": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "keytar",
+   "native-keymap",
+   "chokidar",
+   "axios",
+   "font-list"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-store",
+   "electron-log"
+  ],
+  "nodeMods": [
+   "path",
+   "fs/promises",
+   "child_process",
+   "os",
+   "fs",
+   "crypto",
+   "url",
+   "events"
+  ]
+ },
+ "mattermost-desktop": {
+  "hits": {
+   "capture": 1,
+   "views": 9,
+   "titleBarOverlay": 1,
+   "protoFile": 1,
+   "protoHandle": 1,
+   "webRequest": 1,
+   "download": 1,
+   "certErr": 1,
+   "fsStream": 1,
+   "cookies": 3,
+   "safeStorage": 1,
+   "login": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "koffi",
+   "registry-js",
+   "macos-notification-state",
+   "windows-focus-assist",
+   "auto-launch"
+  ],
+  "libs": [
+   "electron-log",
+   "electron-context-menu",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "child_process",
+   "path",
+   "fs",
+   "events",
+   "os",
+   "url",
+   "https",
+   "readline",
+   "fs/promises",
+   "net",
+   "util"
+  ]
+ },
+ "responsively-app": {
+  "hits": {
+   "views": 1,
+   "login": 1,
+   "webviewTag": 6,
+   "webRequest": 2,
+   "certErr": 1,
+   "sendSync": 2,
+   "capturePage": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [],
+  "libs": [
+   "electron-updater",
+   "electron-store",
+   "electron-log"
+  ],
+  "nodeMods": [
+   "path",
+   "fs",
+   "crypto",
+   "http",
+   "url",
+   "os"
+  ]
+ },
+ "siyuan": {
+  "hits": {
+   "printToPDF": 4,
+   "webRequest": 5,
+   "fsFd": 4,
+   "protoHandle": 3,
+   "titleBarOverlay": 4,
+   "safeStorage": 1,
+   "cookies": 1,
+   "fsStream": 5,
+   "certErr": 2,
+   "protoFile": 1,
+   "download": 1,
+   "webviewTag": 1,
+   "sendSync": 2,
+   "vm": 2,
+   "workerThreads": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "sharp",
+   "iconv-lite",
+   "@electron/remote",
+   "unzipper"
+  ],
+  "libs": [],
+  "nodeMods": [
+   "path",
+   "url",
+   "fs",
+   "child_process",
+   "fs/promises",
+   "crypto",
+   "os",
+   "process",
+   "net",
+   "module"
+  ]
+ },
+ "standardnotes": {
+  "hits": {
+   "fsFd": 2,
+   "fsStream": 4,
+   "fsWatch": 1
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": true,
+  "native": [
+   "keytar",
+   "axios",
+   "@electron/remote"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log"
+  ],
+  "nodeMods": [
+   "path",
+   "fs",
+   "http",
+   "url",
+   "os",
+   "crypto",
+   "stream",
+   "util"
+  ]
+ },
+ "super-productivity": {
+  "hits": {
+   "certErr": 1,
+   "fsFd": 4,
+   "webRequest": 1,
+   "titleBarOverlay": 1,
+   "vm": 2,
+   "webviewTag": 2,
+   "views": 2,
+   "fsWatch": 3,
+   "fsStream": 4
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "node-fetch",
+   "electron-localshortcut",
+   "archiver",
+   "electron-dl"
+  ],
+  "libs": [
+   "electron-log",
+   "electron-window-state",
+   "electron-dl"
+  ],
+  "nodeMods": [
+   "fs",
+   "path",
+   "url",
+   "child_process",
+   "readline",
+   "util",
+   "crypto",
+   "os",
+   "http",
+   "events",
+   "module",
+   "vm"
+  ]
+ },
+ "tabby": {
+  "hits": {
+   "titleBarOverlay": 1,
+   "sendSync": 1,
+   "fsFd": 1,
+   "fsWatch": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "node-pty",
+   "keytar",
+   "serialport",
+   "@electron/remote"
+  ],
+  "libs": [
+   "electron-updater"
+  ],
+  "nodeMods": [
+   "child_process",
+   "path",
+   "fs",
+   "module"
+  ]
+ },
+ "upscayl": {
+  "hits": {
+   "protoFile": 1
+  },
+  "nodeIntegration": true,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "electron-next"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log"
+  ],
+  "nodeMods": [
+   "path",
+   "url",
+   "os",
+   "fs"
+  ]
+ },
+ "vscode": {
+  "hits": {
+   "fsWatch": 4,
+   "workerThreads": 3,
+   "vm": 3,
+   "fsStream": 12,
+   "fsFd": 3,
+   "login": 2,
+   "capture": 2,
+   "protoHandle": 4,
+   "webRequest": 4,
+   "capturePage": 3,
+   "certErr": 4,
+   "views": 1,
+   "safeStorage": 1,
+   "protoFile": 1,
+   "utility": 1,
+   "download": 1,
+   "titleBarOverlay": 2,
+   "fork": 3,
+   "webviewTag": 2
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": false,
+  "native": [
+   "node-pty",
+   "@vscode/sqlite3",
+   "native-keymap",
+   "@parcel/watcher",
+   "ws",
+   "node-addon-api",
+   "ssh2",
+   "@vscode/sudo-prompt",
+   "tar",
+   "yauzl",
+   "open"
+  ],
+  "libs": [],
+  "nodeMods": [
+   "path",
+   "os",
+   "perf_hooks",
+   "fs",
+   "crypto",
+   "child_process",
+   "util",
+   "fs/promises",
+   "string_decoder",
+   "module",
+   "tls",
+   "http",
+   "https",
+   "net"
+  ]
+ },
+ "wire-desktop": {
+  "hits": {
+   "fsStream": 5,
+   "webviewTag": 3,
+   "certErr": 2,
+   "capture": 2,
+   "safeStorage": 1,
+   "login": 1,
+   "sendSync": 2,
+   "cookies": 3,
+   "webRequest": 3
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": true,
+  "remote": true,
+  "native": [
+   "registry-js",
+   "axios",
+   "iconv-lite",
+   "auto-launch",
+   "@electron/remote",
+   "adm-zip",
+   "archiver",
+   "jszip",
+   "electron-dl"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-window-state",
+   "electron-dl"
+  ],
+  "nodeMods": [
+   "assert",
+   "http",
+   "path",
+   "url",
+   "events",
+   "crypto"
+  ]
+ },
+ "zulip-desktop": {
+  "hits": {
+   "fsStream": 2,
+   "download": 1,
+   "notifClick": 1,
+   "webviewTag": 2,
+   "certErr": 1,
+   "sendSync": 2
+  },
+  "nodeIntegration": false,
+  "ctxIsoOff": false,
+  "remote": true,
+  "native": [
+   "auto-launch",
+   "@electron/remote",
+   "adm-zip"
+  ],
+  "libs": [
+   "electron-updater",
+   "electron-log",
+   "electron-window-state",
+   "@sentry/electron"
+  ],
+  "nodeMods": [
+   "fs",
+   "os",
+   "path",
+   "process",
+   "buffer",
+   "crypto",
+   "stream"
+  ]
+ }
+}

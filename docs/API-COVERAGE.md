@@ -26,7 +26,9 @@ Modules backed by an official plugin are switched on or off with
 feature is off fails with an error naming the feature or the plugin.
 
 To see which of these APIs VS Code and GitHub Desktop rely on, read
-[TARGET-APPS.md](TARGET-APPS.md).
+[TARGET-APPS.md](TARGET-APPS.md); for how 30 open-source apps use them and
+what is planned next, [APP-SURVEY.md](APP-SURVEY.md) and
+[ROADMAP.md](ROADMAP.md).
 
 ## Security defaults
 
@@ -101,7 +103,8 @@ for more):
 | `getNativeWindowHandle`, `capturePage`, `getMediaSourceId` | 🚫 | Handles exist only in Rust; no page capture or screen capture in Tauri. |
 | `BaseWindow` | 🟡 | Alias of `BrowserWindow`. |
 | `BrowserView`, `View`, `ImageView` | 🚫 | A Tauri window holds one webview. |
-| `WebContentsView` | ❌ | Tauri's multi-webview windows (unstable) could back it. |
+| `WebContentsView` | ❌ | Tauri's multi-webview windows (unstable) could back it ([ROADMAP](ROADMAP.md) C1). |
+| `<webview>` tag (`webPreferences.webviewTag`) | ❌ | Not defined: the tag is an unknown HTML element and loads nothing. Same backing as `WebContentsView` ([ROADMAP](ROADMAP.md) C1). |
 
 ### `webContents`
 
