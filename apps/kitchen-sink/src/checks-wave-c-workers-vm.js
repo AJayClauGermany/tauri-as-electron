@@ -85,6 +85,7 @@ export const waveCWorkersVmChecks = [
       argv: ['one', 'two'],
     })
     worker.on('online', () => online.push('online'))
+    const id = worker.threadId
     try {
       await ready
       const hello = await call('hello')
@@ -104,7 +105,8 @@ export const waveCWorkersVmChecks = [
       assert(code === 1, `terminate() resolves 1, got ${code}`)
       assert((await exited)[0] === 1, "'exit' 1")
     }
-    return `threadId ${worker.threadId}`
+    assert(worker.threadId === -1, `threadId after exit: ${worker.threadId}`)
+    return `threadId ${id}`
   } },
 
   { id: 'worker_threads: Node built-ins in a worker (fs, os, crypto, Buffer, child_process)', run: async () => {

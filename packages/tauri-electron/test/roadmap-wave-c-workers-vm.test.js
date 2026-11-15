@@ -397,6 +397,7 @@ describe('Worker (C2), end to end', () => {
     const exit = once(worker, 'exit')
     expect(await worker.terminate()).toBe(1)
     expect((await exit)[0]).toBe(1)
+    expect(worker.threadId).toBe(-1) // as in Node, once exited
   }, 20000)
 
   it('reaches the synchronous bridge with the window URL, and relays commands and Channels', async () => {

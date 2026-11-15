@@ -320,7 +320,7 @@ export class Worker extends EventEmitter {
       _waiting: { value: [] },
       _options: { value: options },
     })
-    this.threadId = newThreadId()
+    Object.defineProperty(this, '_threadId', { value: newThreadId(), writable: true })
     this.resourceLimits = { maxYoungGenerationSizeMb: 0, maxOldGenerationSizeMb: 0, codeRangeSizeMb: 0, stackSizeMb: 4, ...(options.resourceLimits ?? {}) }
     this.stdin = null
     this.stdout = new Readable({ read() {} })
@@ -351,7 +351,7 @@ export class Worker extends EventEmitter {
     native.postMessage(
       {
         [ENVELOPE]: 'init',
-        threadId: this.threadId,
+        threadId: this._threadId,
         name: options.name ? String(options.name) : '',
         entry: script,
         eval: isEval ? String(filename) : null,
@@ -367,6 +367,11 @@ export class Worker extends EventEmitter {
       },
       transfer,
     )
+  }
+
+  /** The worker's id; -1 once it has exited, as in Node. */
+  get threadId() {
+    return this._exited ? -1 : this._threadId
   }
 
   postMessage(value, transferList) {
