@@ -128,6 +128,10 @@ async function dispatch(message) {
     case 'lifecycle':
       sender._onLifecycle?.(message.name, message.data)
       break
+    case 'send-to-host':
+      // ipcRenderer.sendToHost() in a <webview> guest: to its element (./views.js).
+      sender._sendToHost?.(message.channel, message.args)
+      break
     default:
       console.warn('[tauri-electron] unknown IPC message', message)
   }

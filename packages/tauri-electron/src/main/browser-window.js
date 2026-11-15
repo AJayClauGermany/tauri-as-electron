@@ -350,6 +350,13 @@ export class WebContents extends EventEmitter {
       case 'drop-files':
         // Files dropped on the page (paths from Tauri's drag & drop event).
         break
+      case 'webview-attach':
+      case 'webview-detach':
+      case 'webview-call':
+      case 'guest-close':
+        // <webview> elements of this page, window.close() in a guest (./views.js).
+        bus.emit('guest-lifecycle', this, name, data)
+        break
     }
   }
 
@@ -743,6 +750,28 @@ export function webContentsFromLabel(label) {
   return contentsByLabel.get(label)
 }
 
+/**
+ * For ./views.js: the webContents of views and `<webview>` guests share the
+ * ids, IPC routing (by webview label) and page-load events of windows.
+ */
+export const guests = {
+  nextId: () => nextId++,
+  all: () => [...contentsById.values()],
+  register(contents, label) {
+    contentsById.set(contents.id, contents)
+    contentsByLabel.set(label, contents)
+  },
+  forgetLabel(label) {
+    contentsByLabel.delete(label)
+  },
+  unregister(contents, label) {
+    contentsById.delete(contents.id)
+    if (label && contentsByLabel.get(label) === contents) contentsByLabel.delete(label)
+  },
+  isAppUrl: (url) => isAppUrl(url),
+  absoluteAppUrl: (url) => absoluteAppUrl(url),
+}
+
 /** webFrameMain module: only main frames exist in tauri-electron. */
 export const webFrameMain = {
   fromId: (_processId, routingId) => contentsById.get(routingId)?.mainFrame,
@@ -918,6 +947,8 @@ export class BrowserWindow extends EventEmitter {
       node,
       zoomFactor: this.webContents._zoomFactor,
       titleBarOverlay: this._titleBarOverlayConfig(),
+      // The page may use <webview> (./views.js, ../renderer/webview-tag.js).
+      webviewTag: Boolean(prefs.webviewTag),
     }
   }
 
@@ -1119,6 +1150,12 @@ export class BrowserWindow extends EventEmitter {
     } else if (this.webContents._alive && isAppUrl(url)) {
       this.webContents._alive = false
       this.webContents._post({ type: 'command', name: 'navigate', url: absoluteAppUrl(url) })
+    } else if (this._hasViews?.()) {
+      // Child views live in this native window (./views.js): navigate it in place.
+      this.webContents._alive = false
+      native('view_navigate', { label: this._label, url: absoluteAppUrl(toNativeSchemeUrl(url)) }).catch((error) => {
+        for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
+      })
     } else {
       // The current page has no bootstrap (blank or remote), so it cannot
       // navigate itself: replace the native window, keeping its geometry.
@@ -1684,6 +1721,8 @@ export class BrowserWindow extends EventEmitter {
     return contents?._win ?? null
   }
 
+  // contentView, setBrowserView & co. come from ./views.js, which also
+  // extends fromWebContents and fromBrowserView to views.
   static fromBrowserView() {
     return null
   }

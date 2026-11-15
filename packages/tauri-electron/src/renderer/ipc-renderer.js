@@ -136,8 +136,9 @@ class IpcRenderer extends EventEmitter {
     postToMain({ type: 'send', channel: String(channel), args: encode([message]), ports: ids }).catch(report('ipcRenderer.postMessage'))
   }
 
+  /** To the `<webview>` element showing this page ('ipc-message'); nothing outside a `<webview>`. */
   sendToHost(channel, ...args) {
-    this.send(channel, ...args)
+    postToMain({ type: 'send-to-host', channel: String(channel), args: encode(args) }).catch(report('ipcRenderer.sendToHost'))
   }
 }
 

@@ -47,12 +47,8 @@ export const pushNotifications = unsupportedModule('pushNotifications', { reason
 export const utilityProcess = unsupportedModule('utilityProcess', { reason: 'unsupported', hint: 'There is no Node.js runtime. Run Node code as a sidecar via @tauri-apps/plugin-shell, or move it to Rust.' })
 export const sharedTexture = unsupportedModule('sharedTexture', CHROMIUM)
 
-// Electron's view hierarchy: a Tauri window holds exactly one webview.
-const VIEWS = { reason: 'unsupported', hint: 'Electron views have no Tauri equivalent; use one BrowserWindow per webview.' }
-export const BrowserView = unsupportedClass('BrowserView', VIEWS)
-export const View = unsupportedClass('View', VIEWS)
-export const ImageView = unsupportedClass('ImageView', VIEWS)
-export const WebContentsView = unsupportedClass('WebContentsView', { reason: 'unimplemented', hint: "Tauri's multi-webview windows (unstable) could back this." })
+// View, WebContentsView and BrowserView are in ./views.js.
+export const ImageView = unsupportedClass('ImageView', { reason: 'unimplemented', hint: 'Show the image in a WebContentsView instead.' })
 export const ShareMenu = unsupportedClass('ShareMenu', { reason: 'unimplemented', hint: 'The macOS share sheet needs a Rust command.' })
 export const IpcMainServiceWorker = unsupportedClass('IpcMainServiceWorker', CHROMIUM)
 

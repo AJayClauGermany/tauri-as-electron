@@ -11,6 +11,7 @@
  * listeners are stored but never called.
  */
 import { EventEmitter, createEvent } from '../internal/emitter.js'
+import { bus } from '../internal/bus.js'
 import { NotImplementedError, MAIN_LABEL, report, warnOnce } from '../internal/runtime.js'
 import { native, hasNativePlugin } from '../internal/native.js'
 import { platform } from '../process.js'
@@ -250,6 +251,7 @@ export class Session extends EventEmitter {
   setPermissionRequestHandler(handler) {
     this._handlers.permissionRequest = typeof handler === 'function' ? handler : null
     syncPermissionHandler(this, BrowserWindow.getAllWindows())
+    bus.emit('session-permission-handler', this) // views (./views.js)
   }
 
   /** Stored: Tauri has no hook for permission checks (navigator.permissions.query). */
