@@ -61,6 +61,9 @@ half (`tauri-electron`) at the same ref.
 | `node-child-process` | off, listed by the template | Node's `child_process` | none (`std::process`, in this crate) |
 | `node-net` | off, listed by the template | Node's `net`, `dgram`, `dns`, and the HTTP servers | `tokio`, `socket2`, `hickory-resolver` |
 | `node-tls` | off, listed by the template (implies `node-net`) | Node's `tls`, `https` servers | `rustls` (ring), `tokio-rustls`, `webpki-roots` |
+| `keytar` | off, listed (commented) by the template | The `keytar` npm package, in keytar's own keychain format | `keyring` (B3's crate), `dbus-secret-service` on Linux, `security-framework` / `windows-sys` for listing |
+| `sqlite` | off, listed (commented) by the template | The `better-sqlite3` and `sqlite3` npm packages | `rusqlite` with SQLite compiled in (`bundled`: a C compiler at build time) |
+| `pty` | off, listed (commented) by the template | The `node-pty` npm package | `portable-pty` (Unix ptys, ConPTY) |
 
 The Node built-ins backed by Rust are not default features: the template and
 the scaffolder list them in the app's `src-tauri/Cargo.toml`, one line each,
@@ -68,6 +71,10 @@ so the native access an app has is visible and an app that already depends
 on this crate does not gain it silently. Commands are granted to
 `electron-main` through a permission set per feature (`electron:node-fs`,
 `electron:node-child-process`, `electron:node-net`; `os` uses the bridge only).
+The same goes for the npm packages with native code that the bundler
+plugins alias to Rust versions (`keytar`, `sqlite`, `pty`; permission sets
+`electron:keytar`, `electron:sqlite`, `electron:pty`): the scaffolder's
+`--into` enables those the app's `package.json` depends on.
 
 `tauri-plugin-os` and `tauri-plugin-process` are always registered.
 
@@ -105,6 +112,9 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | Node's `os` (`node-os` feature) | `node/os/<op>` on the scheme (`src/node_os.rs`) |
 | Node's `child_process` (`node-child-process` feature) | `spawnSync`: `node/child_process/spawnSync` on the scheme, stdin in the request body, both outputs in the answer. `spawn`: the `child_spawn` command with a Channel for output and exit, then `child_write`, `child_end`, `child_kill` (`src/node_child_process.rs`) |
 | Node's `net`, `tls`, `dgram`, `dns` (`node-net`, `node-tls` features) | A handle table of tokio sockets (`src/node_net.rs`). `net_connect`, `net_listen`, `udp_bind` take a Channel that carries data, end, errors and accepted connections; `net_write` resolves once the bytes are flushed; `net_pause` stops reading in Rust. TLS is rustls on the same sockets (`src/node_tls.rs`); `dns_lookup` is the OS resolver, `dns_resolve` / `dns_reverse` use hickory-resolver (`src/node_dns.rs`) |
+| `keytar` (`keytar` feature) | The `keytar` command, off the main thread (`src/native_modules/keytar.rs`): generic passwords (macOS) and credentials named `<service>/<account>` with UTF-8 secrets (Windows) through `keyring`; Secret Service items with libsecret's generic schema and keytar's `service` / `account` attributes (Linux, through `dbus-secret-service`). `findCredentials` searches the keychain (security-framework, `CredEnumerateW`, a Secret Service search) |
+| `better-sqlite3`, `sqlite3` (`sqlite` feature) | A table of rusqlite connections (`src/native_modules/sqlite.rs`); JavaScript statements keep their SQL and run through each connection's prepared-statement cache. better-sqlite3's synchronous calls: `node/sqlite/<op>` on the scheme; sqlite3's callbacks and `backup()`: the `sqlite` command. User functions are answered from a memo the page fills between runs of the statement (writes run in a savepoint that is rolled back while results are missing) |
+| `node-pty` (`pty` feature) | `node/pty/spawn` on the scheme opens a portable-pty terminal and starts the program (so `pid` is known synchronously); its output is kept until `pty_attach` hands over a Channel; `pty_control` writes (through a thread of its own), resizes, signals and pauses (`src/native_modules/pty.rs`) |
 | `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` / `protocols(bundled_schemes!())` are forwarded to the main window's handler |
 | `webContents.openDevTools`, `closeDevTools`, `isDevToolsOpened` | `WebviewWindow::open_devtools` (debug builds, or the `devtools` feature) |
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |

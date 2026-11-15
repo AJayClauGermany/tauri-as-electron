@@ -205,10 +205,11 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 - [ ] **C4. `vm`** contexts on iframe realms (feasibility verified in
   [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)): `runInNewContext`,
   `createContext`, `Script`. *Apps 10.* Effort M–L.
-- [ ] **C5. Shims for common native modules** through the bundler's
+- [x] **C5. Shims for common native modules** through the bundler's
   module aliases: `keytar` (on B3's keyring code; 6 apps), `better-sqlite3`
   / `sqlite3` (rusqlite; 5 apps), `node-pty` (portable-pty; 4 apps:
   Hyper, Tabby, VS Code, Bruno). Each M–L; `keytar` is S once B3 exists.
+  *Done: `tauri-electron/keytar`, `/better-sqlite3`, `/sqlite3`, `/node-pty`, aliased by both bundler plugins and `require()`, each behind an opt-in Cargo feature (`keytar`, `sqlite`, `pty`; listed commented out by the template, enabled by `--into` for the app's dependencies), for the main process and `nodeIntegration` windows. keytar stores entries where keytar does (Keychain generic passwords, Windows credentials `<service>/<account>`, Secret Service items with keytar's attributes, read through dbus-secret-service), so existing ones are found; `findCredentials` searches the keychain on each platform; without a Secret Service it rejects like keytar. better-sqlite3 is synchronous over the bridge on a rusqlite handle table (statements re-run through the statement cache, `iterate()` reads all rows first); `db.function()` is answered from a memo between runs of the statement (deterministic functions only), `aggregate` / `table` / `loadExtension` throw. sqlite3's callback API runs on the same table through a command, one operation at a time per database (no `'change'` event). node-pty spawns over the bridge (`pid` at once) and streams over a Channel; spawn failures throw. Databases and terminals close with the page that opened them. Verified on Linux (keytar only without a Secret Service); keytar and pty compile-checked for Windows, keytar for macOS (SQLite's C build was not cross-compiled).*
 - [ ] **C6. IPC and preloads for local-server pages.** Apps that start a
   server and load `http://127.0.0.1:<port>` in their main window (SiYuan's
   kernel) get no IPC today ("remote pages have no IPC"). Allow an
