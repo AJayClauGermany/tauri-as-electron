@@ -64,7 +64,9 @@ mod macos {
 
     pub fn idle_seconds() -> Option<u64> {
         // SAFETY: a pure query without pointers.
-        let seconds = unsafe { CGEventSourceSecondsSinceLastEventType(COMBINED_SESSION_STATE, ANY_INPUT_EVENT) };
+        let seconds = unsafe {
+            CGEventSourceSecondsSinceLastEventType(COMBINED_SESSION_STATE, ANY_INPUT_EVENT)
+        };
         seconds.is_finite().then(|| seconds.max(0.0) as u64)
     }
 }
@@ -88,7 +90,10 @@ mod windows {
     }
 
     pub fn idle_seconds() -> Option<u64> {
-        let mut info = LastInputInfo { cb_size: std::mem::size_of::<LastInputInfo>() as u32, dw_time: 0 };
+        let mut info = LastInputInfo {
+            cb_size: std::mem::size_of::<LastInputInfo>() as u32,
+            dw_time: 0,
+        };
         // SAFETY: `info` is a valid LASTINPUTINFO with cbSize set.
         if unsafe { GetLastInputInfo(&mut info) } == 0 {
             return None;
@@ -138,12 +143,19 @@ mod linux {
     }
 
     fn connect(system: bool) -> Option<Connection> {
-        let builder = if system { Builder::system() } else { Builder::session() };
+        let builder = if system {
+            Builder::system()
+        } else {
+            Builder::session()
+        };
         builder.ok()?.method_timeout(CALL_TIMEOUT).build().ok()
     }
 
     /// Run `f` on a thread of its own and wait for it at most `timeout`.
-    fn with_timeout<T: Send + 'static>(timeout: Duration, f: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    fn with_timeout<T: Send + 'static>(
+        timeout: Duration,
+        f: impl FnOnce() -> T + Send + 'static,
+    ) -> Option<T> {
         let (tx, rx) = mpsc::channel();
         thread::Builder::new()
             .name("power-monitor-setup".into())
@@ -162,7 +174,11 @@ mod linux {
     fn set_locked<R: Runtime>(app: &AppHandle<R>, state: &AtomicU8, locked: bool) {
         let next = if locked { LOCKED } else { UNLOCKED };
         if state.swap(next, Ordering::SeqCst) != next {
-            let event = if locked { "lock-screen" } else { "unlock-screen" };
+            let event = if locked {
+                "lock-screen"
+            } else {
+                "unlock-screen"
+            };
             let _ = app.emit_to(MAIN_LABEL, EVENT, json!({ "event": event }));
         }
     }
@@ -185,17 +201,23 @@ mod linux {
         if let Some(signals) = manager.ok().and_then(|rule| subscribe(&system, rule)) {
             events.extend(["suspend", "resume", "shutdown"]);
             let app = app.clone();
-            let _ = thread::Builder::new().name("power-monitor-logind".into()).spawn(move || {
-                for message in signals.flatten() {
-                    let header = message.header();
-                    let Ok(starting) = message.body().deserialize::<bool>() else { continue };
-                    match header.member().map(|m| m.as_str()) {
-                        Some("PrepareForSleep") => emit(&app, if starting { "suspend" } else { "resume" }),
-                        Some("PrepareForShutdown") if starting => emit(&app, "shutdown"),
-                        _ => {}
+            let _ = thread::Builder::new()
+                .name("power-monitor-logind".into())
+                .spawn(move || {
+                    for message in signals.flatten() {
+                        let header = message.header();
+                        let Ok(starting) = message.body().deserialize::<bool>() else {
+                            continue;
+                        };
+                        match header.member().map(|m| m.as_str()) {
+                            Some("PrepareForSleep") => {
+                                emit(&app, if starting { "suspend" } else { "resume" })
+                            }
+                            Some("PrepareForShutdown") if starting => emit(&app, "shutdown"),
+                            _ => {}
+                        }
                     }
-                }
-            });
+                });
         }
         // This session's object: Lock / Unlock and LockedHint.
         let session: Option<OwnedObjectPath> = system
@@ -229,27 +251,34 @@ mod linux {
                 .map(|b| b.build());
             if let Some(signals) = rule.ok().and_then(|rule| subscribe(&system, rule)) {
                 events.extend(["lock-screen", "unlock-screen"]);
-                let _ = thread::Builder::new().name("power-monitor-session".into()).spawn(move || {
-                    for message in signals.flatten() {
-                        let header = message.header();
-                        match header.member().map(|m| m.as_str()) {
-                            Some("Lock") => set_locked(&app, &locked, true),
-                            Some("Unlock") => set_locked(&app, &locked, false),
-                            Some("PropertiesChanged") => {
-                                let Ok((_, changed, _)) = message
-                                    .body()
-                                    .deserialize::<(String, HashMap<String, OwnedValue>, Vec<String>)>()
-                                else {
-                                    continue;
-                                };
-                                if let Some(hint) = changed.get("LockedHint").and_then(|v| bool::try_from(v).ok()) {
-                                    set_locked(&app, &locked, hint);
+                let _ = thread::Builder::new()
+                    .name("power-monitor-session".into())
+                    .spawn(move || {
+                        for message in signals.flatten() {
+                            let header = message.header();
+                            match header.member().map(|m| m.as_str()) {
+                                Some("Lock") => set_locked(&app, &locked, true),
+                                Some("Unlock") => set_locked(&app, &locked, false),
+                                Some("PropertiesChanged") => {
+                                    let Ok((_, changed, _)) = message.body().deserialize::<(
+                                        String,
+                                        HashMap<String, OwnedValue>,
+                                        Vec<String>,
+                                    )>(
+                                    ) else {
+                                        continue;
+                                    };
+                                    if let Some(hint) = changed
+                                        .get("LockedHint")
+                                        .and_then(|v| bool::try_from(v).ok())
+                                    {
+                                        set_locked(&app, &locked, hint);
+                                    }
                                 }
+                                _ => {}
                             }
-                            _ => {}
                         }
-                    }
-                });
+                    });
             }
         }
         // The signal iterators keep their own handle on the connection.
@@ -257,7 +286,11 @@ mod linux {
     }
 
     /// The screen saver on the session bus (GNOME's shield is its lock screen).
-    fn watch_screensaver<R: Runtime>(app: AppHandle<R>, connection: Connection, locked: Arc<AtomicU8>) -> bool {
+    fn watch_screensaver<R: Runtime>(
+        app: AppHandle<R>,
+        connection: Connection,
+        locked: Arc<AtomicU8>,
+    ) -> bool {
         let rule = MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
             .member("ActiveChanged")
@@ -265,17 +298,22 @@ mod linux {
         let Some(signals) = rule.ok().and_then(|rule| subscribe(&connection, rule)) else {
             return false;
         };
-        let _ = thread::Builder::new().name("power-monitor-screensaver".into()).spawn(move || {
-            for message in signals.flatten() {
-                let interface = message.header().interface().map(|i| i.to_string());
-                if !matches!(interface.as_deref(), Some("org.gnome.ScreenSaver" | "org.freedesktop.ScreenSaver")) {
-                    continue;
+        let _ = thread::Builder::new()
+            .name("power-monitor-screensaver".into())
+            .spawn(move || {
+                for message in signals.flatten() {
+                    let interface = message.header().interface().map(|i| i.to_string());
+                    if !matches!(
+                        interface.as_deref(),
+                        Some("org.gnome.ScreenSaver" | "org.freedesktop.ScreenSaver")
+                    ) {
+                        continue;
+                    }
+                    if let Ok(active) = message.body().deserialize::<bool>() {
+                        set_locked(&app, &locked, active);
+                    }
                 }
-                if let Ok(active) = message.body().deserialize::<bool>() {
-                    set_locked(&app, &locked, active);
-                }
-            }
-        });
+            });
         true
     }
 
@@ -292,10 +330,14 @@ mod linux {
                 return events.clone();
             }
             let (app_logind, locked) = (app.clone(), self.locked.clone());
-            let mut events = with_timeout(SETUP_TIMEOUT, move || watch_logind(app_logind, locked)).unwrap_or_default();
+            let mut events = with_timeout(SETUP_TIMEOUT, move || watch_logind(app_logind, locked))
+                .unwrap_or_default();
             if let Some(session) = self.session().cloned() {
                 let (app, locked) = (app.clone(), self.locked.clone());
-                let watching = with_timeout(SETUP_TIMEOUT, move || watch_screensaver(app, session, locked)).unwrap_or(false);
+                let watching = with_timeout(SETUP_TIMEOUT, move || {
+                    watch_screensaver(app, session, locked)
+                })
+                .unwrap_or(false);
                 if watching {
                     for event in ["lock-screen", "unlock-screen"] {
                         if !events.contains(&event) {
@@ -344,9 +386,14 @@ mod linux {
             let session = self.session()?;
             for (name, path) in [
                 ("org.gnome.ScreenSaver", "/org/gnome/ScreenSaver"),
-                ("org.freedesktop.ScreenSaver", "/org/freedesktop/ScreenSaver"),
+                (
+                    "org.freedesktop.ScreenSaver",
+                    "/org/freedesktop/ScreenSaver",
+                ),
             ] {
-                if let Ok(reply) = session.call_method(Some(name), path, Some(name), "GetActive", &()) {
+                if let Ok(reply) =
+                    session.call_method(Some(name), path, Some(name), "GetActive", &())
+                {
                     if let Ok(active) = reply.body().deserialize::<bool>() {
                         return Some(active);
                     }

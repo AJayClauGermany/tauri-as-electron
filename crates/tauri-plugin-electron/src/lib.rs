@@ -493,7 +493,11 @@ fn handle_bridge<R: Runtime>(
         "power/idle" => {
             #[cfg(all(desktop, feature = "power-monitor"))]
             thread::spawn(move || {
-                respond_json(responder, 200, &app.state::<power_monitor::Monitor>().idle())
+                respond_json(
+                    responder,
+                    200,
+                    &app.state::<power_monitor::Monitor>().idle(),
+                )
             });
             #[cfg(not(all(desktop, feature = "power-monitor")))]
             {
@@ -838,9 +842,7 @@ fn set_window_config<R: Runtime>(
     if node {
         node_windows::grant(webview.app_handle(), &label)?;
     } else {
-        webview
-            .state::<node_windows::NodeWindows>()
-            .revoke(&label);
+        webview.state::<node_windows::NodeWindows>().revoke(&label);
     }
     let mut map = bridge.window_config.lock().unwrap();
     match config {
