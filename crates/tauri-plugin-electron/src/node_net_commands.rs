@@ -71,8 +71,13 @@ mod enabled {
     }
 
     #[tauri::command]
-    pub fn net_destroy<R: Runtime>(webview: Webview<R>, id: u32) -> Result<(), Value> {
-        allowed(&webview)?.destroy(id);
+    pub async fn net_destroy<R: Runtime>(webview: Webview<R>, id: u32) -> Result<(), Value> {
+        // A server's listener is closed when its accept task has ended:
+        // answer after that, so `server.close()`'s 'close' means the port
+        // refuses connections, as in Node.
+        if let Some(task) = allowed(&webview)?.destroy(id) {
+            let _ = task.await;
+        }
         Ok(())
     }
 
