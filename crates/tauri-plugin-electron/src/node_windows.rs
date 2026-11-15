@@ -42,6 +42,23 @@ fn permissions() -> Vec<Value> {
     if cfg!(feature = "node-net") {
         list.push(json!("electron:node-net"));
     }
+    list.extend(native_module_permissions());
+    list
+}
+
+/// The permission sets of the enabled native-module features (keytar,
+/// better-sqlite3 / sqlite3, node-pty), which follow the `node-*` rules.
+pub fn native_module_permissions() -> Vec<Value> {
+    let mut list = Vec::new();
+    if cfg!(feature = "keytar") {
+        list.push(json!("electron:keytar"));
+    }
+    if cfg!(feature = "sqlite") {
+        list.push(json!("electron:sqlite"));
+    }
+    if cfg!(feature = "pty") {
+        list.push(json!("electron:pty"));
+    }
     list
 }
 

@@ -35,7 +35,9 @@ npm run build   # tauri build
   Electron modules (and the official Tauri plugins behind them). Most are on
   by default; add `"single-instance"` if your app calls
   `app.requestSingleInstanceLock()`, `"updater"` for `autoUpdater` (plus
-  `plugins.updater` in `tauri.conf.json`). See the
+  `plugins.updater` in `tauri.conf.json`). Uncomment `"keytar"`, `"sqlite"`
+  or `"pty"` if you use `keytar`, `better-sqlite3` / `sqlite3` or `node-pty`
+  (re-implemented in Rust, no native addon). See the
   [feature list](../../crates/tauri-plugin-electron/README.md#features).
 - `src-tauri/src/lib.rs`: nothing to change. The schemes your main process
   passes to `protocol.handle()` are found by the bundler plugin and written

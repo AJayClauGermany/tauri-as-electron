@@ -33,4 +33,8 @@ tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron", featur
   "node-child-process", # child_process: runs arbitrary commands; delete to disable
   "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
   "node-tls",           # tls, https servers (rustls); implies node-net
+  # npm packages with native code, re-implemented in Rust (uncomment what the app uses):
+  # "keytar",           # keytar: passwords in the OS keychain
+  # "sqlite",           # better-sqlite3 / sqlite3: SQLite compiled in (needs a C compiler)
+  # "pty",              # node-pty: pseudo-terminals; runs arbitrary programs
 ] }

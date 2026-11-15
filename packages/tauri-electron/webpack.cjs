@@ -28,7 +28,9 @@
  *    tauri-electron, the Node built-ins it implements (`path`, `fs`, `os`,
  *    `child_process`, `util`, `stream`, `crypto`, `http`, …) to its shims and
  *    other Node built-ins to stubs that throw a NotImplementedError naming the
- *    Tauri replacement when used (with or without `node:`),
+ *    Tauri replacement when used (with or without `node:`), and `keytar`,
+ *    `better-sqlite3`, `sqlite3`, `node-pty` to versions on
+ *    tauri-plugin-electron's `keytar` / `sqlite` / `pty` features,
  *  - tells `fs` where the app's own files are and, in production builds,
  *    stages them in `src-tauri/electron-resources/app/` when that folder
  *    exists (see the Vite plugin),
@@ -46,7 +48,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, NATIVE_MODULE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -112,6 +114,11 @@ const SHIM_FILES = {
   'tauri-electron/remote': path.join(SRC, 'remote', 'index.js'),
   'tauri-electron/remote/renderer': path.join(SRC, 'remote', 'renderer.js'),
   'tauri-electron/remote/main': path.join(SRC, 'remote', 'main.js'),
+  // npm packages with native code (tauri-plugin-electron's keytar / sqlite / pty features).
+  'tauri-electron/keytar': path.join(SRC, 'native', 'keytar.js'),
+  'tauri-electron/better-sqlite3': path.join(BUNDLER, 'better-sqlite3.cjs'),
+  'tauri-electron/sqlite3': path.join(BUNDLER, 'sqlite3.cjs'),
+  'tauri-electron/node-pty': path.join(SRC, 'native', 'node-pty.js'),
 }
 
 const SOURCE_FILE = /\.(m?[jt]sx?|c[jt]s)$/
@@ -150,6 +157,8 @@ function requireFromProject(id, context) {
 function redirect(request, { aliasPath, userResolved }) {
   if (ELECTRON_REQUEST.test(request)) return MODULES.electron
   if (request === 'electron-updater' && !userResolved.has(request)) return MODULES.electronUpdater
+  // A project's own alias for a native module (a wasm SQLite, say) wins, as for electron-updater.
+  if (NATIVE_MODULE_SHIMS[request] && userResolved.has(request)) return null
   if (PACKAGE_SHIMS[request]) return SHIM_FILES[PACKAGE_SHIMS[request]]
   const bare = request.replace(/^node:/, '')
   if (userResolved.has(bare) || userResolved.has(request)) return null
@@ -244,7 +253,7 @@ class TauriElectronPlugin {
     // rejects `node:` requests on web targets.
     const userResolved = userResolvedNames(config.resolve)
     const aliasPath = options.aliasPath
-    new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?)$/, (resource) => {
+    new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?|(?:better-)?sqlite3)$/, (resource) => {
       if (typeof resource.request !== 'string') return
       const target = redirect(resource.request, { aliasPath, userResolved })
       if (target) resource.request = target

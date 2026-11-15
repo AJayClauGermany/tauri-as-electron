@@ -618,6 +618,32 @@ Denies the is_devtools_open command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-keytar`
+
+</td>
+<td>
+
+Enables the keytar command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-keytar`
+
+</td>
+<td>
+
+Denies the keytar command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-message-box`
 
 </td>
@@ -1112,6 +1138,58 @@ Denies the process_info command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-pty-attach`
+
+</td>
+<td>
+
+Enables the pty_attach command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-pty-attach`
+
+</td>
+<td>
+
+Denies the pty_attach command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-pty-control`
+
+</td>
+<td>
+
+Enables the pty_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-pty-control`
+
+</td>
+<td>
+
+Denies the pty_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-safe-storage-decrypt`
 
 </td>
@@ -1242,6 +1320,32 @@ Denies the set_window_config command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-sqlite`
+
+</td>
+<td>
+
+Enables the sqlite command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-sqlite`
+
+</td>
+<td>
+
+Denies the sqlite command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-trash-item`
 
 </td>
@@ -1365,6 +1469,45 @@ Enables the udp_send command without any pre-configured scope.
 <td>
 
 Denies the udp_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:keytar`
+
+</td>
+<td>
+
+The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:sqlite`
+
+</td>
+<td>
+
+The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:pty`
+
+</td>
+<td>
+
+The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>

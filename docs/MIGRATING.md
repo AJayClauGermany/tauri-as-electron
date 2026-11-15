@@ -10,7 +10,7 @@ halves install straight from this GitHub repository.
 | `main.js` with `require('electron')` or `import … from 'electron'` | The same file, run by Tauri in a hidden window |
 | a preload script, renderer pages with `<script src>` | The same files, bundled by Vite (or [webpack / rspack](#webpack-and-rspack), if that is what the project uses) and loaded into Tauri windows |
 | `electron-builder` / Forge config | `src-tauri/tauri.conf.json` + `cargo`, via `tauri build` |
-| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline` and most smaller built-ins work; sockets (`net`, `tls`, `dns`), `vm`, `worker_threads` and native modules do not yet. See [Node.js code](#4-nodejs-code) |
+| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline` and most smaller built-ins work; sockets (`net`, `tls`, `dns`), `vm`, `worker_threads` and native modules do not yet (except `keytar`, `better-sqlite3` / `sqlite3` and `node-pty`, re-implemented in Rust). See [Node.js code](#4-nodejs-code) |
 
 Requirements: Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
@@ -451,6 +451,36 @@ page holds handles and gets data over a channel.
 - The HTTP *client* still goes through tauri-plugin-http, so `http.get`
   does not hand out a socket (`req.socket` is null).
 
+### Native modules: `keytar`, `better-sqlite3`, `sqlite3`, `node-pty`
+
+npm packages with native code (`.node` addons) cannot load in a webview.
+tauri-electron re-implements four common ones in Rust, and the bundler
+plugins (and `require()`) alias them, so `import Database from
+'better-sqlite3'` or `require('node-pty')` keeps working without the
+package installed. Like the Node built-ins, they answer the main process
+and windows created with `nodeIntegration` / `sandbox: false`, and each is
+a Cargo feature (`--into` enables the ones your `package.json` depends on;
+the template lists them commented out):
+
+```toml
+  "keytar",             # keytar: passwords in the OS keychain
+  "sqlite",             # better-sqlite3 / sqlite3: SQLite compiled in (needs a C compiler)
+  "pty",                # node-pty: pseudo-terminals; runs arbitrary programs
+```
+
+| Package | What differs |
+| --- | --- |
+| `keytar` | Nothing in the API. Entries are stored where keytar stores them (Keychain generic passwords, Windows credentials named `<service>/<account>`, Secret Service items with keytar's attributes), so passwords the Electron build saved are still found. Without a keychain (Linux without a Secret Service) every call rejects, as keytar's does. |
+| `better-sqlite3` | Synchronous like the original: each call is a blocking request to Rust (rusqlite). `iterate()` reads all rows before yielding. `db.function()` suits deterministic functions only: SQLite cannot call into the page while it waits, so the statement runs again with the results the page computed, once per distinct argument list. `aggregate`, `table` and `loadExtension` throw. |
+| `sqlite3` | The callback API; operations run one after another per database, off the main thread. No `'change'` event, `loadExtension` or `Backup`. |
+| `node-pty` | `spawn` throws when the program cannot start (node-pty's Unix child prints the error and exits 1). No `uid` / `gid`, no `open()`. |
+
+Databases and terminals a page opened are closed when the page reloads,
+as when a Node process restarts. Forks published under other names
+(`@homebridge/node-pty-prebuilt-multiarch`, …) are not aliased
+automatically: alias them to `tauri-electron/node-pty` & co. in your
+bundler config, if they keep the original's API.
+
 ### Everything else
 
 - `require('vm')` / `import { Worker } from 'worker_threads'` & co. do
@@ -495,7 +525,7 @@ whether to change your code, enable a feature, or stop looking:
 | `[tauri-electron] … failed: …` (console error) | A Tauri call behind a fire-and-forget Electron API rejected. The message is translated when it is a permission or feature problem. | Read the translated message. |
 | `plugin X not found` in a stack trace | Same as `reason: 'feature'`, seen raw. | Enable the feature. |
 | `Failed to resolve module specifier "fs"` in the browser console | A Node built-in imported from a page the Vite plugin did not process (e.g. a `<script>` tag loaded from outside the project). | Let Vite bundle the file, or drop the import. |
-| `Module not found: Can't resolve 'x'` from webpack / rspack | A dependency your Electron build left to Node (`externals`, a native module). | Remove it from `externals` in the Tauri config so it is bundled, or replace the native module. |
+| `Module not found: Can't resolve 'x'` from webpack / rspack | A dependency your Electron build left to Node (`externals`, a native module). | Remove it from `externals` in the Tauri config so it is bundled, or replace the native module (`keytar`, `better-sqlite3`, `sqlite3` and `node-pty` are aliased to Rust versions: enable their feature). |
 
 Everything Electron accepts but behaves differently here is marked 🟡 in
 [API-COVERAGE.md](API-COVERAGE.md), with the difference spelled out. The

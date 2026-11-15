@@ -161,6 +161,22 @@ function ensureGitignore(dir) {
 
 // --- the Tauri side (shared by both modes) -------------------------------------------------------
 
+/** npm packages with native code that tauri-plugin-electron re-implements, and their Cargo feature. */
+const NATIVE_MODULE_FEATURES = { keytar: 'keytar', 'better-sqlite3': 'sqlite', sqlite3: 'sqlite', 'node-pty': 'pty' }
+
+/** The Cargo features an app needs for the native modules among its dependencies. */
+export function nativeModuleFeatures(deps = {}) {
+  return [...new Set(Object.keys(NATIVE_MODULE_FEATURES).filter((name) => deps[name]).map((name) => NATIVE_MODULE_FEATURES[name]))]
+}
+
+/** Uncomment the template's lines for `features` in src-tauri/Cargo.toml. */
+function enableFeatures(tauriDir, features) {
+  replaceInFile(
+    path.join(tauriDir, 'Cargo.toml'),
+    features.map((feature) => [new RegExp(`^  # ("${feature}",)`, 'm'), '  $1']),
+  )
+}
+
 /** Rename the template's Rust crate and point it at tauri-plugin-electron. */
 function configureTauri(appDir, { name, productName, identifier, version, specs }) {
   const crate = name.replace(/-/g, '_')
@@ -417,12 +433,15 @@ function addToProject(dir, options) {
 
   // src-tauri/ from the template, renamed.
   const tauriDir = path.join(appDir, 'src-tauri')
+  // keytar, better-sqlite3, sqlite3, node-pty: the Rust features that replace them.
+  const nativeFeatures = nativeModuleFeatures({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.devDependencies })
   if (fs.existsSync(tauriDir) && !options.force) {
     skipped.push('src-tauri/')
   } else {
     fs.mkdirSync(tauriDir, { recursive: true })
     copyTree(path.join(template, 'src-tauri'), tauriDir, { force: true, onCopy: (f) => written.push(path.relative(appDir, f)) })
     configureTauri(appDir, { name, productName, identifier, version: pkg.version, specs })
+    enableFeatures(tauriDir, nativeFeatures)
   }
 
   pkg.dependencies = { ...(pkg.dependencies ?? {}), 'tauri-electron': specs.npm }
@@ -533,7 +552,12 @@ ${pageNote}
     vm, worker_threads and http2 do not exist yet:
     see ${REPO_URL}/blob/main/docs/MIGRATING.md
   - src-tauri/Cargo.toml: enable "single-instance" if you call
-    app.requestSingleInstanceLock(), "updater" for autoUpdater.
+    app.requestSingleInstanceLock(), "updater" for autoUpdater.${
+      nativeFeatures.length
+        ? `\n  - keytar / better-sqlite3 / sqlite3 / node-pty are replaced by Rust:
+    enabled ${nativeFeatures.map((f) => `"${f}"`).join(', ')} in src-tauri/Cargo.toml.`
+        : ''
+    }
 `)
 }
 

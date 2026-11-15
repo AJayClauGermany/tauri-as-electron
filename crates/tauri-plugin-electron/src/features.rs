@@ -38,7 +38,10 @@ pub fn enabled() -> Vec<&'static str> {
         "node-os",
         "node-child-process",
         "node-net",
-        "node-tls"
+        "node-tls",
+        "keytar",
+        "sqlite",
+        "pty"
     );
     // Desktop-only plugins are not built on mobile.
     if !cfg!(desktop) {
@@ -228,6 +231,7 @@ fn main_permissions() -> Vec<Value> {
     if cfg!(feature = "node-net") {
         add(&[json!("electron:node-net")]);
     }
+    add(&crate::node_windows::native_module_permissions());
     permissions
 }
 
