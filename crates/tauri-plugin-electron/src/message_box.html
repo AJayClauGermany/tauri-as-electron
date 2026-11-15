@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<style>
+  :root { color-scheme: light dark; --bg: #f3f3f3; --fg: #1d1d1f; --muted: #555; --btn: #fff; --btn-border: #c8c8c8; --accent: #0a64d8; --accent-fg: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #2b2b2b; --fg: #f2f2f2; --muted: #b8b8b8; --btn: #3a3a3a; --btn-border: #555; --accent: #3b8cf0; } }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Ubuntu, Cantarell, sans-serif; user-select: none; cursor: default; }
+  main { display: flex; flex-direction: column; gap: 14px; padding: 18px 18px 14px; box-sizing: border-box; width: max-content; min-width: 420px; max-width: 640px; }
+  .body { display: flex; gap: 14px; align-items: flex-start; }
+  .icon { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff; }
+  .icon.info, .icon.none { background: #2f7bd8; } .icon.question { background: #6a5acd; } .icon.warning { background: #e0a800; } .icon.error { background: #d93025; }
+  .icon.none { display: none; }
+  .message { font-weight: 600; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+  .detail { margin-top: 6px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+  label { display: flex; gap: 6px; align-items: center; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  button { font: inherit; min-width: 76px; padding: 5px 14px; border-radius: 5px; border: 1px solid var(--btn-border); background: var(--btn); color: var(--fg); }
+  button.default { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="body"><div class="icon" id="icon"></div><div><div class="message" id="message"></div><div class="detail" id="detail"></div></div></div>
+  <label id="checkbox-row" hidden><input type="checkbox" id="checkbox"><span id="checkbox-label"></span></label>
+  <div class="buttons" id="buttons"></div>
+</main>
+<script>
+(() => {
+  const options = __OPTIONS__
+  const id = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop())
+  const base = '/message-box/' + encodeURIComponent(id)
+  const $ = (name) => document.getElementById(name)
+  const type = options.type || 'none'
+  const icon = $('icon')
+  icon.className = 'icon ' + type
+  icon.textContent = { info: 'i', question: '?', warning: '!', error: '×' }[type] || ''
+  $('message').textContent = options.message || ''
+  $('detail').textContent = options.detail || ''
+  if (!options.detail) $('detail').hidden = true
+  const checkbox = $('checkbox')
+  if (options.checkboxLabel) {
+    $('checkbox-row').hidden = false
+    $('checkbox-label').textContent = options.checkboxLabel
+    checkbox.checked = Boolean(options.checkboxChecked)
+  }
+  let done = false
+  const answer = (response) => {
+    if (done) return
+    done = true
+    fetch(base + '/result?response=' + response + '&checked=' + checkbox.checked).catch(() => {})
+  }
+  const buttons = options.buttons && options.buttons.length ? options.buttons : ['OK']
+  const defaultId = Number.isInteger(options.defaultId) ? options.defaultId : -1
+  buttons.forEach((text, index) => {
+    const button = document.createElement('button')
+    button.textContent = String(text).replace(/&(.)/g, '$1')
+    if (index === defaultId) button.className = 'default'
+    button.addEventListener('click', () => answer(index))
+    $('buttons').appendChild(button)
+  })
+  addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); answer(options.cancelId ?? 0) }
+    else if (event.key === 'Enter' && defaultId >= 0 && !(event.target instanceof HTMLButtonElement)) { event.preventDefault(); answer(defaultId) }
+  })
+  addEventListener('contextmenu', (event) => event.preventDefault())
+  const focus = $('buttons').children[defaultId >= 0 ? defaultId : 0]
+  const main = document.querySelector('main')
+  // Not requestAnimationFrame: the window is hidden until it has its size, and hidden pages get no frames.
+  const rect = main.getBoundingClientRect()
+  fetch(base + '/size?w=' + Math.ceil(Math.max(rect.width, main.scrollWidth)) + '&h=' + Math.ceil(Math.max(rect.height, main.scrollHeight)))
+    .then(() => focus && focus.focus())
+    .catch(() => {})
+})()
+</script>
+</body>
+</html>

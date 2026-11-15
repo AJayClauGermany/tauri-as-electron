@@ -12,7 +12,10 @@ features alone: no Rust code or capability files to edit.
 // src-tauri/src/lib.rs
 pub fn run() {
     tauri_plugin_electron::Builder::new()
-        .protocol("app") // one per scheme passed to protocol.handle()
+        // The schemes your JavaScript passes to protocol.handle(), found by
+        // the bundler plugin (src-tauri/electron-schemes.json, see build.rs).
+        .protocols(tauri_plugin_electron::bundled_schemes!())
+        .protocol("app") // or one by one
         .install(tauri::Builder::default())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -26,7 +29,9 @@ tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-ele
 
 `src-tauri/build.rs` needs a few lines so Tauri sees the permissions of the
 plugins registered for you (Cargo only exposes a build script to its direct
-dependencies); copy it from the [template](../../templates/tauri-electron-app/src-tauri/build.rs).
+dependencies), and passes `src-tauri/electron-schemes.json` (written by the
+bundler plugins) on to `bundled_schemes!()`; copy it from the
+[template](../../templates/tauri-electron-app/src-tauri/build.rs).
 `npx github:AJayClauGermany/tauri-as-electron --into .` writes all of this
 for you. Pin with `tag = "v0.1.0"` (or `branch`, `rev`); keep the JavaScript
 half (`tauri-electron`) at the same ref.
@@ -37,7 +42,7 @@ half (`tauri-electron`) at the same ref.
 | --- | --- | --- | --- |
 | `dialog` | on | `dialog` (including `*Sync`) | `tauri-plugin-dialog` |
 | `clipboard` | on | `clipboard` (`readHTML` and the synchronous reads of Electron < 45 with `arboard`) | `tauri-plugin-clipboard-manager` |
-| `notification` | on | `Notification` | `tauri-plugin-notification` |
+| `notification` | on | `Notification`, with `click` / `action` (and `close` on Linux) on desktop | `tauri-plugin-notification` |
 | `shell` | on | `shell.openExternal`, `openPath`, `showItemInFolder` | `tauri-plugin-opener` |
 | `net` | on | `net.fetch`, `net.request` | `tauri-plugin-http` |
 | `global-shortcut` | on | `globalShortcut` | `tauri-plugin-global-shortcut` |
@@ -45,10 +50,13 @@ half (`tauri-electron`) at the same ref.
 | `protocol-client` | on | `app.setAsDefaultProtocolClient` & co. | `tauri-plugin-deep-link` |
 | `login-item` | on | `app.setLoginItemSettings` / `getLoginItemSettings` | `tauri-plugin-autostart` |
 | `power-save-blocker` | on | `powerSaveBlocker` with operating-system assertions | `keepawake` crate |
+| `power-monitor` | on | `powerMonitor` system events (logind / screen saver on Linux) and idle time | `zbus` on Linux (already in the build) |
+| `safe-storage` | on | `safeStorage` with a key in the OS keychain (AES-256-GCM) | `keyring`, `aes-gcm` crates |
 | `single-instance` | off | `app.requestSingleInstanceLock`, `second-instance` | `tauri-plugin-single-instance` |
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |
-| `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process | none (`std::fs`, in this crate) |
+| `macos-proxy` | off | `session.setProxy` on macOS (14+) | Tauri's `macos-proxy` feature |
+| `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process (`fs.watch` included) | `notify` crate (`std::fs` for the rest) |
 | `node-os` | off, listed by the template | Node's `os` | `sysinfo` crate |
 | `node-child-process` | off, listed by the template | Node's `child_process` | none (`std::process`, in this crate) |
 | `node-net` | off, listed by the template | Node's `net`, `dgram`, `dns`, and the HTTP servers | `tokio`, `socket2`, `hickory-resolver` |
@@ -73,6 +81,11 @@ first, so a second launch exits before anything else starts), then grants:
 - `electron-renderer` (every window): IPC, zoom, `window.close()` and
   `-webkit-app-region` dragging, like a context-isolated, sandboxed
   Electron renderer.
+- `electron-node-<label>` (added at runtime): the `node-*` permissions of
+  the enabled features, for a window the main process creates with
+  `nodeIntegration: true` or `sandbox: false`. Only `electron-main` can
+  configure windows (`set_window_config`), and the Node built-ins also check
+  the grant in Rust.
 
 Add capability files in `src-tauri/capabilities/` for anything more, or call
 `.default_capabilities(false)` to manage every permission yourself.
@@ -85,13 +98,19 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `ipcRenderer.sendSync` + `event.returnValue` | A blocking `XMLHttpRequest` to the `tauri-electron://` scheme, forwarded to the main window, which answers with `bridge_respond` |
 | `webPreferences.additionalArguments` (renderer `process.argv`) | `set_window_config` before the window is created; the renderer reads it synchronously from the scheme |
 | `dialog.showOpenDialogSync`, `showSaveDialogSync`, `showMessageBoxSync` | Blocking `tauri-plugin-dialog` calls behind the scheme (main window only; `dialog` feature) |
+| `dialog.showMessageBox` / `showMessageBoxSync` with more than three buttons or `checkboxLabel` | A small window (`src/message_box.rs`) whose page the scheme serves (`message-box/<id>`); the page reports its size and the answer over the same scheme. `message_box` / `message_box_close` commands, `dialog/message-window` on the scheme for the blocking variant |
 | Node's `fs` (`node-fs` feature) | `fs.*Sync`: `node/fs/<op>` on the scheme, answered from a worker thread. `fs.promises` and callbacks: the `node_fs` command (raw body, off the main thread). One implementation (`src/node_fs.rs`) behind both. Refused unless the caller is `electron-main` showing the app's own page |
+| `fs.watch`, `fs.promises.watch` (`node-fs` feature) | `node/fs/watch` on the scheme creates a notify watcher synchronously (events are kept until JavaScript attaches); the `fs_watch` command attaches a Channel that carries `rename` / `change` events, `fs_unwatch` stops it (`src/node_fs_watch.rs`) |
+| `safeStorage` (`safe-storage` feature) | A random 256-bit key in the OS keychain (`keyring`: Keychain, Credential Manager, Secret Service), read on a worker thread with a 10 s limit; AES-256-GCM. `encryptString` / `decryptString` over `safe-storage/<op>` on the scheme, the async variants over `safe_storage_*` commands; main window only (`src/safe_storage.rs`) |
 | Node's `os` (`node-os` feature) | `node/os/<op>` on the scheme (`src/node_os.rs`) |
 | Node's `child_process` (`node-child-process` feature) | `spawnSync`: `node/child_process/spawnSync` on the scheme, stdin in the request body, both outputs in the answer. `spawn`: the `child_spawn` command with a Channel for output and exit, then `child_write`, `child_end`, `child_kill` (`src/node_child_process.rs`) |
 | Node's `net`, `tls`, `dgram`, `dns` (`node-net`, `node-tls` features) | A handle table of tokio sockets (`src/node_net.rs`). `net_connect`, `net_listen`, `udp_bind` take a Channel that carries data, end, errors and accepted connections; `net_write` resolves once the bytes are flushed; `net_pause` stops reading in Rust. TLS is rustls on the same sockets (`src/node_tls.rs`); `dns_lookup` is the OS resolver, `dns_resolve` / `dns_reverse` use hickory-resolver (`src/node_dns.rs`) |
-| `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` are forwarded to the main window's handler |
+| `protocol.handle(scheme, handler)` | Schemes declared with `Builder::protocol` / `protocols(bundled_schemes!())` are forwarded to the main window's handler |
 | `webContents.openDevTools`, `closeDevTools`, `isDevToolsOpened` | `WebviewWindow::open_devtools` (debug builds, or the `devtools` feature) |
 | `shell.trashItem` | The [`trash`](https://crates.io/crates/trash) crate |
+| `new BrowserWindow()` | `create_window`: Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's `new WebviewWindow()`, plus the hooks below (`src/windows.rs`) |
+| `session.on('will-download')`, `DownloadItem`, `downloadURL` | Downloads go to a temporary file, moved to the save path by `download_commit`. Page downloads: WebKitGTK's download signals (Linux), `on_download` (Windows, macOS). `download_url`: a reqwest transfer with the window's cookies (`net` feature) that can pause and cancel (`src/downloads.rs`) |
+| `session.setPermissionRequestHandler` | WebKitGTK's `permission-request`, answered when the handler calls back (Linux); `on_permission_request` answered from the handler's earlier decisions (Windows, macOS) (`src/permissions.rs`) |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
 

@@ -22,6 +22,9 @@ import { applyProcessInfo, platform } from '../process.js'
 import { loadProcessInfo, processInfo, hasFeature, hasNativePlugin } from '../internal/native.js'
 import { addRealRoots, appRoot } from '../internal/app-files.js'
 import { BrowserWindow, onPageLoad } from './browser-window.js'
+import { defaultSession } from './session.js'
+import { configureDownloads, onDownloadEvent } from './downloads.js'
+import { onPermissionRequest } from './permissions.js'
 import { Menu } from './menu.js'
 import { startMainBridge } from './ipc-main.js'
 import { initNativeTheme } from './native-theme.js'
@@ -129,6 +132,8 @@ class App extends EventEmitter {
         this.emit('second-instance', createEvent(), payload.argv ?? [], payload.cwd ?? '', {}),
       ),
       webview.listen('tauri-electron:opened', ({ payload }) => this._onOpened(payload)),
+      webview.listen('tauri-electron:download', ({ payload }) => onDownloadEvent(payload)),
+      webview.listen('tauri-electron:permission-request', ({ payload }) => onPermissionRequest(payload)),
       initNativeTheme(),
       initScreen(),
     ])
@@ -331,13 +336,13 @@ class App extends EventEmitter {
     if (path) this._paths.logs = path
   }
 
-  resolveProxy() {
-    return Promise.resolve('DIRECT')
+  /** The default session's proxy (Electron's app.setProxy also covers utility processes). */
+  resolveProxy(url) {
+    return defaultSession.resolveProxy(url)
   }
 
-  setProxy() {
-    warnOnce('app.setProxy', 'app.setProxy() is ignored; Tauri webviews use the system proxy.')
-    return Promise.resolve()
+  setProxy(config) {
+    return defaultSession.setProxy(config)
   }
 
   isAccessibilitySupportEnabled() {
@@ -523,6 +528,16 @@ class App extends EventEmitter {
 }
 
 export const app = new App()
+
+configureDownloads({
+  getDownloadsPath: () => {
+    try {
+      return app.getPath('downloads')
+    } catch {
+      return ''
+    }
+  },
+})
 
 // Re-emit window lifecycle events on `app`, like Electron does.
 bus.on('browser-window-created', (win) => app.emit('browser-window-created', createEvent(), win))

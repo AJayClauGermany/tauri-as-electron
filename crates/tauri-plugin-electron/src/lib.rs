@@ -14,7 +14,8 @@
 //!   are forwarded to the JavaScript handler registered in the main process.
 //! - **Node built-ins** that need the operating system (`fs`, `os` and
 //!   `child_process`, `net`, `dgram`, `dns`, `tls`, each behind a `node-*`
-//!   feature): the synchronous variants over the bridge
+//!   feature; in the main window and in windows created with `nodeIntegration`
+//!   or `sandbox: false`, see `node_windows.rs`): the synchronous variants over the bridge
 //!   (`node/<module>/<op>`), the asynchronous ones over commands (`node_fs`,
 //!   `child_spawn`, `net_connect` & co.).
 //! - **DevTools** (`webContents.openDevTools()` and friends),
@@ -22,6 +23,9 @@
 //!   `clipboard.readHTML` (and the synchronous clipboard reads of Electron
 //!   < 45), `screen.getCursorScreenPoint()` (synchronous, over the bridge)
 //!   and `powerSaveBlocker` (operating-system assertions).
+//! - **BrowserWindows created in Rust** (`create_window`), for what Tauri only
+//!   offers on the webview builder: downloads (`will-download`, `downloadURL`)
+//!   and `setPermissionRequestHandler`.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
 //!   events for every window, including remote pages), macOS `activate`,
 //!   `open-file` / `open-url`, and `second-instance` (with the
@@ -43,7 +47,10 @@ use std::{
 #[cfg(all(desktop, feature = "clipboard"))]
 mod clipboard;
 mod cookies;
+mod downloads;
 mod features;
+#[cfg(desktop)]
+mod message_box;
 #[cfg(feature = "node-child-process")]
 mod node_child_process;
 #[cfg(any(
@@ -57,6 +64,8 @@ mod node_common;
 mod node_dns;
 #[cfg(feature = "node-fs")]
 mod node_fs;
+#[cfg(feature = "node-fs")]
+mod node_fs_watch;
 #[cfg(feature = "node-net")]
 mod node_net;
 mod node_net_commands;
@@ -64,8 +73,17 @@ mod node_net_commands;
 mod node_os;
 #[cfg(feature = "node-tls")]
 mod node_tls;
+mod node_windows;
+#[cfg(all(desktop, feature = "notification"))]
+mod notification;
+mod permissions;
 #[cfg(all(desktop, feature = "power-save-blocker"))]
 mod power;
+#[cfg(all(desktop, feature = "power-monitor"))]
+mod power_monitor;
+#[cfg(feature = "safe-storage")]
+mod safe_storage;
+mod windows;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -355,6 +373,53 @@ fn handle_bridge<R: Runtime>(
                 SYNC_TIMEOUT,
             );
         }
+        // dialog.showMessageBoxSync() with options native dialogs lack:
+        // blocks until the message-box window answers.
+        "dialog/message-window" => {
+            #[cfg(desktop)]
+            {
+                if label != MAIN_LABEL {
+                    respond(
+                        responder,
+                        403,
+                        "text/plain",
+                        b"dialogs are main-process only".to_vec(),
+                    );
+                    return;
+                }
+                let body = request.body().clone();
+                thread::spawn(move || {
+                    let answer = serde_json::from_slice::<message_box::Options>(&body)
+                        .map_err(|e| e.to_string())
+                        .and_then(|options| message_box::open(&app, options))
+                        .and_then(|receiver| receiver.recv().map_err(|e| e.to_string()));
+                    match answer {
+                        Ok(value) => respond_json(responder, 200, &value),
+                        Err(error) => respond(responder, 500, "text/plain", error.into_bytes()),
+                    }
+                });
+            }
+            #[cfg(not(desktop))]
+            respond(
+                responder,
+                501,
+                "text/plain",
+                b"not supported on this platform".to_vec(),
+            );
+        }
+        // The message-box window's own page, size and answer.
+        p if p.starts_with("message-box/") => {
+            #[cfg(desktop)]
+            {
+                let query = request.uri().query().unwrap_or("").to_string();
+                match message_box::bridge(&app, &label, p, &query) {
+                    Some((content_type, body)) => respond(responder, 200, &content_type, body),
+                    None => respond(responder, 404, "text/plain", Vec::new()),
+                }
+            }
+            #[cfg(not(desktop))]
+            respond(responder, 404, "text/plain", Vec::new());
+        }
         p if p.starts_with("dialog/") => {
             #[cfg(all(desktop, feature = "dialog"))]
             {
@@ -424,11 +489,86 @@ fn handle_bridge<R: Runtime>(
                 );
             }
         }
+        // powerMonitor.getSystemIdleTime() / getSystemIdleState(), synchronous in Electron.
+        "power/idle" => {
+            #[cfg(all(desktop, feature = "power-monitor"))]
+            thread::spawn(move || {
+                respond_json(
+                    responder,
+                    200,
+                    &app.state::<power_monitor::Monitor>().idle(),
+                )
+            });
+            #[cfg(not(all(desktop, feature = "power-monitor")))]
+            {
+                let _ = app;
+                respond_json(responder, 200, &json!({ "idle": null, "locked": null }));
+            }
+        }
+        // safeStorage.encryptString() & co., synchronous like Electron's.
+        p if p.starts_with("safe-storage/") => {
+            let query = request.uri().query().unwrap_or("").to_string();
+            handle_safe_storage(&app, &label, p, &query, request.body().clone(), responder);
+        }
         p if p.starts_with("node/") => {
             let query = request.uri().query().unwrap_or("").to_string();
             handle_node(&app, &label, p, &query, request.body().clone(), responder);
         }
         _ => respond(responder, 404, "text/plain", Vec::new()),
+    }
+}
+
+/// `safe-storage/<op>`: `status` (JSON), `encrypt` (text in, bytes out),
+/// `decrypt` (bytes in, text out), `plain-text?on=<bool>`. Main process only.
+fn handle_safe_storage<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+    path: &str,
+    query: &str,
+    body: Vec<u8>,
+    responder: UriSchemeResponder,
+) {
+    if label != MAIN_LABEL {
+        return respond(
+            responder,
+            403,
+            "text/plain",
+            b"safeStorage is main-process only".to_vec(),
+        );
+    }
+    #[cfg(feature = "safe-storage")]
+    {
+        let op = path.trim_start_matches("safe-storage/").to_string();
+        let on = query.split('&').any(|pair| pair == "on=true");
+        let app = app.clone();
+        // The first call may wait for the keychain: never on the main thread.
+        thread::spawn(move || {
+            let storage = app.state::<safe_storage::SafeStorage>();
+            let result = match op.as_str() {
+                "status" => Ok(storage.status().to_string().into_bytes()),
+                "encrypt" => storage.encrypt(&body),
+                "decrypt" => storage.decrypt(&body),
+                "plain-text" => {
+                    storage.set_use_plain_text(on);
+                    Ok(Vec::new())
+                }
+                other => Err(format!("unknown safeStorage operation '{other}'")),
+            };
+            match result {
+                Ok(bytes) => respond(responder, 200, "application/octet-stream", bytes),
+                Err(error) => respond(responder, 500, "text/plain", error.into_bytes()),
+            }
+        });
+    }
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = (app, path, query, body);
+        respond(
+            responder,
+            501,
+            "text/plain",
+            b"enable the `safe-storage` feature of tauri-plugin-electron".to_vec(),
+        );
     }
 }
 
@@ -451,16 +591,20 @@ fn is_app_page<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
 }
 
 /// Why a native Node built-in may not run for this caller, if it may not.
+/// The main window, and renderer windows created with `nodeIntegration` or an
+/// unsandboxed preload (see `node_windows.rs`), while they show the app's page.
 fn node_refusal<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<Value> {
-    if label != MAIN_LABEL {
+    let main = label == MAIN_LABEL;
+    if !main && !app.state::<node_windows::NodeWindows>().is_granted(label) {
         return Some(
-            json!({ "code": "ERR_ACCESS_DENIED", "message": "Node built-ins that use the operating system are only available in the main process" }),
+            json!({ "code": "ERR_ACCESS_DENIED", "message": "Node built-ins that use the operating system are only available in the main process and in windows created with nodeIntegration (or sandbox: false)" }),
         );
     }
     if !is_app_page(app, label) {
-        return Some(
-            json!({ "code": "ERR_ACCESS_DENIED", "message": "the main window is not showing the app's own page" }),
-        );
+        return Some(json!({
+            "code": "ERR_ACCESS_DENIED",
+            "message": if main { "the main window is not showing the app's own page" } else { "the window is not showing the app's own page" },
+        }));
     }
     None
 }
@@ -500,8 +644,19 @@ fn handle_node<R: Runtime>(
                         .ok();
                     return respond_json(responder, 200, &json!(dir));
                 }
+                // fs.watch: the watcher exists when fs.watch() returns. Off
+                // the main thread: a recursive watch walks the whole tree.
+                if op == "watch" {
+                    let owner = label.to_string();
+                    thread::spawn(move || match node_fs_watch::watch(&owner, &args) {
+                        Ok(value) => respond_json(responder, 200, &value),
+                        Err(error) => respond_json(responder, 400, &json!(error)),
+                    });
+                    return;
+                }
                 let op = op.to_string();
-                thread::spawn(move || match node_fs::run(&op, &args, &body) {
+                let owner = label.to_string();
+                thread::spawn(move || match node_fs::run_for(&owner, &op, &args, &body) {
                     Ok(node_fs::Output::Bytes(bytes)) => {
                         respond(responder, 200, "application/octet-stream", bytes)
                     }
@@ -668,13 +823,35 @@ fn process_info<R: Runtime>(app: AppHandle<R>) -> ProcessInfo {
     }
 }
 
+/// What a window's renderer bootstrap reads before the preload runs, and
+/// (`node: true`) whether it gets Node built-ins. Only the main process may
+/// configure windows: a renderer must not grant itself Node.
 #[tauri::command]
-fn set_window_config(bridge: State<'_, SharedBridge>, label: String, config: Option<Value>) {
+fn set_window_config<R: Runtime>(
+    webview: tauri::Webview<R>,
+    bridge: State<'_, SharedBridge>,
+    label: String,
+    config: Option<Value>,
+) -> Result<(), String> {
+    if webview.label() != MAIN_LABEL {
+        return Err("windows are configured by the main process only".into());
+    }
+    let node = config
+        .as_ref()
+        .and_then(|c| c.get("node"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if node {
+        node_windows::grant(webview.app_handle(), &label)?;
+    } else {
+        webview.state::<node_windows::NodeWindows>().revoke(&label);
+    }
     let mut map = bridge.window_config.lock().unwrap();
     match config {
         Some(config) => map.insert(label, config),
         None => map.remove(&label),
     };
+    Ok(())
 }
 
 #[tauri::command]
@@ -777,6 +954,44 @@ async fn cookies_remove<R: Runtime>(
     cookies::remove(&cookie_webview(&app, &label)?, &url, &name)
 }
 
+/// `dialog.showMessageBox()` with options native dialogs lack (more than
+/// three buttons, `checkboxLabel`, `defaultId`): a small window. Resolves to
+/// `{ response, checkboxChecked }` when it closes.
+#[tauri::command]
+async fn message_box<R: Runtime>(
+    webview: tauri::Webview<R>,
+    options: Value,
+) -> Result<Value, String> {
+    if webview.label() != MAIN_LABEL {
+        return Err("dialogs are main-process only".into());
+    }
+    #[cfg(desktop)]
+    {
+        let options: message_box::Options =
+            serde_json::from_value(options).map_err(|e| e.to_string())?;
+        let receiver = message_box::open(webview.app_handle(), options)?;
+        tauri::async_runtime::spawn_blocking(move || receiver.recv().map_err(|e| e.to_string()))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = options;
+        Err("not supported on this platform".into())
+    }
+}
+
+/// Dismiss a message box (`showMessageBox`'s `signal` aborted): it answers `cancelId`.
+#[tauri::command]
+fn message_box_close<R: Runtime>(webview: tauri::Webview<R>, id: String) {
+    #[cfg(desktop)]
+    if webview.label() == MAIN_LABEL {
+        message_box::close(webview.app_handle(), &id);
+    }
+    #[cfg(not(desktop))]
+    let _ = (webview, id);
+}
+
 /// `clipboard.readHTML()`.
 #[tauri::command]
 async fn clipboard_read_html() -> Result<String, String> {
@@ -812,6 +1027,47 @@ async fn power_blocker_stop<R: Runtime>(app: AppHandle<R>, id: u32) -> bool {
     {
         let _ = (app, id);
         false
+    }
+}
+
+/// `new Notification(options).show()` with `click` / `action` / `close` reported
+/// to the main process (`tauri-electron:notification`).
+#[tauri::command]
+async fn notification_show<R: Runtime>(app: AppHandle<R>, options: Value) -> Result<(), String> {
+    #[cfg(all(desktop, feature = "notification"))]
+    {
+        let options = serde_json::from_value(options).map_err(|e| e.to_string())?;
+        notification::show(&app, &app.state::<notification::State>(), options)
+    }
+    #[cfg(not(all(desktop, feature = "notification")))]
+    {
+        let _ = (app, options);
+        Err("enable the `notification` feature of tauri-plugin-electron".into())
+    }
+}
+
+/// `notification.close()`.
+#[tauri::command]
+async fn notification_close<R: Runtime>(app: AppHandle<R>, id: i32) -> Result<(), String> {
+    #[cfg(all(desktop, feature = "notification"))]
+    return notification::close(&app, id);
+    #[cfg(not(all(desktop, feature = "notification")))]
+    {
+        let _ = (app, id);
+        Err("enable the `notification` feature of tauri-plugin-electron".into())
+    }
+}
+
+/// Start reporting powerMonitor's system events (`tauri-electron:power-monitor`);
+/// returns the events this platform reports. Async: connecting to D-Bus blocks.
+#[tauri::command]
+async fn power_monitor_start<R: Runtime>(app: AppHandle<R>) -> Vec<&'static str> {
+    #[cfg(all(desktop, feature = "power-monitor"))]
+    return app.state::<power_monitor::Monitor>().start(&app);
+    #[cfg(not(all(desktop, feature = "power-monitor")))]
+    {
+        let _ = app;
+        Vec::new()
     }
 }
 
@@ -925,9 +1181,10 @@ async fn node_fs<R: Runtime>(
             );
         };
         let body = body.clone();
+        let owner = webview.label().to_string();
         let result = tauri::async_runtime::spawn_blocking(move || {
             let (op, args, data) = node_fs::parse_frame(&body)?;
-            node_fs::run(&op, &args, data)
+            node_fs::run_for(&owner, &op, &args, data)
         })
         .await
         .map_err(|e| json!({ "code": "ERR_INTERNAL", "message": e.to_string() }))?;
@@ -943,6 +1200,167 @@ async fn node_fs<R: Runtime>(
     {
         let _ = request;
         Err(json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-fs" }))
+    }
+}
+
+/// `fs.watch`: send the events of the watcher the bridge's `node/fs/watch`
+/// created to `on_event`. False when it is gone.
+#[tauri::command]
+fn fs_watch<R: Runtime>(
+    webview: tauri::Webview<R>,
+    id: u32,
+    on_event: tauri::ipc::Channel<Value>,
+) -> Result<bool, Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
+    #[cfg(feature = "node-fs")]
+    return Ok(node_fs_watch::attach(webview.label(), id, on_event));
+    #[cfg(not(feature = "node-fs"))]
+    {
+        let _ = (id, on_event);
+        Err(json!({ "code": "ERR_FEATURE_DISABLED", "feature": "node-fs" }))
+    }
+}
+
+/// `watcher.close()`.
+#[tauri::command]
+fn fs_unwatch<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<bool, Value> {
+    if let Some(refusal) = node_refusal(webview.app_handle(), webview.label()) {
+        return Err(refusal);
+    }
+    #[cfg(feature = "node-fs")]
+    return Ok(node_fs_watch::unwatch(webview.label(), id));
+    #[cfg(not(feature = "node-fs"))]
+    {
+        let _ = id;
+        Ok(false)
+    }
+}
+
+/// Page loads, for the lifetime of the files and watchers a page opened
+/// (see `node_fs::owners`): a load takes a stamp when it starts; once it has
+/// finished, what the webview opened before is closed, as a restarted Node
+/// process starts with nothing open. A load that never finishes, or that
+/// finishes back on the page already shown at another URL than it started
+/// for (a link that becomes a download, a cancelled navigation), closes
+/// nothing. Per label: the load under way, and the URL of the page shown.
+#[cfg(feature = "node-fs")]
+#[derive(Default)]
+struct PageLoads {
+    started: HashMap<String, (u64, String)>,
+    shown: HashMap<String, String>,
+}
+
+#[cfg(feature = "node-fs")]
+static PAGE_LOADS: std::sync::LazyLock<Mutex<PageLoads>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn node_page_started(label: &str, url: &str) {
+    #[cfg(feature = "node-fs")]
+    PAGE_LOADS.lock().unwrap().started.insert(
+        label.to_string(),
+        (node_fs::owners::stamp(), url.to_string()),
+    );
+    let _ = (label, url);
+}
+
+fn node_page_finished(label: &str, url: &str) {
+    #[cfg(feature = "node-fs")]
+    {
+        let stamp = {
+            let mut loads = PAGE_LOADS.lock().unwrap();
+            let load = loads.started.remove(label);
+            let shown = loads.shown.insert(label.to_string(), url.to_string());
+            match load {
+                // Back on the page that was shown: nothing replaced it.
+                Some((_, started)) if started != url && shown.as_deref() == Some(url) => None,
+                Some((stamp, _)) => Some(stamp),
+                None => None,
+            }
+        };
+        if let Some(stamp) = stamp {
+            node_fs::close_owned_before(label, stamp);
+            node_fs_watch::close_owned_before(label, stamp);
+        }
+    }
+    let _ = (label, url);
+}
+
+/// The window closed: everything its pages opened.
+fn node_window_closed(label: &str) {
+    #[cfg(feature = "node-fs")]
+    {
+        {
+            let mut loads = PAGE_LOADS.lock().unwrap();
+            loads.started.remove(label);
+            loads.shown.remove(label);
+        }
+        node_fs::close_owned_before(label, u64::MAX);
+        node_fs_watch::close_owned_before(label, u64::MAX);
+    }
+    let _ = label;
+}
+
+// safeStorage's asynchronous variants (and isAsyncEncryptionAvailable): the
+// same state as the bridge's `safe-storage/<op>`, off the main thread.
+
+#[cfg(feature = "safe-storage")]
+fn safe_storage_state<R: Runtime>(
+    webview: &tauri::Webview<R>,
+) -> Result<tauri::State<'_, safe_storage::SafeStorage>, String> {
+    if webview.label() != MAIN_LABEL {
+        return Err("safeStorage is main-process only".into());
+    }
+    Ok(webview.state::<safe_storage::SafeStorage>())
+}
+
+#[cfg(not(feature = "safe-storage"))]
+const SAFE_STORAGE_OFF: &str = "enable the `safe-storage` feature of tauri-plugin-electron";
+
+#[tauri::command]
+async fn safe_storage_status<R: Runtime>(webview: tauri::Webview<R>) -> Result<Value, String> {
+    #[cfg(feature = "safe-storage")]
+    return Ok(safe_storage_state(&webview)?.status());
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = webview;
+        Err(SAFE_STORAGE_OFF.into())
+    }
+}
+
+#[tauri::command]
+async fn safe_storage_encrypt<R: Runtime>(
+    webview: tauri::Webview<R>,
+    text: String,
+) -> Result<tauri::ipc::Response, String> {
+    #[cfg(feature = "safe-storage")]
+    return safe_storage_state(&webview)?
+        .encrypt(text.as_bytes())
+        .map(tauri::ipc::Response::new);
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = (webview, text);
+        Err(SAFE_STORAGE_OFF.into())
+    }
+}
+
+/// Ciphertext as base64 (JSON arrays of bytes are wasteful).
+#[tauri::command]
+async fn safe_storage_decrypt<R: Runtime>(
+    webview: tauri::Webview<R>,
+    data: String,
+) -> Result<String, String> {
+    #[cfg(feature = "safe-storage")]
+    {
+        let bytes = BASE64.decode(data.as_bytes()).map_err(|e| e.to_string())?;
+        let plain = safe_storage_state(&webview)?.decrypt(&bytes)?;
+        String::from_utf8(plain).map_err(|e| e.to_string())
+    }
+    #[cfg(not(feature = "safe-storage"))]
+    {
+        let _ = (webview, data);
+        Err(SAFE_STORAGE_OFF.into())
     }
 }
 
@@ -1031,6 +1449,17 @@ impl Builder {
         self
     }
 
+    /// Declare several schemes, typically the ones the bundler plugins found
+    /// in the app's JavaScript: `.protocols(tauri_plugin_electron::bundled_schemes!())`.
+    pub fn protocols<I, S>(mut self, schemes: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.protocols.extend(schemes.into_iter().map(Into::into));
+        self
+    }
+
     /// Register the plugin on an app builder, together with the official
     /// Tauri plugins of the enabled Cargo features (dialog, clipboard, ...,
     /// and opt-in ones such as `single-instance` and `updater`). Call it on
@@ -1066,9 +1495,19 @@ impl Builder {
                 cookies_set,
                 cookies_remove,
                 clipboard_read_html,
+                message_box,
+                message_box_close,
                 power_blocker_start,
                 power_blocker_stop,
+                notification_show,
+                notification_close,
+                power_monitor_start,
+                safe_storage_status,
+                safe_storage_encrypt,
+                safe_storage_decrypt,
                 node_fs,
+                fs_watch,
+                fs_unwatch,
                 child_spawn,
                 child_write,
                 child_end,
@@ -1087,12 +1526,29 @@ impl Builder {
                 node_net_commands::dns_lookup,
                 node_net_commands::dns_resolve,
                 node_net_commands::dns_reverse,
-                node_net_commands::dns_servers
+                node_net_commands::dns_servers,
+                windows::create_window,
+                windows::permission_handler,
+                windows::permission_respond,
+                windows::download_url,
+                windows::download_control,
+                windows::download_commit,
+                windows::download_discard
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                #[cfg(desktop)]
+                app.manage(message_box::Boxes::default());
+                app.manage(node_windows::NodeWindows::default());
+                windows::manage(app);
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
                 app.manage(power::Blockers::default());
+                #[cfg(all(desktop, feature = "notification"))]
+                app.manage(notification::State::default());
+                #[cfg(all(desktop, feature = "power-monitor"))]
+                app.manage(power_monitor::Monitor::default());
+                #[cfg(feature = "safe-storage")]
+                app.manage(safe_storage::SafeStorage::new(&app.package_info().name));
                 #[cfg(feature = "node-child-process")]
                 app.manage(SharedChildren::default());
                 #[cfg(feature = "node-net")]
@@ -1107,15 +1563,20 @@ impl Builder {
             // Navigation events for every window, including remote pages that
             // the renderer bootstrap cannot run in.
             .on_page_load(|webview, payload| {
+                // A reloaded page (the main process, or a window with Node)
+                // starts with no open files, as a restarted Node would.
+                let url = payload.url().as_str();
+                match payload.event() {
+                    PageLoadEvent::Started => node_page_started(webview.label(), url),
+                    PageLoadEvent::Finished => node_page_finished(webview.label(), url),
+                }
                 if webview.label() == MAIN_LABEL {
-                    // A reloaded main process starts with no open files, as a
-                    // restarted Node would: close what the previous page left open.
-                    #[cfg(feature = "node-fs")]
-                    if matches!(payload.event(), PageLoadEvent::Started) {
-                        node_fs::close_all();
-                    }
                     return;
                 }
+                // The origin permission decisions are kept for (Windows / macOS).
+                webview
+                    .state::<permissions::Permissions>()
+                    .page_loaded(webview.label(), payload.url().as_str());
                 let event = match payload.event() {
                     PageLoadEvent::Started => "started",
                     PageLoadEvent::Finished => "finished",
@@ -1136,12 +1597,21 @@ impl Builder {
                     let urls: Vec<String> = urls.iter().map(|u| u.to_string()).collect();
                     let _ = app.emit_to(MAIN_LABEL, "tauri-electron:opened", urls);
                 }
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } => node_window_closed(label),
                 _ => {
                     let _ = app;
                 }
             })
             .register_asynchronous_uri_scheme_protocol(BRIDGE_SCHEME, handle_bridge);
-        for scheme in self.protocols {
+        let mut schemes = self.protocols;
+        schemes.retain(|scheme| scheme != BRIDGE_SCHEME);
+        schemes.sort();
+        schemes.dedup();
+        for scheme in schemes {
             let name = scheme.clone();
             builder = builder.register_asynchronous_uri_scheme_protocol(
                 scheme,
@@ -1152,7 +1622,64 @@ impl Builder {
     }
 }
 
+/// The schemes in `electron-schemes.json`, as the app's build script hands
+/// them over (see [`bundled_schemes!`]). Invalid entries are skipped.
+pub fn schemes_from_json(json: Option<&str>) -> Vec<String> {
+    let Some(json) = json else {
+        return Vec::new();
+    };
+    let list: Vec<String> = serde_json::from_str(json).unwrap_or_default();
+    list.into_iter()
+        .map(|s| s.to_ascii_lowercase())
+        .filter(|s| {
+            let mut chars = s.chars();
+            chars.next().is_some_and(|c| c.is_ascii_lowercase())
+                && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "+.-".contains(c))
+        })
+        .collect()
+}
+
+/// The custom schemes the bundler plugins found in the app's JavaScript
+/// (`protocol.handle('app', …)`, `protocol.registerSchemesAsPrivileged`,
+/// and schemes of known libraries such as `@sentry/electron`'s
+/// `sentry-ipc`). They write `src-tauri/electron-schemes.json`; the app's
+/// build.rs passes it on as the `TAURI_ELECTRON_SCHEMES` compile-time
+/// variable:
+///
+/// ```ignore
+/// // build.rs
+/// println!("cargo:rerun-if-changed=electron-schemes.json");
+/// if let Ok(json) = std::fs::read_to_string("electron-schemes.json") {
+///     println!("cargo:rustc-env=TAURI_ELECTRON_SCHEMES={}", json.trim());
+/// }
+/// // lib.rs
+/// tauri_plugin_electron::Builder::new().protocols(tauri_plugin_electron::bundled_schemes!())
+/// ```
+///
+/// A macro so that the variable is read when the *app* is compiled.
+#[macro_export]
+macro_rules! bundled_schemes {
+    () => {
+        $crate::schemes_from_json(::core::option_env!("TAURI_ELECTRON_SCHEMES"))
+    };
+}
+
 /// The plugin with no custom protocols.
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new().build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::schemes_from_json;
+
+    #[test]
+    fn schemes_from_the_bundler() {
+        assert!(schemes_from_json(None).is_empty());
+        assert!(schemes_from_json(Some("not json")).is_empty());
+        assert_eq!(
+            schemes_from_json(Some(r#"["app", "Sentry-IPC", "bad scheme", "1x", ""]"#)),
+            vec!["app", "sentry-ipc"]
+        );
+    }
 }

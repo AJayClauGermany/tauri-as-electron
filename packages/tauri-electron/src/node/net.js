@@ -486,8 +486,18 @@ export class Server extends EventEmitter {
         this.once('close', callback)
       }
     }
-    if (this._id !== null) native('net_destroy', { id: this._id }).catch(() => {})
     const wasListening = this.listening
+    if (this._id !== null) {
+      // 'close' waits until the listener is closed in Rust, so the port
+      // refuses connections by then, as in Node.
+      this._listenerClosing = true
+      native('net_destroy', { id: this._id })
+        .catch(() => {})
+        .then(() => {
+          this._listenerClosing = false
+          this._maybeClosed()
+        })
+    }
     this.listening = false
     this._id = null
     this._closing = wasListening
@@ -496,7 +506,7 @@ export class Server extends EventEmitter {
   }
 
   _maybeClosed() {
-    if (this._closing && this._sockets.size === 0) {
+    if (this._closing && !this._listenerClosing && this._sockets.size === 0) {
       this._closing = false
       queueMicrotask(() => this.emit('close'))
     }

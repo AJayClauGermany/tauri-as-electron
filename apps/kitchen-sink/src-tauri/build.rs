@@ -10,5 +10,12 @@ fn main() {
             }
         }
     }
+    // Custom schemes of protocol.handle(), found in your JavaScript by the
+    // tauri-electron bundler plugin (src-tauri/electron-schemes.json), for
+    // tauri_plugin_electron::bundled_schemes!() in lib.rs.
+    println!("cargo:rerun-if-changed=electron-schemes.json");
+    if let Ok(json) = std::fs::read_to_string("electron-schemes.json") {
+        println!("cargo:rustc-env=TAURI_ELECTRON_SCHEMES={}", json.trim());
+    }
     tauri_build::build()
 }

@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-permission-handler"
+description = "Enables the permission_handler command without any pre-configured scope."
+commands.allow = ["permission_handler"]
+
+[[permission]]
+identifier = "deny-permission-handler"
+description = "Denies the permission_handler command without any pre-configured scope."
+commands.deny = ["permission_handler"]

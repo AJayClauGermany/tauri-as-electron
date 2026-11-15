@@ -66,6 +66,13 @@ const NODE_SHIMS = {
   'dns/promises': 'tauri-electron/dns/promises',
 }
 
+/** Electron helper packages tauri-electron replaces (aliased like `electron`). */
+const PACKAGE_SHIMS = {
+  '@electron/remote': 'tauri-electron/remote',
+  '@electron/remote/renderer': 'tauri-electron/remote/renderer',
+  '@electron/remote/main': 'tauri-electron/remote/main',
+}
+
 /** Dev-server endpoint the hidden main window posts its console output to. */
 const LOG_ENDPOINT = '/__tauri-electron/log'
 
@@ -81,7 +88,7 @@ const PATH_GLOBALS =
 
 // `require('x')` of a shimmed built-in, outside comments and strings.
 const BUILTIN_REQUIRE =
-  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|\brequire\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
+  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|(?<![.$\w])require\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
 
 /**
  * In a Vite (rolldown) build, CommonJS code that `require()`s an ES module
@@ -230,6 +237,33 @@ function electronMajor(root) {
   }
 }
 
+// --- Node built-ins in renderer pages -------------------------------------------------------
+
+/** `nodeIntegration: true` or `sandbox: false` in a BrowserWindow's webPreferences. */
+const NODE_WINDOW = /\bnodeIntegration\s*:\s*(?:true|!0)\b|\bsandbox\s*:\s*(?:false|!1)\b/
+const SCANNED_SOURCE = /\.(?:[cm]?[jt]sx?)$/i
+const SCAN_LIMIT = 20000
+
+/** Whether a project source file (outside dependencies and build output) asks for Node in a window. */
+function sourcesAskForNode(root, scan) {
+  return sourceScan(root, scan).node
+}
+
+/**
+ * Whether renderer pages load the Node layer (tauri-electron/renderer-node),
+ * which installs Node built-ins in windows the main process created with
+ * `nodeIntegration: true` or `sandbox: false`. `option` is the plugins'
+ * `rendererNode` option: true, false, or `'auto'` (default): when the app
+ * depends on Electron < 20 (unsandboxed preloads by default) or its sources
+ * mention `nodeIntegration: true` / `sandbox: false`.
+ */
+function rendererNode(root, option = 'auto', scan) {
+  if (option === true || option === false) return option
+  const electron = electronMajor(root)
+  if (electron !== null && electron < 20) return true
+  return sourcesAskForNode(root, scan)
+}
+
 /** Where the bundler plugins stage app files; tauri.conf.json maps it to the resource folder. */
 const STAGING_DIR = path.join('src-tauri', 'electron-resources')
 
@@ -292,9 +326,147 @@ function stageAppFiles(root, { resources, exclude = [] } = {}) {
   return count
 }
 
+// --- custom schemes (protocol.handle) ---------------------------------------------------------
+
+/**
+ * Schemes Tauri must know when the app is built: tauri-plugin-electron
+ * registers each one as a URI scheme protocol, forwarded to the handler
+ * `protocol.handle()` registers at runtime. The bundler plugins find them
+ * in the app's source and write them to `src-tauri/electron-schemes.json`,
+ * which the app's build.rs hands to `tauri_plugin_electron::bundled_schemes!()`.
+ */
+const SCHEMES_FILE = path.join('src-tauri', 'electron-schemes.json')
+
+/** Schemes that libraries register on their own, by package name. */
+const LIBRARY_SCHEMES = {
+  '@sentry/electron': ['sentry-ipc'],
+}
+
+/** Never registered: the webview's own schemes and Tauri's. */
+const RESERVED_SCHEMES = new Set([
+  'http', 'https', 'file', 'about', 'data', 'blob', 'ws', 'wss', 'javascript', 'mailto', 'ftp',
+  'tauri', 'tauri-electron', 'ipc', 'asset', 'chrome', 'chrome-extension', 'devtools', 'view-source',
+])
+
+const SCHEME_NAME = /^[a-z][a-z0-9+.-]*$/
+const QUOTED_SCHEME = /['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/
+// protocol.handle('x', …), protocol.registerFileProtocol('x', …), session.protocol.handle('x', …)
+const HANDLE_CALL = /\bprotocol\s*\.\s*(?:handle|register(?:String|Buffer|File|Http|Stream)Protocol)\s*\(\s*['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/g
+// protocol.registerSchemesAsPrivileged([{ scheme: 'x', … }, …])
+const PRIVILEGED_CALL = /\bregisterSchemesAsPrivileged\s*\(\s*\[([\s\S]*?)\]\s*\)/g
+const SCHEME_PROPERTY = /\bscheme\s*:\s*['"`]([a-zA-Z][a-zA-Z0-9+.-]*)['"`]/g
+const SCHEME_SOURCE = /\.(?:[cm]?[jt]sx?|vue|svelte)$/i
+
+/** The custom schemes a piece of source code passes to `protocol`. */
+function schemesInSource(code) {
+  const found = new Set()
+  if (!code.includes('rotocol') && !code.includes('registerSchemesAsPrivileged')) return found
+  for (const match of code.matchAll(HANDLE_CALL)) found.add(match[1].toLowerCase())
+  for (const call of code.matchAll(PRIVILEGED_CALL)) {
+    for (const match of call[1].matchAll(SCHEME_PROPERTY)) found.add(match[1].toLowerCase())
+  }
+  return found
+}
+
+/**
+ * One walk over the project's own sources (outside dependencies, `src-tauri`
+ * and build output) for what the plugins look for: whether a window asks for
+ * Node (`node`) and the custom schemes passed to `protocol` (`schemes`).
+ * The plugins pass `lazySourceScan(root)` to `rendererNode` and
+ * `writeSchemes`, which walk only if they need to.
+ */
+function scanSources(root) {
+  const result = { node: false, schemes: new Set() }
+  let seen = 0
+  let dirs = 0
+  const visit = (dir, depth) => {
+    // Bounded however the tree looks: folders count too, not only source files.
+    if (depth > 32 || ++dirs > SCAN_LIMIT) return
+    let names
+    try {
+      names = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of names) {
+      if (seen > SCAN_LIMIT || dirs > SCAN_LIMIT) return
+      if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
+      const full = path.join(dir, entry.name)
+      // Symbolic links are not followed (Dirent reports them as such), so the walk ends.
+      if (entry.isDirectory()) {
+        visit(full, depth + 1)
+      } else if (SCHEME_SOURCE.test(entry.name)) {
+        if (++seen > SCAN_LIMIT) return
+        try {
+          if (fs.statSync(full).size > 4 * 1024 * 1024) continue
+          const code = fs.readFileSync(full, 'utf8')
+          if (!result.node && SCANNED_SOURCE.test(entry.name) && NODE_WINDOW.test(code)) result.node = true
+          for (const scheme of schemesInSource(code)) result.schemes.add(scheme)
+        } catch {
+          /* unreadable: skip */
+        }
+      }
+    }
+  }
+  visit(root, 0)
+  return result
+}
+
+/** `scan`: a `scanSources()` result, a `lazySourceScan()` function, or nothing (walk now). */
+function sourceScan(root, scan) {
+  if (typeof scan === 'function') return scan()
+  return scan ?? scanSources(root)
+}
+
+/** `scanSources(root)`, run on the first call only. */
+function lazySourceScan(root) {
+  let result = null
+  return () => (result ??= scanSources(root))
+}
+
+/**
+ * Every custom scheme the app uses: found in its source (outside
+ * dependencies, `src-tauri` and build output), those of libraries it
+ * depends on, and `extra` (the plugins' `schemes` option; `false` turns
+ * the collection off). Sorted, lower case, reserved schemes left out.
+ */
+function collectSchemes(root, extra, scan) {
+  if (extra === false) return []
+  const found = new Set(sourceScan(root, scan).schemes)
+  const pkg = readPackageJson(root)
+  const deps = { ...pkg.optionalDependencies, ...pkg.devDependencies, ...pkg.dependencies }
+  for (const [name, schemes] of Object.entries(LIBRARY_SCHEMES)) if (deps[name]) schemes.forEach((s) => found.add(s))
+  for (const scheme of [extra ?? []].flat()) if (scheme) found.add(String(scheme).toLowerCase())
+  return [...found].filter((s) => SCHEME_NAME.test(s) && !RESERVED_SCHEMES.has(s)).sort()
+}
+
+/**
+ * Write the schemes to `src-tauri/electron-schemes.json` (only when the
+ * project has a `src-tauri` folder, and only when they changed, so Cargo
+ * does not rebuild for nothing). Returns the schemes, or null when nothing
+ * was written.
+ */
+function writeSchemes(root, extra, scan) {
+  if (extra === false || !fs.existsSync(path.join(root, 'src-tauri'))) return null
+  const schemes = collectSchemes(root, extra, scan)
+  const file = path.join(root, SCHEMES_FILE)
+  const text = JSON.stringify(schemes) + '\n'
+  let current = null
+  try {
+    current = fs.readFileSync(file, 'utf8')
+  } catch {
+    /* not written yet */
+  }
+  if (current !== text) fs.writeFileSync(file, text)
+  return schemes
+}
+
 module.exports = {
+  scanSources,
+  lazySourceScan,
   NODE_BUILTINS,
   NODE_SHIMS,
+  PACKAGE_SHIMS,
   LOG_ENDPOINT,
   STAGING_DIR,
   rewritePathGlobals,
@@ -304,5 +476,10 @@ module.exports = {
   appFilesConfig,
   electronMajor,
   sessionPreloads,
+  rendererNode,
   stageAppFiles,
+  SCHEMES_FILE,
+  schemesInSource,
+  collectSchemes,
+  writeSchemes,
 }

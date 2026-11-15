@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-download-commit"
+description = "Enables the download_commit command without any pre-configured scope."
+commands.allow = ["download_commit"]
+
+[[permission]]
+identifier = "deny-download-commit"
+description = "Denies the download_commit command without any pre-configured scope."
+commands.deny = ["download_commit"]

@@ -41,7 +41,12 @@ export const processShim = {
   argv: [],
   execPath: '',
   pid: 0,
+  // No `electron` key: apps test `process.versions.electron` to tell real
+  // Electron apart. `node` / `version` are added with the Node layer
+  // (node/install.js): libraries take `process.versions.node` to mean the
+  // Node built-ins are there.
   versions: { 'tauri-electron': '0.1.0' },
+  version: '',
   resourcesPath: '',
   defaultApp: false,
   sandboxed: false,

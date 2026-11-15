@@ -29,6 +29,8 @@ pub fn enabled() -> Vec<&'static str> {
         "protocol-client",
         "login-item",
         "power-save-blocker",
+        "power-monitor",
+        "safe-storage",
         "single-instance",
         "updater",
         "devtools",
@@ -46,6 +48,7 @@ pub fn enabled() -> Vec<&'static str> {
                 "global-shortcut"
                     | "login-item"
                     | "power-save-blocker"
+                    | "power-monitor"
                     | "single-instance"
                     | "updater"
             )
@@ -136,8 +139,8 @@ const MAIN_CORE: &[&str] = &[
 ];
 
 /// What a context-isolated, sandboxed Electron renderer can do: IPC with the
-/// main process, zoom, `window.close()`, and dragging `-webkit-app-region`
-/// areas. Sync IPC and window configuration use tauri-plugin-electron's URI
+/// main process, zoom, `window.close()`, dragging `-webkit-app-region`
+/// areas, and the minimize / maximize / close buttons of `titleBarOverlay`. Sync IPC and window configuration use tauri-plugin-electron's URI
 /// scheme, which needs no permission.
 const RENDERER: &[&str] = &[
     "core:event:default",
@@ -147,6 +150,8 @@ const RENDERER: &[&str] = &[
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize",
     "core:window:allow-toggle-maximize",
+    // The window controls drawn for `titleBarOverlay`.
+    "core:window:allow-minimize",
     "core:window:allow-close",
 ];
 

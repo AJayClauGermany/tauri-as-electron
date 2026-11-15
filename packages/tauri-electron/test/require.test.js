@@ -28,18 +28,18 @@ describe('require()', () => {
     expect(error.name).toBe('NotImplementedError')
     expect(error.reason).toBe('unsupported')
     expect(error.message).toMatch(/vm\.runInNewContext is not supported on Tauri/)
-    expect(() => requireShim('net').connect(80)).toThrow(/Node net is available in the main process only .*"node-net"/)
+    expect(() => requireShim('net').connect(80)).toThrow(/Node net is available in the main process .*"node-net"/)
     expect(() => requireShim('tls').connect(443)).toThrow(/"node-tls"/)
-    expect(() => requireShim('zlib').gzipSync('x')).toThrow(/Node zlib is available in the main process only:/)
+    expect(() => requireShim('zlib').gzipSync('x')).toThrow(/Node zlib is available in the main process and in windows created with nodeIntegration/)
     // Implemented for the main process: outside it, the stub says where they work.
-    expect(() => requireShim('os').hostname()).toThrow(/Node os is available in the main process only .*"node-os"/)
-    expect(() => requireShim('util').format('x')).toThrow(/Node util is available in the main process only:/)
+    expect(() => requireShim('os').hostname()).toThrow(/Node os is available in the main process .*"node-os"/)
+    expect(() => requireShim('util').format('x')).toThrow(/Node util is available in the main process and in windows created with nodeIntegration/)
     expect(() => requireShim('left-pad')).toThrow(/Use import/)
   })
 
   it('serves fs only where it was registered (the main page), a stub that says so elsewhere', () => {
     // Renderer pages: fs is the main process's.
-    expect(() => requireShim('fs').readFileSync('/x')).toThrow(/fs\.readFileSync is not supported on Tauri.*main process only.*node-fs/)
+    expect(() => requireShim('fs').readFileSync('/x')).toThrow(/fs\.readFileSync is not supported on Tauri.*main process.*node-fs/)
     const fs = { readFileSync: () => 'real' }
     registerNodeModule('fs', fs)
     expect(requireShim('node:fs')).toBe(fs)
@@ -76,6 +76,6 @@ describe('nodeBuiltin()', () => {
     expect(readFileSync).toBeTypeOf('function')
     expect(() => readFileSync('x')).toThrow(/fs\.readFileSync is not supported on Tauri.*ipcMain\.handle/)
     expect(() => fs()).toThrow(/fs\(\) is not supported/)
-    expect(() => new (nodeBuiltin('child_process'))()).toThrow(/new child_process\(\) .*main process only .*"node-child-process"/)
+    expect(() => new (nodeBuiltin('child_process'))()).toThrow(/new child_process\(\) .*main process .*"node-child-process"/)
   })
 })

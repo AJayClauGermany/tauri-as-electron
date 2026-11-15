@@ -193,10 +193,8 @@ describe('fs sync API', () => {
     expect(nodeThrows(() => fs.statSync('/x'))).toMatchObject({ reason: 'plugin' })
   })
 
-  it('leaves watchers and cp unimplemented, with a hint', () => {
-    for (const fn of [fs.watch, fs.cpSync]) {
-      expect(nodeThrows(() => fn('/x'))).toMatchObject({ name: 'NotImplementedError', reason: 'unimplemented' })
-    }
+  it('leaves cp unimplemented, with a hint', () => {
+    expect(nodeThrows(() => fs.cpSync('/x'))).toMatchObject({ name: 'NotImplementedError', reason: 'unimplemented' })
   })
 })
 

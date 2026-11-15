@@ -324,8 +324,11 @@ impl Net {
     }
 
     /// Close everything about a handle (socket, server or UDP socket).
-    pub fn destroy(&self, id: u32) {
+    /// Close a socket, server or UDP socket. For a server, the aborted accept
+    /// task, whose end drops (closes) the listener.
+    pub fn destroy(&self, id: u32) -> Option<JoinHandle<()>> {
         let handle = self.handles.lock().unwrap().remove(&id);
+        let mut ended = None;
         match handle {
             Some(Handle::Socket(socket)) => {
                 if let Some(task) = socket.reader.lock().unwrap().take() {
@@ -341,6 +344,7 @@ impl Net {
             Some(Handle::Server(server)) => {
                 if let Some(task) = server.accept.lock().unwrap().take() {
                     task.abort();
+                    ended = Some(task);
                 }
                 #[cfg(unix)]
                 if let Some(path) = &server.path {
@@ -354,6 +358,7 @@ impl Net {
             }
             None => {}
         }
+        ended
     }
 
     pub fn set_paused(&self, id: u32, paused: bool) -> Result<(), Value> {

@@ -15,6 +15,8 @@ import * as nodePath from './path.js'
 import * as nodeEvents from './events.js'
 import * as nodeUrl from './url.js'
 import processShim from './process.js'
+import * as remoteRenderer from './remote/renderer.js'
+import * as remoteMain from './remote/main.js'
 import { NotImplementedError } from './internal/runtime.js'
 
 const ELECTRON_IDS = new Set(['electron', 'electron/main', 'electron/renderer', 'electron/common'])
@@ -80,7 +82,7 @@ function unavailable(api, name, replacement) {
     const feature = MAIN_ONLY[name] ? ` (tauri-plugin-electron's "${MAIN_ONLY[name]}" feature)` : ''
     return new NotImplementedError(api, {
       reason: 'unsupported',
-      hint: `Node ${name} is available in the main process only${feature}: reach it from renderer windows over ipcMain.handle, as with a sandboxed Electron renderer.`,
+      hint: `Node ${name} is available in the main process${feature} and in windows created with nodeIntegration: true or sandbox: false (when the bundler plugin's rendererNode option includes the Node layer): reach it from sandboxed renderer windows over ipcMain.handle, as in Electron.`,
     })
   }
   return new NotImplementedError(api, {
@@ -130,6 +132,8 @@ export function registerNodeModule(name, exports) {
 export function requireShim(id) {
   const name = String(id)
   if (ELECTRON_IDS.has(name)) return electron
+  if (name === '@electron/remote' || name === '@electron/remote/renderer') return remoteRenderer
+  if (name === '@electron/remote/main') return remoteMain
   const bare = name.replace(/^node:/, '')
   if (registered.has(bare)) return registered.get(bare)
   if (bare === 'path' || bare === 'path/posix') return nodePath
@@ -140,7 +144,7 @@ export function requireShim(id) {
   if (bare in NODE_BUILTINS) return nodeBuiltin(bare)
   throw new NotImplementedError(`require('${name}')`, {
     reason: 'unsupported',
-    hint: `tauri-electron provides require() only for electron and the Node built-ins it shims (path, process, events, url, and in the main process ${Object.keys(MAIN_ONLY).join(', ')}). Use import for other modules (Vite bundles them).`,
+    hint: `tauri-electron provides require() only for electron, @electron/remote and the Node built-ins it shims (path, process, events, url, and in the main process ${Object.keys(MAIN_ONLY).join(', ')}). Use import for other modules (Vite bundles them).`,
   })
 }
 

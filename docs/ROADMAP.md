@@ -80,7 +80,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 
 ## Wave B: one session each, broad reach
 
-- [ ] **B1. Node built-ins in renderers.** Windows created with
+- [x] **B1. Node built-ins in renderers.** Windows created with
   `nodeIntegration: true` (or `contextIsolation: false`) and preloads with
   `sandbox: false` get the main page's Node layer (`fs`, `os`,
   `child_process`, `net`, ...) and a global `require`. Needs: the bridge's
@@ -91,7 +91,8 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   Etcher, SiYuan, Upscayl, Insomnia's worker window); 4 more use Node in
   preloads (Signal, Beekeeper, Logseq, Insomnia). The highest-leverage item
   here.* Effort M.
-- [ ] **B2. `electron-updater` shim.** Alias `electron-updater` (like
+  *Done: `set_window_config` (main window only) records the grant and adds an `electron-node-<label>` capability; `node_refusal` accepts granted windows showing the app's page. The bundler plugins load `tauri-electron/renderer-node` before the preloads (`rendererNode`, default `'auto'`), which installs the Node layer only in granted windows. Electron < 20's unsandboxed default is honoured. Not in workers; no `module` global in pages.*
+- [x] **B2. `electron-updater` shim.** Alias `electron-updater` (like
   `electron`) to a module on `tauri-plugin-updater` that exposes its
   `autoUpdater`: `checkForUpdates`, `checkForUpdatesAndNotify`,
   `downloadUpdate`, `quitAndInstall`, `autoDownload`,
@@ -100,7 +101,8 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `download-progress`, `update-downloaded`, `error`). The feed stays in
   `tauri.conf.json`; `setFeedURL` is recorded. *Apps 19, the most-used
   helper package.* Effort M.
-- [ ] **B3. `safeStorage` with a real key.** A random key kept in the OS
+  *Done: `tauri-electron/electron-updater`, aliased by both bundler plugins; Tauri's update format and endpoints (channel and feed URL go to the endpoint as headers), cancelling stops waiting, not the transfer.*
+- [x] **B3. `safeStorage` with a real key.** A random key kept in the OS
   keychain (`keyring` crate: Keychain, Credential Manager, Secret Service),
   AES-256-GCM in Rust, `encryptString` / `decryptString` synchronous over
   the bridge plus the async variants, `getSelectedStorageBackend`
@@ -108,10 +110,12 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `setUsePlainTextEncryption`. Ciphertext is not compatible with
   Electron's. *Apps 12 (Signal, Element, Mattermost, Bruno, Joplin, Wire,
   VS Code, ...).* The same crate backs a `keytar` shim (C5). Effort M.
-- [ ] **B4. `fs.watch` / `fs.watchFile` / `fs.promises.watch`** on the
+  *Done: feature `safe-storage`, on by default; the key is read on a worker thread (at most 10 s); `getSelectedStorageBackend` reports `gnome_libsecret` for any Secret Service (KWallet included), never `kwallet*`. Linux verified (no Secret Service: `basic_text`, plain-text mode); macOS / Windows keychains compile-checked only.*
+- [x] **B4. `fs.watch` / `fs.watchFile` / `fs.promises.watch`** on the
   `notify` crate, events over a Channel; then check chokidar (v3 and v4)
   on top. *Apps 17 watch files; chokidar is a dependency of 9.* Effort M.
-- [ ] **B5. `@electron/remote` shim.** Alias `@electron/remote` (and
+  *Done: the watcher is created synchronously over the bridge and its events kept until the Channel attaches, so nothing after `fs.watch()` is missed; `fs.watchFile` polls with `stat`. chokidar 3 and 4 pass the kitchen sink (add / change / unlink / addDir) on Linux; `process.versions.node` (`22.0.0`) was added for readdirp 3.*
+- [x] **B5. `@electron/remote` shim.** Alias `@electron/remote` (and
   `/main`, `/renderer`) to renderer-side proxies over the synchronous
   bridge for the subset apps use: `getCurrentWindow`,
   `getCurrentWebContents`, `app`, `dialog`, `shell`, `Menu` / `MenuItem`
@@ -119,7 +123,8 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `initialize` / `enable` on the main side. Callbacks and returned objects
   become remote references. *Apps 10.* Most of them also need B1.
   Effort M–L.
-- [ ] **B6. Downloads.** `session.on('will-download')`, `DownloadItem`
+  *Done: `tauri-electron/remote` (`/main`, `/renderer`), aliased by both bundler plugins and `require()`. Synchronous requests over `sendSync`; per-page reference tables with release on garbage collection; callbacks async, promises resolved in the renderer, errors rethrown. No `instanceof` against remote classes, no key enumeration of proxies.*
+- [x] **B6. Downloads.** `session.on('will-download')`, `DownloadItem`
   (`setSavePath`, `getFilename`, `getURL`, `getTotalBytes`,
   `getReceivedBytes`, `cancel`, `updated`, `done`),
   `webContents.downloadURL`, `session.downloadURL`, so `electron-dl` works.
@@ -128,13 +133,15 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   JavaScript `WebviewWindow`; that also enables B7 per window and B12.
   Progress is coarse (Tauri reports requested and finished). *Apps 8,
   plus `electron-dl` in 6.* Effort M.
-- [ ] **B7. Permission handlers applied.** `setPermissionRequestHandler` /
+  *Done: windows are created by a plugin command (`create_window`, Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's); every download goes to a temporary file that the main process moves to the save path when it is complete, so `setSavePath` works although the Rust hook decides synchronously (a save dialog asks without one). Linux uses WebKitGTK's download signals directly (sizes, progress, cancel); Windows / macOS use `on_download` (no total size, `cancel()` discards the file after the transfer). `downloadURL` is a reqwest transfer with the window's cookies (`net` feature): sizes, pause, resume, cancel. Not verified on Windows / macOS.*
+- [x] **B7. Permission handlers applied.** `setPermissionRequestHandler` /
   `setPermissionCheckHandler` through Tauri's `on_permission_request`
   (camera, microphone, geolocation, notifications; per platform as wry
   supports them). The Rust hook is synchronous, so answer from decisions
   the main page pushed ahead (or block on a bridge round trip, off the
   main thread). *Apps 14.* Effort M.
-- [ ] **B8. Window controls for `titleBarOverlay`.** On Windows and Linux,
+  *Done for `setPermissionRequestHandler`: Linux answers asynchronously from the handler's callback (WebKitGTK `permission-request`); Windows / macOS answer from earlier decisions per window, origin and permission (the first request gets the platform default while the handler runs). No handler: granted, as in Electron. `setPermissionCheckHandler` stays stored (no hook for permission checks). Not verified on Windows / macOS.*
+- [x] **B8. Window controls for `titleBarOverlay`.** On Windows and Linux,
   `titleBarStyle: 'hidden'` + `titleBarOverlay` gives Electron apps native
   minimize / maximize / close buttons; here frameless windows have none.
   Draw them in the renderer bootstrap (colour, symbol colour and height
@@ -142,34 +149,40 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `navigator.windowControlsOverlay` geometry consistent. *Apps 8 (VS Code,
   SiYuan, Zettlr, Heroic, Trilium, Tabby, Mattermost, Super
   Productivity).* Effort M.
-- [ ] **B9. `Notification` click and actions on desktop.** `click`,
+  *Done: buttons in a shadow root, maximize icon follows the window; `navigator.windowControlsOverlay` and `--titlebar-area-*` custom properties (WebKit has no `env(titlebar-area-*)`).*
+- [x] **B9. `Notification` click and actions on desktop.** `click`,
   `action`, `close`, `reply` need a backend that reports activation
   (notify-rust actions on Linux, toast activation on Windows,
   UNUserNotificationCenter on macOS); `plugin-notification` does not on
   desktop. *Apps 7 (Signal, VS Code, Mattermost, Heroic, Zettlr, SiYuan,
   Bitwarden).* Effort M–L.
-- [ ] **B10. Custom schemes without editing Rust.** The bundler plugins
+  *Done: shown from Rust through tauri-plugin-notification 2.8's desktop action tracking (its `on_action` handler forwards to the main process): `click` and `action` on Linux, Windows and macOS, `close` on Linux. `reply` is not emitted (no desktop backend reports inline replies); Windows reports clicks only while the toast is on screen.*
+- [x] **B10. Custom schemes without editing Rust.** The bundler plugins
   collect scheme names from `protocol.registerSchemesAsPrivileged` and
   `protocol.handle` calls and write them where
   `tauri_plugin_electron::Builder` reads them (a generated file or the
   plugin's section of `tauri.conf.json`). Covers schemes that libraries
   add on their own (`@sentry/electron`'s `sentry-ipc`). *Apps 15.*
   Effort S–M.
-- [ ] **B11. `powerMonitor` system events.** `suspend`, `resume`,
+  *Done: `src-tauri/electron-schemes.json`, passed on by the app's build.rs to `Builder::protocols(bundled_schemes!())` (template and kitchen sink); found by scanning the app's source, so schemes built from variables need the `schemes` option.*
+- [x] **B11. `powerMonitor` system events.** `suspend`, `resume`,
   `lock-screen`, `unlock-screen`, `shutdown`, plus
   `getSystemIdleTime` / `getSystemIdleState` (logind and the screensaver
   D-Bus API on Linux, `NSWorkspace` notifications and `CGEventSource` on
   macOS, `WM_POWERBROADCAST` / WTS and `GetLastInputInfo` on Windows).
   *Apps 8 events, 5 idle time.* Effort M.
-- [ ] **B12. `dialog.showMessageBox` beyond three buttons.**
+  *Done for Linux (logind and screen-saver signals over D-Bus, feature `power-monitor`) and idle time everywhere (Mutter / ScreenSaver, `CGEventSource`, `GetLastInputInfo`). macOS and Windows events are still open (they need a native window or run-loop observer); `resume` falls back to the timer heuristic there.*
+- [x] **B12. `dialog.showMessageBox` beyond three buttons.**
   `checkboxLabel` / `checkboxChecked`, more than three buttons, `defaultId`,
   `cancelId`: fall back to a small modal `BrowserWindow` when the native
   dialog cannot express the options. *Apps 8 use `checkboxLabel`.*
   Effort M.
-- [ ] **B13. `session.setProxy` / `app.setProxy`** through
+  *Done: a window served by the bridge scheme (no IPC permission), parented and disabling its parent; also for `showMessageBoxSync` (blocks on the bridge). The native dialog stays for three buttons or fewer without a checkbox.*
+- [x] **B13. `session.setProxy` / `app.setProxy`** through
   `proxy_url` when windows are created (with B6's Rust-side creation);
   `resolveProxy` then reports the configured proxy. *Apps 4.* Effort S
   after B6.
+  *Done: one http:// or socks5:// proxy from `proxyRules` (`proxyUrl` at window creation) for windows created afterwards and `net.fetch` / `session.fetch`; `resolveProxy` reports it. No PAC / auto-detect / bypass rules; macOS needs the new `macos-proxy` feature (macOS 14+). On Linux the default session and `persist:` partitions share one WebKit data store, hence one proxy.*
 
 ## Wave C: structural, several sessions each
 

@@ -240,18 +240,25 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `dialog.show*Sync` | Works (through `tauri-plugin-electron`); the async versions are preferred. |
 | `clipboard.readText()` used synchronously | Works when the app's `electron` dependency is below 45 (the bundler plugins read `package.json`), as in that Electron; otherwise `await clipboard.readText()` (the current Electron API). |
 | IPC payloads with class instances or cycles | Structured-clone types (`Uint8Array`, `Date`, `Map`, `Error`, …) work; class instances arrive as plain objects (as in Electron); cyclic objects throw. |
-| `protocol.handle('app', …)` | Also declare the scheme in `src-tauri/src/lib.rs`: `tauri_plugin_electron::Builder::new().protocol("app")`. Tauri needs schemes at build time. |
+| `protocol.handle('app', …)` | Tauri needs schemes at build time. The bundler plugins find them in your source (`protocol.handle('app', …)`, `registerSchemesAsPrivileged`, `register*Protocol`, plus `@sentry/electron`'s `sentry-ipc`) and write `src-tauri/electron-schemes.json`, which the template's `build.rs` and `.protocols(tauri_plugin_electron::bundled_schemes!())` register. A scheme built from a variable needs the plugin's `schemes: ['app']` option or `.protocol("app")`. Apps scaffolded before this: copy `build.rs` and the `.protocols(...)` line from the template. |
 | `session.registerPreloadScript` / `setPreloads` (libraries such as electron-log, @sentry/electron) | Preloads cannot be loaded at runtime. The bundler plugins put electron-log's and @sentry/electron's in every renderer page when the app depends on them; list others in the plugin's `sessionPreloads` option (module specifiers or project files), or `sessionPreloads: false` for none. |
+| `electron-updater` (`autoUpdater` from electron-builder) | Aliased by the bundler plugins to tauri-electron's version on `tauri-plugin-updater`: same events, `checkForUpdates` / `checkForUpdatesAndNotify` / `downloadUpdate` / `quitAndInstall`, `autoDownload`, `autoInstallOnAppQuit`. Updates are Tauri's (signed artifacts and the `plugins.updater` endpoints), not electron-builder's `latest.yml`; `channel` and the `setFeedURL` URL are sent to the endpoint as `X-Electron-Updater-Channel` / `-Feed` headers. Needs the `"updater"` feature, like `autoUpdater`. |
 | `autoUpdater` | Add `"updater"` to the features of `tauri-plugin-electron` in `src-tauri/Cargo.toml` and configure `plugins.updater` (endpoints, public key) in `tauri.conf.json`. |
 | `app.requestSingleInstanceLock()` | Opt in: `features = ["single-instance"]` on `tauri-plugin-electron`. The lock is taken at startup, so a second launch exits before its main process runs. |
 | `webContents.openDevTools()` | Debug builds only. For release builds, add the `devtools` feature (uses private APIs on macOS). |
 | `webContents.on('before-input-event')` + `preventDefault()` | Reported after the page saw the key; block keys with a `keydown` listener in the page. |
 | Renderer calls to privileged Tauri APIs | Renderers only get IPC permissions (like context-isolated, sandboxed Electron renderers). Route through the main process, or add a capability file in `src-tauri/capabilities/`. |
-| `webPreferences.nodeIntegration: true` | No Node.js in any webview. `process.env` is filled in for such renderers, nothing else. |
 | `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
-| `fs`, `os`, `child_process` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
+| `fs`, `os`, `child_process` in a renderer (`nodeIntegration: true`, `sandbox: false`) | Work, as in Electron, in windows created with those options, when the bundler plugin loads the Node layer in renderer pages: option `rendererNode` (default `'auto'` detects the options in your sources; set `true` if it misses them, e.g. options built at runtime). Sandboxed windows (the default) get a `NotImplementedError`: expose what the page needs with `ipcMain.handle`. |
+| `@electron/remote` | Works without changes: the bundler plugins alias it to tauri-electron's implementation. Keep `initialize()` and `enable(webContents)` in the main process. Every access is a synchronous round trip, as in Electron, so prefer IPC in hot paths. |
+| `safeStorage` ciphertext | Encrypted with a key tauri-plugin-electron keeps in the OS keychain, not Electron's: values an Electron build of the app stored cannot be decrypted. Re-encrypt from the plain value (ask the user again for a stored password or token). |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
+| `session.on('will-download')` / `item.setSavePath()` | Works; the file is written to a temporary file and moved to the save path when it is complete, so the path can also be set after the handler returns. Downloads the page starts cannot be paused; on Windows and macOS their total size is unknown and `cancel()` discards the file when the transfer ends. `downloadURL()` is a transfer in Rust (the `net` feature) with the window's cookies. |
+| `session.setPermissionRequestHandler` | Applied. On Linux each request waits for the callback, as in Electron. On Windows and macOS the webview needs an answer at once: the first request of a permission per window and origin gets the platform's own prompt while the handler runs, and its answer applies to the requests after it. |
+| `session.setProxy` / `app.setProxy` | One `http://` or `socks5://` proxy for windows created afterwards and `net.fetch` (Tauri sets a webview's proxy at creation). No PAC scripts or bypass rules. On macOS, enable the `macos-proxy` feature of `tauri-plugin-electron` (macOS 14+). On Linux, the default session and `persist:` partitions share one WebKit data store, so a proxy one of them sets reaches the windows of the others too. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
+| `Notification` `click` / `action` / `close` / `reply` | `click` and `action` work on desktop; `close` is reported on Linux only; `reply` is never emitted (keep a fallback, such as opening a window). |
+| `powerMonitor` `suspend` / `lock-screen` / … | Reported on Linux (logind and the screen saver over D-Bus); on macOS and Windows only `resume` (detected from timer drift). Idle time works everywhere. |
 
 ## 4. Node.js code
 
@@ -322,11 +329,17 @@ A module whose feature is off throws `NotImplementedError` (reason
 - Streams: `createReadStream` (`start`, `end`, `highWaterMark`, `fd`) and
   `createWriteStream` (`flags`, `start`, `fd`, `flush`), readable-stream
   streams over descriptors.
+- Watching: `fs.watch` (`recursive`, `encoding`, `signal`; `'rename'` and
+  `'change'` events as in Node, from the notify crate), `fs.promises.watch`
+  (an async iterator) and `fs.watchFile` / `unwatchFile` (polling with
+  `stat`). chokidar 3 and 4 work on top. `ref()` / `unref()` and
+  `persistent` do nothing: a webview has no event loop to keep alive.
 - Not yet (they throw `NotImplementedError`, reason `unimplemented`):
-  `watch` / `watchFile`, `cp`, `opendir`, `link`, `chown`.
-- Main process only. A renderer that calls `fs` gets a `NotImplementedError`
-  (reason `permission`): move the file access to `ipcMain.handle`, as with a
-  sandboxed Electron renderer.
+  `cp`, `opendir`, `link`, `chown`.
+- Main process, and renderer windows created with `nodeIntegration: true` or
+  `sandbox: false` (see the table above). A sandboxed renderer that calls `fs`
+  gets a `NotImplementedError` (reason `permission`): move the file access to
+  `ipcMain.handle`, as with a sandboxed Electron renderer.
 
 **The app's own files.** `__dirname` is the project-relative folder of the
 source file (`/src/main`), so `fs.readFileSync(path.join(__dirname, 'data.json'))`

@@ -16,8 +16,23 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-cookies-set`
 - `allow-cookies-remove`
 - `allow-clipboard-read-html`
+- `allow-message-box`
+- `allow-message-box-close`
 - `allow-power-blocker-start`
 - `allow-power-blocker-stop`
+- `allow-notification-show`
+- `allow-notification-close`
+- `allow-power-monitor-start`
+- `allow-safe-storage-status`
+- `allow-safe-storage-encrypt`
+- `allow-safe-storage-decrypt`
+- `allow-create-window`
+- `allow-permission-handler`
+- `allow-permission-respond`
+- `allow-download-url`
+- `allow-download-control`
+- `allow-download-commit`
+- `allow-download-discard`
 
 ## Permission Table
 
@@ -291,6 +306,32 @@ Denies the cookies_set command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-create-window`
+
+</td>
+<td>
+
+Enables the create_window command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-create-window`
+
+</td>
+<td>
+
+Denies the create_window command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-dns-lookup`
 
 </td>
@@ -395,6 +436,162 @@ Denies the dns_servers command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-download-commit`
+
+</td>
+<td>
+
+Enables the download_commit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-commit`
+
+</td>
+<td>
+
+Denies the download_commit command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-control`
+
+</td>
+<td>
+
+Enables the download_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-control`
+
+</td>
+<td>
+
+Denies the download_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-discard`
+
+</td>
+<td>
+
+Enables the download_discard command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-discard`
+
+</td>
+<td>
+
+Denies the download_discard command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-download-url`
+
+</td>
+<td>
+
+Enables the download_url command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-download-url`
+
+</td>
+<td>
+
+Denies the download_url command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-fs-unwatch`
+
+</td>
+<td>
+
+Enables the fs_unwatch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-fs-unwatch`
+
+</td>
+<td>
+
+Denies the fs_unwatch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-fs-watch`
+
+</td>
+<td>
+
+Enables the fs_watch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-fs-watch`
+
+</td>
+<td>
+
+Denies the fs_watch command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-is-devtools-open`
 
 </td>
@@ -414,6 +611,58 @@ Enables the is_devtools_open command without any pre-configured scope.
 <td>
 
 Denies the is_devtools_open command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-message-box`
+
+</td>
+<td>
+
+Enables the message_box command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-message-box`
+
+</td>
+<td>
+
+Denies the message_box command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-message-box-close`
+
+</td>
+<td>
+
+Enables the message_box_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-message-box-close`
+
+</td>
+<td>
+
+Denies the message_box_close command without any pre-configured scope.
 
 </td>
 </tr>
@@ -629,6 +878,58 @@ Denies the node_fs command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-notification-close`
+
+</td>
+<td>
+
+Enables the notification_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-notification-close`
+
+</td>
+<td>
+
+Denies the notification_close command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-notification-show`
+
+</td>
+<td>
+
+Enables the notification_show command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-notification-show`
+
+</td>
+<td>
+
+Denies the notification_show command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-open-devtools`
 
 </td>
@@ -648,6 +949,58 @@ Enables the open_devtools command without any pre-configured scope.
 <td>
 
 Denies the open_devtools command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-permission-handler`
+
+</td>
+<td>
+
+Enables the permission_handler command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-permission-handler`
+
+</td>
+<td>
+
+Denies the permission_handler command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-permission-respond`
+
+</td>
+<td>
+
+Enables the permission_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-permission-respond`
+
+</td>
+<td>
+
+Denies the permission_respond command without any pre-configured scope.
 
 </td>
 </tr>
@@ -707,6 +1060,32 @@ Denies the power_blocker_stop command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-power-monitor-start`
+
+</td>
+<td>
+
+Enables the power_monitor_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-power-monitor-start`
+
+</td>
+<td>
+
+Denies the power_monitor_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-process-info`
 
 </td>
@@ -726,6 +1105,84 @@ Enables the process_info command without any pre-configured scope.
 <td>
 
 Denies the process_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-safe-storage-decrypt`
+
+</td>
+<td>
+
+Enables the safe_storage_decrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-safe-storage-decrypt`
+
+</td>
+<td>
+
+Denies the safe_storage_decrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-safe-storage-encrypt`
+
+</td>
+<td>
+
+Enables the safe_storage_encrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-safe-storage-encrypt`
+
+</td>
+<td>
+
+Denies the safe_storage_encrypt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-safe-storage-status`
+
+</td>
+<td>
+
+Enables the safe_storage_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-safe-storage-status`
+
+</td>
+<td>
+
+Denies the safe_storage_status command without any pre-configured scope.
 
 </td>
 </tr>
@@ -920,7 +1377,7 @@ Denies the udp_send command without any pre-configured scope.
 </td>
 <td>
 
-Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>
@@ -933,7 +1390,7 @@ Node's `child_process` (Cargo feature `node-child-process`): start any program t
 </td>
 <td>
 
-Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>
@@ -946,7 +1403,7 @@ Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file
 </td>
 <td>
 
-Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>

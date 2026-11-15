@@ -12,6 +12,7 @@
     "./common": "./src/index.js",
     "./path": "./src/path.js",
     "./process": "./src/process.js",
+    "./electron-updater": "./src/main/electron-updater.js",
     "./renderer-bootstrap": "./src/renderer/bootstrap.js",
     "./vite": "./vite.js",
     "./webpack": "./webpack.cjs",
@@ -57,7 +58,11 @@
     "./tls": "./src/node/tls.js",
     "./dgram": "./src/node/dgram.js",
     "./dns": "./src/node/dns.js",
-    "./dns/promises": "./src/node/dns-promises.js"
+    "./dns/promises": "./src/node/dns-promises.js",
+    "./renderer-node": "./src/renderer/node.js",
+    "./remote": "./src/remote/index.js",
+    "./remote/renderer": "./src/remote/renderer.js",
+    "./remote/main": "./src/remote/main.js"
   },
   "files": [
     "src",

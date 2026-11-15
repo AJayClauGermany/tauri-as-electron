@@ -7,9 +7,11 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri_plugin_electron::Builder::new()
-        // Declare every scheme your main process passes to protocol.handle();
-        // Tauri needs to know them when the app is built.
-        // .protocol("app")
+        // The schemes your main process passes to protocol.handle(): Tauri
+        // needs them when the app is built. The bundler plugin finds them in
+        // your JavaScript (src-tauri/electron-schemes.json, see build.rs);
+        // add others with .protocol("app").
+        .protocols(tauri_plugin_electron::bundled_schemes!())
         .install(tauri::Builder::default())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

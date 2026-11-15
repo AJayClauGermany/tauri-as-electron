@@ -4,17 +4,23 @@
  * Tauri's webview options cover the storage side of a partition (an
  * incognito webview for in-memory partitions, a separate data store for
  * `persist:` partitions on macOS) and `clearAllBrowsingData()`. Cookies go
- * through tauri-plugin-electron (the webview's cookie store). Request
- * interception (webRequest) and downloads have no API in Tauri: listeners
- * are stored but never called.
+ * through tauri-plugin-electron (the webview's cookie store), and so do
+ * downloads (./downloads.js) and permission requests (./permissions.js) of
+ * windows it creates. `setProxy` applies to windows created afterwards
+ * (./proxy.js). Request interception (webRequest) has no API in Tauri:
+ * listeners are stored but never called.
  */
 import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { NotImplementedError, MAIN_LABEL, report, warnOnce } from '../internal/runtime.js'
 import { native, hasNativePlugin } from '../internal/native.js'
 import { platform } from '../process.js'
-import { netFetch } from './net.js'
+import { netFetch, setDefaultProxy, OWN_PROXY } from './net.js'
 import { protocol } from './protocol.js'
-import { BrowserWindow } from './browser-window.js'
+import { BrowserWindow, webContentsFromLabel } from './browser-window.js'
+import { dialog } from './dialog.js'
+import { configureDownloads, downloadURL } from './downloads.js'
+import { configurePermissions, syncPermissionHandler } from './permissions.js'
+import { parseProxyConfig, describeProxy } from './proxy.js'
 
 const WEB_REQUEST_EVENTS = [
   'onBeforeRequest',
@@ -193,6 +199,7 @@ export class Session extends EventEmitter {
     this._preloads = []
     this._handlers = {}
     this._downloadPath = ''
+    this._proxy = null
     this.webRequest = new WebRequest()
     this.cookies = new Cookies(this)
     this.protocol = protocol
@@ -211,6 +218,7 @@ export class Session extends EventEmitter {
   _tauriWebviewOptions() {
     const options = partitionWebviewOptions(this._partition)
     if (this._userAgent) options.userAgent = this._userAgent
+    if (this._proxy) options.proxyUrl = this._proxy.url
     return options
   }
 
@@ -238,7 +246,13 @@ export class Session extends EventEmitter {
   }
 
   // --- handlers (stored; Tauri has no hook to call them) ----------------------------
-  setPermissionRequestHandler(handler) { this._handlers.permissionRequest = handler }
+  /** Applied to this session's windows (./permissions.js); without one, everything is granted. */
+  setPermissionRequestHandler(handler) {
+    this._handlers.permissionRequest = typeof handler === 'function' ? handler : null
+    syncPermissionHandler(this, BrowserWindow.getAllWindows())
+  }
+
+  /** Stored: Tauri has no hook for permission checks (navigator.permissions.query). */
   setPermissionCheckHandler(handler) { this._handlers.permissionCheck = handler }
   setDisplayMediaRequestHandler(handler) { this._handlers.displayMedia = handler }
   setDevicePermissionHandler(handler) { this._handlers.devicePermission = handler }
@@ -259,8 +273,18 @@ export class Session extends EventEmitter {
   listWordsInSpellCheckerDictionary() { return Promise.resolve([...this._dictionary]) }
 
   // --- network ---------------------------------------------------------------------
-  resolveProxy() { return Promise.resolve('DIRECT') }
-  setProxy() { return Promise.resolve() }
+  resolveProxy(url) { return Promise.resolve(describeProxy(this._proxy, url)) }
+
+  /** Applies to windows created afterwards (Tauri sets a webview's proxy at creation) and to fetch(). */
+  setProxy(config) {
+    this._proxy = parseProxyConfig(config)
+    this._proxyConfigured = true
+    if (this === defaultSession) setDefaultProxy(this._proxy?.url ?? null)
+    if (BrowserWindow.getAllWindows().some((win) => win.webContents.session === this)) {
+      warnOnce('setProxy-existing', 'session.setProxy() applies to windows created afterwards: Tauri sets a webview\'s proxy when it is created.')
+    }
+    return Promise.resolve()
+  }
   forceReloadProxyConfig() { return Promise.resolve() }
   closeAllConnections() { return Promise.resolve() }
   clearHostResolverCache() { return Promise.resolve() }
@@ -271,7 +295,11 @@ export class Session extends EventEmitter {
   setSSLConfig() {}
   enableNetworkEmulation() {}
   disableNetworkEmulation() {}
-  fetch(input, init) { return netFetch(input, init) }
+  // Each session uses its own proxy settings only (the default session's are applied by netFetch).
+  fetch(input, init) {
+    if (this === defaultSession) return netFetch(input, init)
+    return netFetch(input, { ...init, [OWN_PROXY]: true, ...(this._proxy && init?.proxy === undefined ? { proxy: { all: this._proxy.url } } : {}) })
+  }
 
   /**
    * Tauri clears everything a webview stored (cookies, storage, cache) - the
@@ -289,7 +317,11 @@ export class Session extends EventEmitter {
   flushStorageData() {}
 
   // --- downloads -------------------------------------------------------------------
-  downloadURL() { throw new NotImplementedError('session.downloadURL', { reason: 'unimplemented', hint: 'Fetch with net.fetch() and write the file with @tauri-apps/plugin-fs.' }) }
+  /** Emits 'will-download' like a page download (./downloads.js). */
+  downloadURL(url, options) {
+    const win = this === defaultSession ? null : BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.session === this)
+    downloadURL(this, win?.webContents ?? null, url, options)
+  }
   createInterruptedDownload() { throw new NotImplementedError('session.createInterruptedDownload', { reason: 'unimplemented' }) }
   setDownloadPath(path) { this._downloadPath = path }
 
@@ -320,6 +352,12 @@ export class Session extends EventEmitter {
 const partitions = new Map()
 export const defaultSession = new Session('')
 partitions.set('', defaultSession)
+configureDownloads({
+  defaultSession,
+  webContentsFromLabel: (label) => webContentsFromLabel(label),
+  saveDialog: (...args) => dialog.showSaveDialog(...args),
+})
+configurePermissions({ defaultSession, webContentsFromLabel: (label) => webContentsFromLabel(label) })
 
 export const session = {
   get defaultSession() {

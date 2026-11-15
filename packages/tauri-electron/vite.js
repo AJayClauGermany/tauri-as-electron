@@ -5,7 +5,8 @@
  *   export default defineConfig({ plugins: [tauriElectron({ preload: 'src/preload.js' })] })
  *
  * It
- *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron
+ *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron,
+ *    and `@electron/remote` (`/main`, `/renderer`) to its remote-module shim,
  *    and `path` / `node:path` to a browser-safe implementation,
  *  - aliases the Node built-ins it implements (`path`, `process`, `events`,
  *    `url`, `buffer`, `util`, `stream`, `crypto`, `http`, `zlib`, …, and `fs`,
@@ -31,6 +32,9 @@
  *  - makes `process.env` read the real environment (the main process gets it
  *    from tauri-plugin-electron) instead of Vite's empty object,
  *  - adds every root-level *.html file to the build inputs,
+ *  - writes the custom schemes the app passes to `protocol.handle()` (and
+ *    `registerSchemesAsPrivileged`) to `src-tauri/electron-schemes.json`,
+ *    where `tauri_plugin_electron::bundled_schemes!()` reads them at build time,
  *  - in dev, forwards the hidden main window's console to the terminal (the
  *    window has no visible devtools; Electron devs expect main logs there).
  */
@@ -39,7 +43,7 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -71,6 +75,7 @@ const VIRTUAL = {
   console: 'virtual:tauri-electron/console', // dev only: main window console → terminal
   main: 'virtual:tauri-electron/main', // Node built-ins, app files and require() for the main process
   renderer: 'virtual:tauri-electron/renderer', // require(), bootstrap, preload(s)
+  rendererNode: 'virtual:tauri-electron/renderer-node', // Node built-ins for nodeIntegration windows
 }
 const RESOLVED = '\0'
 
@@ -119,6 +124,13 @@ function virtualSrc(id, isDev) {
  *   (`session.registerPreloadScript` / `setPreloads`), put in every renderer page. Those of
  *   electron-log and @sentry/electron are found when the app depends on them; list module
  *   specifiers or project-relative files for others, or `false` for none.
+ * @param {false|string[]} [options.schemes] Custom schemes to register in Tauri besides the ones
+ *   found in the app's source (`protocol.handle('x', …)`, `protocol.registerSchemesAsPrivileged`)
+ *   and those of known libraries; written to src-tauri/electron-schemes.json for
+ *   `tauri_plugin_electron::bundled_schemes!()`. `false`: write nothing.
+ * @param {boolean|'auto'} [options.rendererNode='auto'] Load the Node layer in renderer pages, for
+ *   windows created with `nodeIntegration: true` or `sandbox: false` (installed only in those).
+ *   `'auto'`: when the app depends on Electron < 20 or its sources mention either option.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -132,6 +144,7 @@ export default function tauriElectron(options = {}) {
   let isDev = false
   let outDir = 'dist'
   let libraryPreloads = []
+  let withRendererNode = false
 
   return {
     name: 'tauri-electron',
@@ -140,6 +153,9 @@ export default function tauriElectron(options = {}) {
     config(userConfig) {
       root = path.resolve(userConfig.root ?? process.cwd())
       const alias = [{ find: /^electron(\/(main|renderer|common))?$/, replacement: 'tauri-electron' }]
+      // electron-builder's auto-update library, on tauri-plugin-updater.
+      alias.push({ find: /^electron-updater$/, replacement: 'tauri-electron/electron-updater' })
+      for (const [name, replacement] of Object.entries(PACKAGE_SHIMS)) alias.push({ find: new RegExp(`^${name.replace(/\//g, '\\/')}$`), replacement })
       for (const [name, replacement] of Object.entries(NODE_SHIMS)) {
         if (options.aliasPath === false && name.startsWith('path')) continue
         alias.push({ find: new RegExp(`^(node:)?${name}$`), replacement })
@@ -176,8 +192,14 @@ export default function tauriElectron(options = {}) {
     configResolved(resolved) {
       root = resolved.root
       libraryPreloads = sessionPreloads(root, options.sessionPreloads)
+      // One walk over the project's sources for both the Node check and the schemes.
+      const scan = lazySourceScan(root)
+      withRendererNode = rendererNode(root, options.rendererNode, scan)
       isDev = resolved.command === 'serve'
       outDir = resolved.build?.outDir ?? 'dist'
+      // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
+      const schemes = writeSchemes(root, options.schemes, scan)
+      if (schemes?.length) resolved.logger?.info?.(`tauri-electron: custom schemes ${schemes.join(', ')} (src-tauri/electron-schemes.json)`)
     },
 
     buildStart() {
@@ -237,9 +259,15 @@ export default function tauriElectron(options = {}) {
         if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
         lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
       }
+      if (name === VIRTUAL.rendererNode) {
+        lines.push(`import { hasNode } from 'tauri-electron/renderer-node'`)
+        lines.push(`if (hasNode && !globalThis.__TAURI_ELECTRON_APP__) globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
+      }
       if (name === VIRTUAL.renderer) {
         if (withRequire) lines.push(`import 'tauri-electron/require'`)
         lines.push(`import 'tauri-electron/renderer-bootstrap'`)
+        // Before the preloads, which may require('fs') at the top.
+        if (withRendererNode) lines.push(`import ${JSON.stringify(VIRTUAL.rendererNode)}`)
         // Library preloads (electron-log, …) before the app's own, as Electron runs session preloads first.
         for (const preload of libraryPreloads) {
           const id = preload.file ? (isDev ? `/@fs/${toPosix(preload.id).replace(/^\/+/, '')}` : toPosix(preload.id)) : preload.id

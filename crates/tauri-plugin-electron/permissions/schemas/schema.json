@@ -415,6 +415,18 @@
           "markdownDescription": "Denies the cookies_set command without any pre-configured scope."
         },
         {
+          "description": "Enables the create_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-create-window",
+          "markdownDescription": "Enables the create_window command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the create_window command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-create-window",
+          "markdownDescription": "Denies the create_window command without any pre-configured scope."
+        },
+        {
           "description": "Enables the dns_lookup command without any pre-configured scope.",
           "type": "string",
           "const": "allow-dns-lookup",
@@ -463,6 +475,78 @@
           "markdownDescription": "Denies the dns_servers command without any pre-configured scope."
         },
         {
+          "description": "Enables the download_commit command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-download-commit",
+          "markdownDescription": "Enables the download_commit command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_commit command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-download-commit",
+          "markdownDescription": "Denies the download_commit command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the download_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-download-control",
+          "markdownDescription": "Enables the download_control command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-download-control",
+          "markdownDescription": "Denies the download_control command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the download_discard command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-download-discard",
+          "markdownDescription": "Enables the download_discard command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_discard command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-download-discard",
+          "markdownDescription": "Denies the download_discard command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the download_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-download-url",
+          "markdownDescription": "Enables the download_url command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the download_url command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-download-url",
+          "markdownDescription": "Denies the download_url command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the fs_unwatch command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fs-unwatch",
+          "markdownDescription": "Enables the fs_unwatch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fs_unwatch command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fs-unwatch",
+          "markdownDescription": "Denies the fs_unwatch command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the fs_watch command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-fs-watch",
+          "markdownDescription": "Enables the fs_watch command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the fs_watch command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-fs-watch",
+          "markdownDescription": "Denies the fs_watch command without any pre-configured scope."
+        },
+        {
           "description": "Enables the is_devtools_open command without any pre-configured scope.",
           "type": "string",
           "const": "allow-is-devtools-open",
@@ -473,6 +557,30 @@
           "type": "string",
           "const": "deny-is-devtools-open",
           "markdownDescription": "Denies the is_devtools_open command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the message_box command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-message-box",
+          "markdownDescription": "Enables the message_box command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the message_box command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-message-box",
+          "markdownDescription": "Denies the message_box command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the message_box_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-message-box-close",
+          "markdownDescription": "Enables the message_box_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the message_box_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-message-box-close",
+          "markdownDescription": "Denies the message_box_close command without any pre-configured scope."
         },
         {
           "description": "Enables the net_connect command without any pre-configured scope.",
@@ -571,6 +679,30 @@
           "markdownDescription": "Denies the node_fs command without any pre-configured scope."
         },
         {
+          "description": "Enables the notification_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-close",
+          "markdownDescription": "Enables the notification_close command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_close command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-close",
+          "markdownDescription": "Denies the notification_close command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the notification_show command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-notification-show",
+          "markdownDescription": "Enables the notification_show command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the notification_show command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-notification-show",
+          "markdownDescription": "Denies the notification_show command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_devtools command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-devtools",
@@ -581,6 +713,30 @@
           "type": "string",
           "const": "deny-open-devtools",
           "markdownDescription": "Denies the open_devtools command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the permission_handler command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-permission-handler",
+          "markdownDescription": "Enables the permission_handler command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the permission_handler command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-permission-handler",
+          "markdownDescription": "Denies the permission_handler command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the permission_respond command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-permission-respond",
+          "markdownDescription": "Enables the permission_respond command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the permission_respond command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-permission-respond",
+          "markdownDescription": "Denies the permission_respond command without any pre-configured scope."
         },
         {
           "description": "Enables the power_blocker_start command without any pre-configured scope.",
@@ -607,6 +763,18 @@
           "markdownDescription": "Denies the power_blocker_stop command without any pre-configured scope."
         },
         {
+          "description": "Enables the power_monitor_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-power-monitor-start",
+          "markdownDescription": "Enables the power_monitor_start command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the power_monitor_start command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-power-monitor-start",
+          "markdownDescription": "Denies the power_monitor_start command without any pre-configured scope."
+        },
+        {
           "description": "Enables the process_info command without any pre-configured scope.",
           "type": "string",
           "const": "allow-process-info",
@@ -617,6 +785,42 @@
           "type": "string",
           "const": "deny-process-info",
           "markdownDescription": "Denies the process_info command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the safe_storage_decrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-safe-storage-decrypt",
+          "markdownDescription": "Enables the safe_storage_decrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the safe_storage_decrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-safe-storage-decrypt",
+          "markdownDescription": "Denies the safe_storage_decrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the safe_storage_encrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-safe-storage-encrypt",
+          "markdownDescription": "Enables the safe_storage_encrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the safe_storage_encrypt command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-safe-storage-encrypt",
+          "markdownDescription": "Denies the safe_storage_encrypt command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the safe_storage_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-safe-storage-status",
+          "markdownDescription": "Enables the safe_storage_status command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the safe_storage_status command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-safe-storage-status",
+          "markdownDescription": "Denies the safe_storage_status command without any pre-configured scope."
         },
         {
           "description": "Enables the set_menu_visible command without any pre-configured scope.",
@@ -703,28 +907,28 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`",
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`"
         },
         {
-          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
+          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
           "type": "string",
           "const": "node-child-process",
-          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
+          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
         },
         {
-          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`",
+          "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`\n- `allow-fs-watch`\n- `allow-fs-unwatch`",
           "type": "string",
           "const": "node-fs",
-          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`"
+          "markdownDescription": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`\n- `allow-fs-watch`\n- `allow-fs-unwatch`"
         },
         {
-          "description": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`",
+          "description": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`",
           "type": "string",
           "const": "node-net",
-          "markdownDescription": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`"
+          "markdownDescription": "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-net-connect`\n- `allow-net-listen`\n- `allow-net-write`\n- `allow-net-end`\n- `allow-net-destroy`\n- `allow-net-pause`\n- `allow-net-set-option`\n- `allow-udp-bind`\n- `allow-udp-send`\n- `allow-udp-option`\n- `allow-udp-membership`\n- `allow-dns-lookup`\n- `allow-dns-resolve`\n- `allow-dns-reverse`\n- `allow-dns-servers`"
         }
       ]
     }
