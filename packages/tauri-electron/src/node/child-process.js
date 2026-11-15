@@ -305,7 +305,8 @@ function attachChannel(child, kind) {
     }
     ipc.write(line, (error) => {
       if (typeof callback === 'function') callback(error)
-      else if (error && error.code !== 'ERR_IPC_CHANNEL_CLOSED') this.emit('error', explainError('subprocess.send', error))
+      // A child that failed to start has reported that already ('error').
+      else if (error && this.pid !== undefined && error.code !== 'ERR_IPC_CHANNEL_CLOSED') this.emit('error', explainError('subprocess.send', error))
     })
     return true
   }
