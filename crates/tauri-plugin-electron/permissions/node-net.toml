@@ -2,7 +2,7 @@
 
 [[set]]
 identifier = "node-net"
-description = "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows."
+description = "Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows."
 permissions = [
   "allow-net-connect",
   "allow-net-listen",

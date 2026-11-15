@@ -73,6 +73,11 @@ first, so a second launch exits before anything else starts), then grants:
 - `electron-renderer` (every window): IPC, zoom, `window.close()` and
   `-webkit-app-region` dragging, like a context-isolated, sandboxed
   Electron renderer.
+- `electron-node-<label>` (added at runtime): the `node-*` permissions of
+  the enabled features, for a window the main process creates with
+  `nodeIntegration: true` or `sandbox: false`. Only `electron-main` can
+  configure windows (`set_window_config`), and the Node built-ins also check
+  the grant in Rust.
 
 Add capability files in `src-tauri/capabilities/` for anything more, or call
 `.default_capabilities(false)` to manage every permission yourself.

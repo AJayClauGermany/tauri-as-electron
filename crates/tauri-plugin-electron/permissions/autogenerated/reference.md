@@ -920,7 +920,7 @@ Denies the udp_send command without any pre-configured scope.
 </td>
 <td>
 
-Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>
@@ -933,7 +933,7 @@ Node's `child_process` (Cargo feature `node-child-process`): start any program t
 </td>
 <td>
 
-Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>
@@ -946,7 +946,7 @@ Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file
 </td>
 <td>
 
-Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on. Do not grant this to renderer windows.
+Node's `net`, `dgram`, `dns` and `tls` (Cargo features `node-net`, `node-tls`): open and accept TCP / IPC connections, send and receive UDP datagrams, resolve names. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>

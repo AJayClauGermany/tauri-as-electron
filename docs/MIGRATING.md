@@ -247,9 +247,9 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `webContents.openDevTools()` | Debug builds only. For release builds, add the `devtools` feature (uses private APIs on macOS). |
 | `webContents.on('before-input-event')` + `preventDefault()` | Reported after the page saw the key; block keys with a `keydown` listener in the page. |
 | Renderer calls to privileged Tauri APIs | Renderers only get IPC permissions (like context-isolated, sandboxed Electron renderers). Route through the main process, or add a capability file in `src-tauri/capabilities/`. |
-| `webPreferences.nodeIntegration: true` | No Node.js in any webview. `process.env` is filled in for such renderers, nothing else. |
 | `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
-| `fs`, `os`, `child_process` in a renderer (`nodeIntegration`) | Main process only, like a sandboxed Electron renderer: expose what the page needs with `ipcMain.handle`. |
+| `fs`, `os`, `child_process` in a renderer (`nodeIntegration: true`, `sandbox: false`) | Work, as in Electron, in windows created with those options, when the bundler plugin loads the Node layer in renderer pages: option `rendererNode` (default `'auto'` detects the options in your sources; set `true` if it misses them, e.g. options built at runtime). Sandboxed windows (the default) get a `NotImplementedError`: expose what the page needs with `ipcMain.handle`. |
+| `@electron/remote` | Works without changes: the bundler plugins alias it to tauri-electron's implementation. Keep `initialize()` and `enable(webContents)` in the main process. Every access is a synchronous round trip, as in Electron, so prefer IPC in hot paths. |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
 
@@ -324,9 +324,10 @@ A module whose feature is off throws `NotImplementedError` (reason
   streams over descriptors.
 - Not yet (they throw `NotImplementedError`, reason `unimplemented`):
   `watch` / `watchFile`, `cp`, `opendir`, `link`, `chown`.
-- Main process only. A renderer that calls `fs` gets a `NotImplementedError`
-  (reason `permission`): move the file access to `ipcMain.handle`, as with a
-  sandboxed Electron renderer.
+- Main process, and renderer windows created with `nodeIntegration: true` or
+  `sandbox: false` (see the table above). A sandboxed renderer that calls `fs`
+  gets a `NotImplementedError` (reason `permission`): move the file access to
+  `ipcMain.handle`, as with a sandboxed Electron renderer.
 
 **The app's own files.** `__dirname` is the project-relative folder of the
 source file (`/src/main`), so `fs.readFileSync(path.join(__dirname, 'data.json'))`

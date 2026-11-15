@@ -58,7 +58,11 @@
     "./tls": "./packages/tauri-electron/src/node/tls.js",
     "./dgram": "./packages/tauri-electron/src/node/dgram.js",
     "./dns": "./packages/tauri-electron/src/node/dns.js",
-    "./dns/promises": "./packages/tauri-electron/src/node/dns-promises.js"
+    "./dns/promises": "./packages/tauri-electron/src/node/dns-promises.js",
+    "./renderer-node": "./packages/tauri-electron/src/renderer/node.js",
+    "./remote": "./packages/tauri-electron/src/remote/index.js",
+    "./remote/renderer": "./packages/tauri-electron/src/remote/renderer.js",
+    "./remote/main": "./packages/tauri-electron/src/remote/main.js"
   },
   "bin": {
     "create-tauri-electron-app": "./scripts/create-app.mjs"

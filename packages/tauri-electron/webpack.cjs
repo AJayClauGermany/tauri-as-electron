@@ -46,7 +46,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, rendererNode } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -58,6 +58,7 @@ const MODULES = {
   bootstrap: path.join(SRC, 'renderer', 'bootstrap.js'),
   mainEntry: path.join(BUNDLER, 'main-entry.js'),
   mainNode: path.join(BUNDLER, 'main-node.js'),
+  rendererNode: path.join(BUNDLER, 'renderer-node.js'),
   consoleForwarder: path.join(BUNDLER, 'console-forwarder.js'),
   nodeBuiltin: path.join(BUNDLER, 'node-builtin.cjs'),
   pathGlobalsLoader: path.join(BUNDLER, 'path-globals-loader.cjs'),
@@ -107,6 +108,9 @@ const SHIM_FILES = {
   'tauri-electron/dgram': path.join(SRC, 'node', 'dgram.js'),
   'tauri-electron/dns': path.join(SRC, 'node', 'dns.js'),
   'tauri-electron/dns/promises': path.join(SRC, 'node', 'dns-promises.js'),
+  'tauri-electron/remote': path.join(SRC, 'remote', 'index.js'),
+  'tauri-electron/remote/renderer': path.join(SRC, 'remote', 'renderer.js'),
+  'tauri-electron/remote/main': path.join(SRC, 'remote', 'main.js'),
 }
 
 const SOURCE_FILE = /\.(m?[jt]sx?|c[jt]s)$/
@@ -144,6 +148,7 @@ function requireFromProject(id, context) {
 /** Where a request of the app's code should go instead, or null to leave it alone. */
 function redirect(request, { aliasPath, userResolved }) {
   if (ELECTRON_REQUEST.test(request)) return MODULES.electron
+  if (PACKAGE_SHIMS[request]) return SHIM_FILES[PACKAGE_SHIMS[request]]
   const bare = request.replace(/^node:/, '')
   if (userResolved.has(bare) || userResolved.has(request)) return null
   if (aliasPath !== false || !bare.startsWith('path')) {
@@ -203,6 +208,7 @@ class TauriElectronPlugin {
    * @param {boolean} [options.forgeGlobals=true] Define Forge's `<NAME>_WEBPACK_ENTRY` globals for `pages`.
    * @param {false|string[]} [options.resources] App files `fs` can read in a build (see the Vite plugin).
    * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
+   * @param {boolean|'auto'} [options.rendererNode='auto'] Node built-ins for nodeIntegration windows (see the Vite plugin).
    */
   constructor(options = {}) {
     if (!options.main) throw new Error(`${NAME}: the \`main\` option (your Electron main script) is required`)
@@ -235,7 +241,7 @@ class TauriElectronPlugin {
     // rejects `node:` requests on web targets.
     const userResolved = userResolvedNames(config.resolve)
     const aliasPath = options.aliasPath
-    new bundler.NormalModuleReplacementPlugin(/^(node:)?[a-z_/-]+$/, (resource) => {
+    new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?)$/, (resource) => {
       if (typeof resource.request !== 'string') return
       const target = redirect(resource.request, { aliasPath, userResolved })
       if (target) resource.request = target
@@ -262,9 +268,11 @@ class TauriElectronPlugin {
     }
     // Library preloads (electron-log, …): session preloads, which Electron runs before the window's own.
     const libraryPreloads = sessionPreloads(context, options.sessionPreloads)
+    const withRendererNode = rendererNode(context, options.rendererNode)
     const rendererPrefix = (name, page) => [
       ...(withRequire ? [MODULES.require] : []),
       MODULES.bootstrap,
+      ...(withRendererNode ? [MODULES.rendererNode] : []),
       ...libraryPreloads.map((preload) => preload.id),
       ...preloadsFor(name, page),
     ]

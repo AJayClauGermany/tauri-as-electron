@@ -44,7 +44,8 @@ describe('moduleScripts', () => {
 
 /** Drive the plugin's hooks the way Vite does, without a Vite build. */
 function plugin(options, { dev = false } = {}) {
-  const p = tauriElectron(options)
+  // rendererNode: 'auto' would scan this package's own sources.
+  const p = tauriElectron({ rendererNode: false, ...options })
   p.config({})
   p.configResolved({ root: process.cwd(), command: dev ? 'serve' : 'build' })
   return p
