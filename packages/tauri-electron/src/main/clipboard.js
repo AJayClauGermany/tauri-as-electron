@@ -4,12 +4,44 @@
  * Follows the current Electron API, where clipboard access is async
  * (`readText(): Promise<string>`, `write(ClipboardItem[])`, ...), and keeps
  * the older synchronous-style helpers (writeHTML, writeImage, ...) for apps
- * written against earlier Electron versions. Reads can only be async on
- * Tauri, so `await clipboard.readText()` is the portable spelling.
+ * written against earlier Electron versions.
+ *
+ * Apps that depend on Electron < 45 (the bundler plugins read the version
+ * from package.json) get the synchronous reads they were written for:
+ * readText, readHTML, readImage, availableFormats and has are answered by
+ * tauri-plugin-electron over the synchronous bridge. `readHTML` is a
+ * tauri-plugin-electron command otherwise (the clipboard plugin reads text
+ * and images only).
  */
 import { readText, writeText, writeHtml, writeImage, readImage, clear } from '@tauri-apps/plugin-clipboard-manager'
-import { NotImplementedError, report } from '../internal/runtime.js'
+import { NotImplementedError, report, inTauri } from '../internal/runtime.js'
+import { native, hasNativePlugin, syncRequestBytes } from '../internal/native.js'
+import { parseJson } from '../internal/node-bridge.js'
 import { resolveImage, nativeImage } from './native-image.js'
+
+/** Electron < 45: clipboard reads are synchronous. */
+export function synchronousReads() {
+  const major = globalThis.__TAURI_ELECTRON_APP__?.electron
+  return typeof major === 'number' && major < 45 && inTauri && hasNativePlugin()
+}
+
+/** A synchronous read over the bridge; `fallback` when it fails. */
+function readSync(op, fallback) {
+  try {
+    const { status, bytes } = syncRequestBytes(`clipboard/${op}`)
+    if (status !== 200) return fallback
+    if (op !== 'readImage') return parseJson(bytes) ?? fallback
+    if (bytes.length < 8) return nativeImage.createEmpty()
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const width = view.getUint32(0, true)
+    const height = view.getUint32(4, true)
+    return nativeImage.createFromBitmap(bytes.subarray(8), { width, height, format: 'rgba' })
+  } catch {
+    return fallback
+  }
+}
+
+const FORMAT_ALIASES = { text: 'text/plain', html: 'text/html', image: 'image/png' }
 
 // Custom formats (writeBuffer) and the macOS find pasteboard have no Tauri
 // API; they are kept in memory, so they only round-trip within this app run.
@@ -71,6 +103,7 @@ async function writeItems(items) {
 
 export const clipboard = {
   readText() {
+    if (synchronousReads()) return readSync('readText', '')
     return readText().catch(() => '')
   },
 
@@ -92,15 +125,25 @@ export const clipboard = {
     return text ? [new ClipboardItem({ 'text/plain': text })] : []
   },
 
-  async has(mimetype) {
+  has(mimetype) {
+    if (synchronousReads()) {
+      if (buffers.has(mimetype)) return true
+      // Only that format is checked (the image check decodes the image).
+      return readSync(`has/${FORMAT_ALIASES[mimetype] ?? mimetype}`, false) === true
+    }
+    return clipboard._hasAsync(mimetype)
+  },
+
+  async _hasAsync(mimetype) {
     if (buffers.has(mimetype)) return true
     if (mimetype === 'image/png' || mimetype === 'image') return !(await readClipboardImage()).isEmpty()
     if (mimetype !== 'text/plain' && mimetype !== 'text') return false
     return (await clipboard.readText()) !== ''
   },
 
-  /** Async (Tauri reads the clipboard asynchronously): `await clipboard.readImage()`. */
+  /** Async (synchronous for Electron < 45): `await clipboard.readImage()` works in both. */
   readImage() {
+    if (synchronousReads()) return readSync('readImage', nativeImage.createEmpty())
     return readClipboardImage()
   },
 
@@ -136,10 +179,14 @@ export const clipboard = {
     return resolveImage(image).then((bytes) => bytes && writeImage(bytes))
   },
   availableFormats() {
+    if (synchronousReads()) return [...readSync('formats', []), ...buffers.keys()]
     return ['text/plain', ...buffers.keys()]
   },
+  /** Async (synchronous for Electron < 45). */
   readHTML() {
-    throw new NotImplementedError('clipboard.readHTML', { reason: 'unimplemented', hint: 'tauri-plugin-clipboard-manager reads text and images only.' })
+    if (synchronousReads()) return readSync('readHTML', '')
+    if (!inTauri) return Promise.resolve('')
+    return native('clipboard_read_html').catch(() => '')
   },
   readRTF() {
     throw new NotImplementedError('clipboard.readRTF', { reason: 'unsupported' })

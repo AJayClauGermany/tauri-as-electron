@@ -16,17 +16,25 @@
  * app's files, see ../internal/app-files.js. Writing to them fails with EROFS
  * in a build, as writing into an Electron app's asar does.
  *
- * Not implemented yet (they throw NotImplementedError): file descriptors
- * (`open`, `read`, `write`, `close`, `fstat`, …), streams, `watch`,
+ * File descriptors (`open`, `read`, `write`, `fstat`, `fsync`, …,
+ * `fs.promises.open`'s FileHandle) name files Rust keeps open; they are
+ * numbers from 3 up, valid until closed (or until the app exits), and only
+ * mean something to this module. Writes to 1 and 2 reach the app's stdout
+ * and stderr. `createReadStream` / `createWriteStream` are readable-stream
+ * streams over them.
+ *
+ * Not implemented yet (they throw NotImplementedError): `watch`,
  * `watchFile`, `cp`, `opendir`, `link`, `chown`.
  */
 import { Buffer } from './buffer.js'
 import { native, hasFeature, featureError } from '../internal/native.js'
-import { nodeCallSync, nodeFailure, noTauri, parseJson, plainBytes } from '../internal/node-bridge.js'
+import { nodeCallSync, nodeFailure, noTauri, parseJson, plainBytes, encodeFrame, responseBytes } from '../internal/node-bridge.js'
 import { inTauri, isPackagedBuild, explainError, NotImplementedError } from '../internal/runtime.js'
 import { resolveAppPath } from '../internal/app-files.js'
 import { platform } from '../process.js'
 import { fileURLToPath } from '../url.js'
+import { EventEmitter } from '../internal/emitter.js'
+import { Readable, Writable } from './stream.js'
 
 const FEATURE = 'node-fs'
 const isWindows = platform === 'win32'
@@ -143,25 +151,12 @@ const encoder = new TextEncoder()
 /** Blocking call over the synchronous bridge. */
 function callSync(api, op, args, data) {
   const bytes = nodeCallSync({ api, module: 'fs', feature: FEATURE, op, args, body: data, toError: nodeError })
-  return op === 'read' ? bytes : parseJson(bytes)
+  return returnsBytes(op) ? bytes : parseJson(bytes)
 }
 
-/** `node_fs` command body: u32 LE header length, JSON `{ op, args }`, then the data. */
-export function encodeFrame(op, args, data) {
-  const header = encoder.encode(JSON.stringify({ op, args }))
-  const body = new Uint8Array(4 + header.length + (data?.byteLength ?? 0))
-  new DataView(body.buffer).setUint32(0, header.length, true)
-  body.set(header, 4)
-  if (data) body.set(plainBytes(data), 4 + header.length)
-  return body
-}
+const returnsBytes = (op) => op === 'read' || op === 'fdRead'
 
-function responseBytes(value) {
-  if (value instanceof ArrayBuffer) return new Uint8Array(value)
-  if (ArrayBuffer.isView(value)) return plainBytes(value)
-  if (Array.isArray(value)) return Uint8Array.from(value)
-  return encoder.encode(value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value))
-}
+export { encodeFrame }
 
 /** Non-blocking call over the `node_fs` command. */
 async function callAsync(api, op, args, data) {
@@ -175,7 +170,7 @@ async function callAsync(api, op, args, data) {
     throw explainError(api, error)
   }
   const bytes = responseBytes(result)
-  return op === 'read' ? bytes : parseJson(bytes)
+  return returnsBytes(op) ? bytes : parseJson(bytes)
 }
 
 // --- arguments ---------------------------------------------------------------------------------------
@@ -270,10 +265,104 @@ function toSeconds(time, name) {
   throw invalidArgType(name, 'of type number or an instance of Date', time)
 }
 
-function rejectFd(value, api) {
-  if (typeof value === 'number') {
-    throw unavailable(api, 'unimplemented', 'File descriptors are not implemented yet: pass a path.')
+function outOfRange(name, range, value) {
+  return argError(RangeError, 'ERR_OUT_OF_RANGE', `The value of "${name}" is out of range. It must be ${range}. Received ${value}`)
+}
+
+function toFd(fd) {
+  if (typeof fd !== 'number') throw invalidArgType('fd', 'of type number', fd)
+  if (!Number.isInteger(fd)) throw outOfRange('fd', 'an integer', fd)
+  if (fd < 0 || fd > 2147483647) throw outOfRange('fd', '>= 0 && <= 2147483647', fd)
+  return fd
+}
+
+const isFd = (value) => typeof value === 'number'
+
+/** A file position: null (the current one) or a byte offset. -1 means current, as in Node. */
+function toPosition(position) {
+  if (position === null || position === undefined) return null
+  if (typeof position === 'bigint') position = Number(position)
+  if (typeof position !== 'number') throw invalidArgType('position', 'of type number or bigint', position)
+  if (!Number.isInteger(position)) throw outOfRange('position', 'an integer', position)
+  if (position === -1) return null
+  if (position < 0) throw outOfRange('position', '>= -1 && <= 9007199254740991', position)
+  return position
+}
+
+function toLength(value, name, max) {
+  if (typeof value !== 'number') throw invalidArgType(name, 'of type number', value)
+  if (!Number.isInteger(value)) throw outOfRange(name, 'an integer', value)
+  if (value < 0 || value > max) throw outOfRange(name, `>= 0 && <= ${max}`, value)
+  return value
+}
+
+const R = { read: true }
+const RW = { read: true, write: true }
+const W = { write: true, create: true, truncate: true }
+const WX = { ...W, exclusive: true }
+const A = { append: true, create: true }
+const AX = { ...A, exclusive: true }
+/** Node's string flags, as what Rust opens the file with. */
+const FLAGS = {
+  r: R, rs: R, sr: R,
+  'r+': RW, 'rs+': RW, 'sr+': RW,
+  w: W, wx: WX, xw: WX,
+  'w+': { ...W, read: true }, 'wx+': { ...WX, read: true }, 'xw+': { ...WX, read: true },
+  a: A, as: A, sa: A, ax: AX, xa: AX,
+  'a+': { ...A, read: true }, 'as+': { ...A, read: true }, 'sa+': { ...A, read: true },
+  'ax+': { ...AX, read: true }, 'xa+': { ...AX, read: true },
+}
+
+/** `'r+'`, `'wx'`, `O_WRONLY | O_CREAT` (with this module's `constants`), … → open options. */
+export function parseFlags(flags) {
+  if (flags === undefined || flags === null) return { ...R }
+  if (typeof flags === 'number' && Number.isInteger(flags)) {
+    const access = flags & 3
+    const append = Boolean(flags & constants.O_APPEND)
+    return {
+      read: access === 0 || access === 2,
+      write: access === 1 || access === 2 || append,
+      append,
+      create: Boolean(flags & constants.O_CREAT),
+      truncate: Boolean(flags & constants.O_TRUNC),
+      exclusive: Boolean(flags & constants.O_EXCL),
+    }
   }
+  const parsed = typeof flags === 'string' ? FLAGS[flags] : undefined
+  if (!parsed) throw invalidArgValue('flags', flags)
+  return { ...parsed }
+}
+
+/** `read(fd, buffer, offset, length, position)` and its options forms. */
+function readArgs(buffer, offset, length, position) {
+  if (buffer !== null && typeof buffer === 'object' && !ArrayBuffer.isView(buffer)) {
+    ;({ buffer = Buffer.alloc(16384), offset = 0, length, position = null } = buffer)
+  } else if (buffer === undefined) {
+    buffer = Buffer.alloc(16384)
+  } else if (offset !== null && typeof offset === 'object') {
+    ;({ offset = 0, length, position = null } = offset)
+  }
+  if (!ArrayBuffer.isView(buffer)) throw invalidArgType('buffer', 'an instance of Buffer, TypedArray, or DataView', buffer)
+  offset = toLength(offset ?? 0, 'offset', buffer.byteLength)
+  length = toLength(length ?? buffer.byteLength - offset, 'length', buffer.byteLength - offset)
+  return { buffer, offset, length, position: toPosition(position) }
+}
+
+/** `write(fd, buffer, offset, length, position)`, `write(fd, buffer, options)`, `write(fd, string, position, encoding)`. */
+function writeArgs(data, a, b, c) {
+  if (typeof data === 'string') {
+    const encoding = typeof b === 'string' ? b : typeof a === 'string' ? a : 'utf8'
+    checkEncoding(encoding)
+    return { bytes: Buffer.from(data, encoding), position: toPosition(typeof a === 'number' || typeof a === 'bigint' ? a : null), value: data }
+  }
+  if (!ArrayBuffer.isView(data)) {
+    throw invalidArgType('buffer', 'of type string or an instance of Buffer, TypedArray, or DataView', data)
+  }
+  let [offset, length, position] = [a, b, c]
+  if (offset !== null && typeof offset === 'object') ({ offset = 0, length, position = null } = offset)
+  offset = toLength(offset ?? 0, 'offset', data.byteLength)
+  length = toLength(length ?? data.byteLength - offset, 'length', data.byteLength - offset)
+  return { bytes: new Uint8Array(data.buffer, data.byteOffset + offset, length), position: toPosition(position), value: data }
 }
 
 // --- Stats and Dirent --------------------------------------------------------------------------------
@@ -389,12 +478,11 @@ const isNotFound = (error) => error?.code === 'ENOENT'
 
 const plans = {
   readFile(path, options) {
-    rejectFd(path, 'fs.readFile with a file descriptor')
     const { encoding } = getOptions(options, { encoding: null, flag: 'r' })
     checkEncoding(encoding)
     return {
-      op: 'read',
-      args: { path: target(path) },
+      // With a descriptor: from its current position to the end, like Node.
+      ...(isFd(path) ? { op: 'fdRead', args: { fd: toFd(path), position: null } } : { op: 'read', args: { path: target(path) } }),
       finish: (bytes) => {
         const buffer = toBuffer(bytes)
         return encoding && encoding !== 'buffer' ? buffer.toString(encoding) : buffer
@@ -403,9 +491,12 @@ const plans = {
   },
 
   writeFile(path, data, options, defaultFlag = 'w') {
-    rejectFd(path, 'fs.writeFile with a file descriptor')
     const { encoding, mode, flag } = getOptions(options, { encoding: 'utf8', mode: 0o666, flag: defaultFlag })
     checkEncoding(encoding)
+    if (isFd(path)) {
+      // At the descriptor's current position, like Node.
+      return { op: 'fdWrite', args: { fd: toFd(path), position: null }, data: dataBytes(data, encoding), finish: () => undefined }
+    }
     return {
       op: 'write',
       args: { path: target(path, { write: true, syscall: 'open' }), flag: writeFlag(flag), mode: toMode(mode, 0o666) },
@@ -522,7 +613,7 @@ const plans = {
   },
 
   truncate(path, len = 0) {
-    rejectFd(path, 'fs.truncate with a file descriptor')
+    if (isFd(path)) return plans.ftruncate(path, len)
     if (typeof len !== 'number' || !Number.isInteger(len)) throw invalidArgType('len', 'of type number', len)
     return { op: 'truncate', args: { path: target(path, { write: true, syscall: 'open' }), len: Math.max(0, len) } }
   },
@@ -545,6 +636,61 @@ const plans = {
     return { op: 'readlink', args: { path: target(path) }, finish: (link) => (encoding === 'buffer' ? Buffer.from(link) : link) }
   },
 
+  // --- file descriptors ---
+
+  open(path, flags = 'r', mode = 0o666) {
+    const options = parseFlags(flags)
+    const writes = options.write || options.append || options.create || options.truncate
+    return {
+      op: 'open',
+      args: { path: target(path, { write: writes, syscall: 'open' }), flags: options, mode: toMode(mode, 0o666) },
+    }
+  },
+
+  close(fd) {
+    return { op: 'close', args: { fd: toFd(fd) } }
+  },
+
+  read(fd, buffer, offset, length, position) {
+    fd = toFd(fd)
+    const args = readArgs(buffer, offset, length, position)
+    const spread = (bytesRead) => [bytesRead, args.buffer]
+    if (args.length === 0) return { constant: 0, spread }
+    return {
+      op: 'fdRead',
+      args: { fd, length: args.length, position: args.position },
+      finish: (bytes) => {
+        new Uint8Array(args.buffer.buffer, args.buffer.byteOffset + args.offset, bytes.byteLength).set(bytes)
+        return bytes.byteLength
+      },
+      spread,
+    }
+  },
+
+  write(fd, data, a, b, c) {
+    fd = toFd(fd)
+    const { bytes, position, value } = writeArgs(data, a, b, c)
+    return { op: 'fdWrite', args: { fd, position }, data: bytes, spread: (written) => [written, value] }
+  },
+
+  fstat(fd, options) {
+    const { bigint = false } = getOptions(options)
+    return { op: 'fstat', args: { fd: toFd(fd) }, finish: (raw) => makeStats(raw, bigint) }
+  },
+
+  fsync(fd) {
+    return { op: 'fsync', args: { fd: toFd(fd) } }
+  },
+
+  fdatasync(fd) {
+    return { op: 'fdatasync', args: { fd: toFd(fd) } }
+  },
+
+  ftruncate(fd, len = 0) {
+    if (typeof len !== 'number' || !Number.isInteger(len)) throw invalidArgType('len', 'of type number', len)
+    return { op: 'ftruncate', args: { fd: toFd(fd), len: Math.max(0, len) } }
+  },
+
   symlink(targetPath, path, type) {
     const link = toPathString(targetPath, 'target')
     return {
@@ -555,6 +701,7 @@ const plans = {
 }
 
 function runSync(api, plan) {
+  if ('constant' in plan) return plan.constant
   let result
   try {
     result = callSync(api, plan.op, plan.args, plan.data)
@@ -566,6 +713,7 @@ function runSync(api, plan) {
 }
 
 async function runAsync(api, plan) {
+  if ('constant' in plan) return plan.constant
   let result
   try {
     result = await callAsync(api, plan.op, plan.args, plan.data)
@@ -586,15 +734,25 @@ const promiseVariant = (name) =>
     return runAsync(`fs.promises.${name}`, plans[name](...args))
   }
 
-/** Node's callback form: the callback runs asynchronously, also on immediate failure. */
-const callbackVariant = (name) =>
+/**
+ * Node's callback form: the callback runs asynchronously, also on immediate
+ * failure. A plan's `spread` gives the callback several values (`fs.read`'s
+ * `bytesRead, buffer`). With `optional`, the callback may be left out (`fs.close`).
+ */
+const callbackVariant = (name, { optional = false } = {}) =>
   function (...args) {
-    const callback = args.pop()
-    if (typeof callback !== 'function') throw invalidArgType('cb', 'of type function', callback)
+    let callback = args.at(-1)
+    if (typeof callback === 'function') args.pop()
+    else if (optional) callback = () => {}
+    else throw invalidArgType('cb', 'of type function', callback)
     Promise.resolve()
-      .then(() => runAsync(`fs.${name}`, plans[name](...args)))
+      .then(async () => {
+        const plan = plans[name](...args)
+        const value = await runAsync(`fs.${name}`, plan)
+        return plan.spread ? plan.spread(value) : [value]
+      })
       .then(
-        (value) => queueMicrotask(() => callback(null, value)),
+        (values) => queueMicrotask(() => callback(null, ...values)),
         (error) => queueMicrotask(() => callback(error)),
       )
   }
@@ -621,6 +779,14 @@ export const chmodSync = syncVariant('chmod')
 export const utimesSync = syncVariant('utimes')
 export const readlinkSync = syncVariant('readlink')
 export const symlinkSync = syncVariant('symlink')
+export const openSync = syncVariant('open')
+export const closeSync = syncVariant('close')
+export const readSync = syncVariant('read')
+export const writeSync = syncVariant('write')
+export const fstatSync = syncVariant('fstat')
+export const fsyncSync = syncVariant('fsync')
+export const fdatasyncSync = syncVariant('fdatasync')
+export const ftruncateSync = syncVariant('ftruncate')
 
 /** Never throws for a missing or invalid path, like Node; a misconfigured app still hears about it. */
 export function existsSync(path) {
@@ -640,8 +806,303 @@ function notYet(api, hint) {
   }
 }
 
-const FD_HINT = 'File descriptors are not implemented yet: use readFile / writeFile / appendFile.'
-const STREAM_HINT = 'Streams are not implemented yet: use readFile / writeFile.'
+// --- FileHandle (fs.promises.open) ------------------------------------------------------------------------
+
+const kFd = Symbol('fd')
+const kClosing = Symbol('closing')
+
+function closedError(syscall) {
+  return nodeError({ code: 'EBADF', errno: isWindows ? -4083 : -9, syscall })
+}
+
+/** Node's `FileHandle`, as `fs.promises.open` resolves to. */
+export class FileHandle extends EventEmitter {
+  constructor(fd) {
+    super()
+    this[kFd] = fd
+    this[kClosing] = null
+  }
+
+  get fd() {
+    return this[kFd]
+  }
+
+  getAsyncId() {
+    return this[kFd]
+  }
+
+  _run(name, syscall, ...args) {
+    if (this[kFd] < 0) return Promise.reject(closedError(syscall))
+    return runAsync(`filehandle.${name}`, plans[syscall](this[kFd], ...args))
+  }
+
+  async read(buffer, offset, length, position) {
+    if (this[kFd] < 0) throw closedError('read')
+    const plan = plans.read(this[kFd], buffer, offset, length, position)
+    const bytesRead = await runAsync('filehandle.read', plan)
+    return { bytesRead, buffer: plan.spread(bytesRead)[1] }
+  }
+
+  async write(data, a, b, c) {
+    if (this[kFd] < 0) throw closedError('write')
+    const plan = plans.write(this[kFd], data, a, b, c)
+    const bytesWritten = await runAsync('filehandle.write', plan)
+    return { bytesWritten, buffer: plan.spread(bytesWritten)[1] }
+  }
+
+  readFile(options) {
+    return this._run('readFile', 'readFile', options)
+  }
+
+  writeFile(data, options) {
+    return this._run('writeFile', 'writeFile', data, options)
+  }
+
+  appendFile(data, options) {
+    return this._run('appendFile', 'appendFile', data, options)
+  }
+
+  stat(options) {
+    return this._run('stat', 'fstat', options)
+  }
+
+  sync() {
+    return this._run('sync', 'fsync')
+  }
+
+  datasync() {
+    return this._run('datasync', 'fdatasync')
+  }
+
+  truncate(len = 0) {
+    return this._run('truncate', 'ftruncate', len)
+  }
+
+  createReadStream(options) {
+    return new ReadStream(undefined, { ...getOptions(options), fd: this })
+  }
+
+  createWriteStream(options) {
+    return new WriteStream(undefined, { ...getOptions(options), fd: this })
+  }
+
+  close() {
+    if (this[kFd] < 0) return this[kClosing] ?? Promise.resolve()
+    const fd = this[kFd]
+    this[kClosing] ??= runAsync('filehandle.close', plans.close(fd)).then(() => {
+      this[kFd] = -1
+      this.emit('close')
+    }, (error) => {
+      this[kClosing] = null
+      throw error
+    })
+    return this[kClosing]
+  }
+
+  [Symbol.asyncDispose ?? Symbol.for('Symbol.asyncDispose')]() {
+    return this.close()
+  }
+}
+
+// --- streams -----------------------------------------------------------------------------------------------
+
+/** What a stream's `fd` option holds: a descriptor, a FileHandle, or nothing yet. */
+function streamFd(stream) {
+  return stream.fd instanceof FileHandle ? stream.fd.fd : stream.fd
+}
+
+function checkStart(start, end) {
+  if (start !== undefined) toLength(start, 'start', Number.MAX_SAFE_INTEGER)
+  if (end !== undefined && end !== Infinity) toLength(end, 'end', Number.MAX_SAFE_INTEGER)
+  if (start !== undefined && end !== undefined && start > end) {
+    throw outOfRange('start', `<= "end" (here: ${end})`, start)
+  }
+}
+
+/** Open the stream's file unless it was given a descriptor. */
+function openStream(stream, api, callback) {
+  if (stream.fd !== null && stream.fd !== undefined) {
+    callback()
+    return
+  }
+  let plan
+  try {
+    plan = plans.open(stream.path, stream.flags, stream.mode)
+  } catch (error) {
+    callback(error)
+    return
+  }
+  runAsync(api, plan).then((fd) => {
+    stream.fd = fd
+    callback()
+    stream.emit('open', fd)
+    stream.emit('ready')
+  }, callback)
+}
+
+/** Close the stream's file when it owns it (`autoClose`). */
+function closeStream(stream, api, error, callback) {
+  const fd = stream.fd
+  if (fd === null || fd === undefined || !stream.autoClose) {
+    callback(error)
+    return
+  }
+  const closing = fd instanceof FileHandle ? fd.close() : runAsync(api, plans.close(fd))
+  stream.fd = null
+  closing.then(() => callback(error), (closeError) => callback(error ?? closeError))
+}
+
+/** fs.ReadStream: reads `start`…`end` (inclusive) in `highWaterMark` chunks. */
+export class ReadStream extends Readable {
+  constructor(path, options) {
+    options = getOptions(options)
+    const fd = options.fd ?? null
+    if (fd !== null && !(fd instanceof FileHandle)) toFd(fd)
+    checkStart(options.start, options.end)
+    super({
+      highWaterMark: options.highWaterMark ?? 64 * 1024,
+      encoding: options.encoding ?? null,
+      emitClose: options.emitClose ?? true,
+      autoDestroy: options.autoDestroy ?? true,
+      signal: options.signal,
+    })
+    this.fd = fd
+    this.path = fd === null ? toPathString(path) : path
+    this.flags = options.flags ?? 'r'
+    this.mode = options.mode ?? 0o666
+    this.start = options.start
+    this.end = options.end ?? Infinity
+    this.pos = options.start
+    this.bytesRead = 0
+    this.autoClose = options.autoClose ?? true
+  }
+
+  get pending() {
+    return this.fd === null
+  }
+
+  _construct(callback) {
+    openStream(this, 'fs.createReadStream', callback)
+  }
+
+  _read(size) {
+    const remaining = this.end === Infinity ? size : Math.min(size, this.end - (this.pos ?? this.bytesRead) + 1)
+    if (remaining <= 0) {
+      this.push(null)
+      return
+    }
+    const fd = streamFd(this)
+    if (fd === undefined || fd < 0) {
+      this.destroy(closedError('read'))
+      return
+    }
+    callAsync('fs.ReadStream', 'fdRead', { fd, length: remaining, position: this.pos ?? null }).then((bytes) => {
+      if (this.pos !== undefined) this.pos += bytes.byteLength
+      this.bytesRead += bytes.byteLength
+      this.push(bytes.byteLength ? toBuffer(bytes) : null)
+    }, (error) => this.destroy(error))
+  }
+
+  _destroy(error, callback) {
+    closeStream(this, 'fs.ReadStream', error, callback)
+  }
+
+  close(callback) {
+    if (typeof callback === 'function') {
+      if (this.closed) queueMicrotask(callback)
+      else this.once('close', callback)
+    }
+    this.destroy()
+  }
+}
+
+/** fs.WriteStream: writes at `start` (or the descriptor's position) in order. */
+export class WriteStream extends Writable {
+  constructor(path, options) {
+    options = getOptions(options)
+    const fd = options.fd ?? null
+    if (fd !== null && !(fd instanceof FileHandle)) toFd(fd)
+    if (options.start !== undefined) toLength(options.start, 'start', Number.MAX_SAFE_INTEGER)
+    const encoding = options.encoding ?? options.defaultEncoding ?? 'utf8'
+    checkEncoding(encoding)
+    super({
+      highWaterMark: options.highWaterMark,
+      decodeStrings: true,
+      defaultEncoding: encoding,
+      emitClose: options.emitClose ?? true,
+      autoDestroy: options.autoDestroy ?? true,
+      signal: options.signal,
+    })
+    this.fd = fd
+    this.path = fd === null ? toPathString(path) : path
+    this.flags = options.flags ?? 'w'
+    this.mode = options.mode ?? 0o666
+    this.start = options.start
+    this.pos = options.start
+    this.bytesWritten = 0
+    this.autoClose = options.autoClose ?? true
+    this.flush = Boolean(options.flush)
+  }
+
+  get pending() {
+    return this.fd === null
+  }
+
+  _construct(callback) {
+    openStream(this, 'fs.createWriteStream', callback)
+  }
+
+  _write(chunk, encoding, callback) {
+    const bytes = typeof chunk === 'string' ? Buffer.from(chunk, encoding) : chunk
+    const fd = streamFd(this)
+    if (fd === undefined || fd < 0) {
+      callback(closedError('write'))
+      return
+    }
+    callAsync('fs.WriteStream', 'fdWrite', { fd, position: this.pos ?? null }, bytes).then((written) => {
+      if (this.pos !== undefined) this.pos += written
+      this.bytesWritten += written
+      callback()
+    }, callback)
+  }
+
+  _final(callback) {
+    const fd = streamFd(this)
+    if (!this.flush || fd === null || fd === undefined || fd < 0) {
+      callback()
+      return
+    }
+    runAsync('fs.WriteStream', plans.fsync(fd)).then(() => callback(), callback)
+  }
+
+  _destroy(error, callback) {
+    closeStream(this, 'fs.WriteStream', error, callback)
+  }
+
+  close(callback) {
+    if (typeof callback === 'function') {
+      if (this.closed) {
+        queueMicrotask(callback)
+        return
+      }
+      this.once('close', callback)
+    }
+    if (!this.autoClose) this.once('finish', () => this.destroy())
+    this.end()
+  }
+
+  destroySoon() {
+    this.end()
+  }
+}
+
+export function createReadStream(path, options) {
+  return new ReadStream(path, options)
+}
+
+export function createWriteStream(path, options) {
+  return new WriteStream(path, options)
+}
 
 export const promises = {
   readFile: promiseVariant('readFile'),
@@ -664,10 +1125,12 @@ export const promises = {
   utimes: promiseVariant('utimes'),
   readlink: promiseVariant('readlink'),
   symlink: promiseVariant('symlink'),
+  async open(path, flags, mode) {
+    return new FileHandle(await runAsync('fs.promises.open', plans.open(path, flags, mode)))
+  },
   constants,
 }
 for (const [name, hint] of [
-  ['open', FD_HINT],
   ['opendir', 'fs.opendir is not implemented yet: use readdir.'],
   ['cp', 'fs.cp is not implemented yet: use copyFile, mkdir and readdir.'],
   ['watch', 'fs.watch is not implemented yet.'],
@@ -704,6 +1167,14 @@ export const chmod = callbackVariant('chmod')
 export const utimes = callbackVariant('utimes')
 export const readlink = callbackVariant('readlink')
 export const symlink = callbackVariant('symlink')
+export const open = callbackVariant('open')
+export const close = callbackVariant('close', { optional: true })
+export const read = callbackVariant('read')
+export const write = callbackVariant('write')
+export const fstat = callbackVariant('fstat')
+export const fsync = callbackVariant('fsync')
+export const fdatasync = callbackVariant('fdatasync')
+export const ftruncate = callbackVariant('ftruncate')
 
 /** Deprecated in Node, still common: the callback gets a boolean only. */
 export function exists(path, callback) {
@@ -718,22 +1189,6 @@ export function exists(path, callback) {
 
 // --- not implemented yet ---------------------------------------------------------------------------------------
 
-export const openSync = notYet('fs.openSync', FD_HINT)
-export const open = notYet('fs.open', FD_HINT)
-export const closeSync = notYet('fs.closeSync', FD_HINT)
-export const close = notYet('fs.close', FD_HINT)
-export const readSync = notYet('fs.readSync', FD_HINT)
-export const read = notYet('fs.read', FD_HINT)
-export const writeSync = notYet('fs.writeSync', FD_HINT)
-export const write = notYet('fs.write', FD_HINT)
-export const fstatSync = notYet('fs.fstatSync', FD_HINT)
-export const fstat = notYet('fs.fstat', FD_HINT)
-export const fsyncSync = notYet('fs.fsyncSync', FD_HINT)
-export const fsync = notYet('fs.fsync', FD_HINT)
-export const ftruncateSync = notYet('fs.ftruncateSync', FD_HINT)
-export const ftruncate = notYet('fs.ftruncate', FD_HINT)
-export const createReadStream = notYet('fs.createReadStream', STREAM_HINT)
-export const createWriteStream = notYet('fs.createWriteStream', STREAM_HINT)
 export const watch = notYet('fs.watch', 'fs.watch is not implemented yet.')
 export const watchFile = notYet('fs.watchFile', 'fs.watchFile is not implemented yet.')
 export const unwatchFile = notYet('fs.unwatchFile', 'fs.watchFile is not implemented yet.')
@@ -749,14 +1204,14 @@ export const chown = notYet('fs.chown', 'chown is not implemented yet.')
 // --- default export: the module object, as require('fs') returns it -------------------------------------
 
 const fs = {
-  constants, F_OK, R_OK, W_OK, X_OK, Stats, BigIntStats, Dirent, promises,
+  constants, F_OK, R_OK, W_OK, X_OK, Stats, BigIntStats, Dirent, ReadStream, WriteStream, FileHandle, promises,
   readFileSync, writeFileSync, appendFileSync, existsSync, statSync, lstatSync, accessSync, mkdirSync,
   readdirSync, rmSync, unlinkSync, rmdirSync, renameSync, copyFileSync, realpathSync, mkdtempSync,
   truncateSync, chmodSync, utimesSync, readlinkSync, symlinkSync,
   readFile, writeFile, appendFile, exists, stat, lstat, access, mkdir, readdir, rm, unlink, rmdir, rename,
   copyFile, realpath, mkdtemp, truncate, chmod, utimes, readlink, symlink,
   openSync, open, closeSync, close, readSync, read, writeSync, write, fstatSync, fstat, fsyncSync, fsync,
-  ftruncateSync, ftruncate, createReadStream, createWriteStream, watch, watchFile, unwatchFile, cpSync, cp,
+  fdatasyncSync, fdatasync, ftruncateSync, ftruncate, createReadStream, createWriteStream, watch, watchFile, unwatchFile, cpSync, cp,
   opendirSync, opendir, linkSync, link, chownSync, chown,
 }
 

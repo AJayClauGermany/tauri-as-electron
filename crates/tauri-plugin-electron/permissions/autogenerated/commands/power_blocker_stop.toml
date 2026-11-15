@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-power-blocker-stop"
+description = "Enables the power_blocker_stop command without any pre-configured scope."
+commands.allow = ["power_blocker_stop"]
+
+[[permission]]
+identifier = "deny-power-blocker-stop"
+description = "Denies the power_blocker_stop command without any pre-configured scope."
+commands.deny = ["power_blocker_stop"]

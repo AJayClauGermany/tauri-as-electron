@@ -238,10 +238,10 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | --- | --- |
 | `ipcRenderer.sendSync` / `event.returnValue` | Works (through `tauri-plugin-electron`), but blocks the page like Electron; prefer `invoke` + `handle`. |
 | `dialog.show*Sync` | Works (through `tauri-plugin-electron`); the async versions are preferred. |
-| `clipboard.readText()` used synchronously | `await clipboard.readText()` (also the current Electron API). |
-| `screen.getCursorScreenPoint()` | `await screen.getCursorScreenPoint()`. |
+| `clipboard.readText()` used synchronously | Works when the app's `electron` dependency is below 45 (the bundler plugins read `package.json`), as in that Electron; otherwise `await clipboard.readText()` (the current Electron API). |
 | IPC payloads with class instances or cycles | Structured-clone types (`Uint8Array`, `Date`, `Map`, `Error`, …) work; class instances arrive as plain objects (as in Electron); cyclic objects throw. |
 | `protocol.handle('app', …)` | Also declare the scheme in `src-tauri/src/lib.rs`: `tauri_plugin_electron::Builder::new().protocol("app")`. Tauri needs schemes at build time. |
+| `session.registerPreloadScript` / `setPreloads` (libraries such as electron-log, @sentry/electron) | Preloads cannot be loaded at runtime. The bundler plugins put electron-log's and @sentry/electron's in every renderer page when the app depends on them; list others in the plugin's `sessionPreloads` option (module specifiers or project files), or `sessionPreloads: false` for none. |
 | `autoUpdater` | Add `"updater"` to the features of `tauri-plugin-electron` in `src-tauri/Cargo.toml` and configure `plugins.updater` (endpoints, public key) in `tauri.conf.json`. |
 | `app.requestSingleInstanceLock()` | Opt in: `features = ["single-instance"]` on `tauri-plugin-electron`. The lock is taken at startup, so a second launch exits before its main process runs. |
 | `webContents.openDevTools()` | Debug builds only. For release builds, add the `devtools` feature (uses private APIs on macOS). |
@@ -314,10 +314,16 @@ A module whose feature is off throws `NotImplementedError` (reason
   `rmdir`, `rename`, `copyFile`, `realpath`, `mkdtemp`, `truncate`, `chmod`,
   `utimes`, `readlink`, `symlink`, `constants`; each as `*Sync`, callback and
   `fs.promises` / `fs/promises`.
-- Not yet (they throw `NotImplementedError`, reason `unimplemented`): file
-  descriptors (`open`, `read`, `write`, `close`, `fstat`, `FileHandle`),
-  streams (`createReadStream`, `createWriteStream`), `watch` / `watchFile`,
-  `cp`, `opendir`, `link`, `chown`.
+- File descriptors: `open`, `close`, `read`, `write`, `fstat`, `fsync`,
+  `fdatasync`, `ftruncate` (sync, callback, and `fs.promises.open`'s
+  `FileHandle`), and `readFile` / `writeFile` with a descriptor. They are
+  numbers from 3 up that only this `fs` understands (not the operating
+  system's); 1 and 2 write to the app's stdout and stderr.
+- Streams: `createReadStream` (`start`, `end`, `highWaterMark`, `fd`) and
+  `createWriteStream` (`flags`, `start`, `fd`, `flush`), readable-stream
+  streams over descriptors.
+- Not yet (they throw `NotImplementedError`, reason `unimplemented`):
+  `watch` / `watchFile`, `cp`, `opendir`, `link`, `chown`.
 - Main process only. A renderer that calls `fs` gets a `NotImplementedError`
   (reason `permission`): move the file access to `ipcMain.handle`, as with a
   sandboxed Electron renderer.

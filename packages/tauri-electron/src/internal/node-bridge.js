@@ -23,6 +23,26 @@ export function plainBytes(view) {
   return new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
 }
 
+const encoder = new TextEncoder()
+
+/** `node_fs` command body: u32 LE header length, JSON `{ op, args }`, then the data. */
+export function encodeFrame(op, args, data) {
+  const header = encoder.encode(JSON.stringify({ op, args }))
+  const body = new Uint8Array(4 + header.length + (data?.byteLength ?? 0))
+  new DataView(body.buffer).setUint32(0, header.length, true)
+  body.set(header, 4)
+  if (data) body.set(plainBytes(data), 4 + header.length)
+  return body
+}
+
+/** A command's raw answer as bytes, whatever form the IPC transport delivered it in. */
+export function responseBytes(value) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  if (ArrayBuffer.isView(value)) return plainBytes(value)
+  if (Array.isArray(value)) return Uint8Array.from(value)
+  return encoder.encode(value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value))
+}
+
 /**
  * Why a call to `module` failed: the feature is off, a renderer called it,
  * the plugin is too old, or (`toError`, for answers with a `syscall`) the

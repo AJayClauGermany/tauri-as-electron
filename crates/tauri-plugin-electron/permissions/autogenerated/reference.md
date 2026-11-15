@@ -11,6 +11,13 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-is-devtools-open`
 - `allow-trash-item`
 - `allow-bridge-respond`
+- `allow-set-menu-visible`
+- `allow-cookies-get`
+- `allow-cookies-set`
+- `allow-cookies-remove`
+- `allow-clipboard-read-html`
+- `allow-power-blocker-start`
+- `allow-power-blocker-stop`
 
 ## Permission Table
 
@@ -154,6 +161,32 @@ Denies the child_write command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-clipboard-read-html`
+
+</td>
+<td>
+
+Enables the clipboard_read_html command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-clipboard-read-html`
+
+</td>
+<td>
+
+Denies the clipboard_read_html command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-close-devtools`
 
 </td>
@@ -173,6 +206,84 @@ Enables the close_devtools command without any pre-configured scope.
 <td>
 
 Denies the close_devtools command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-cookies-get`
+
+</td>
+<td>
+
+Enables the cookies_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-cookies-get`
+
+</td>
+<td>
+
+Denies the cookies_get command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-cookies-remove`
+
+</td>
+<td>
+
+Enables the cookies_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-cookies-remove`
+
+</td>
+<td>
+
+Denies the cookies_remove command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-cookies-set`
+
+</td>
+<td>
+
+Enables the cookies_set command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-cookies-set`
+
+</td>
+<td>
+
+Denies the cookies_set command without any pre-configured scope.
 
 </td>
 </tr>
@@ -544,6 +655,58 @@ Denies the open_devtools command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-power-blocker-start`
+
+</td>
+<td>
+
+Enables the power_blocker_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-power-blocker-start`
+
+</td>
+<td>
+
+Denies the power_blocker_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-power-blocker-stop`
+
+</td>
+<td>
+
+Enables the power_blocker_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-power-blocker-stop`
+
+</td>
+<td>
+
+Denies the power_blocker_stop command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-process-info`
 
 </td>
@@ -563,6 +726,32 @@ Enables the process_info command without any pre-configured scope.
 <td>
 
 Denies the process_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-set-menu-visible`
+
+</td>
+<td>
+
+Enables the set_menu_visible command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-set-menu-visible`
+
+</td>
+<td>
+
+Denies the set_menu_visible command without any pre-configured scope.
 
 </td>
 </tr>

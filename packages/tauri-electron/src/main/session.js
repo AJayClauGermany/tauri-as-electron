@@ -3,12 +3,14 @@
  *
  * Tauri's webview options cover the storage side of a partition (an
  * incognito webview for in-memory partitions, a separate data store for
- * `persist:` partitions on macOS) and `clearAllBrowsingData()`. Request
- * interception (webRequest), cookies and downloads have no JavaScript API in
- * Tauri: listeners are stored but never called, cookie access rejects.
+ * `persist:` partitions on macOS) and `clearAllBrowsingData()`. Cookies go
+ * through tauri-plugin-electron (the webview's cookie store). Request
+ * interception (webRequest) and downloads have no API in Tauri: listeners
+ * are stored but never called.
  */
-import { EventEmitter } from '../internal/emitter.js'
-import { NotImplementedError, report, warnOnce } from '../internal/runtime.js'
+import { EventEmitter, createEvent } from '../internal/emitter.js'
+import { NotImplementedError, MAIN_LABEL, report, warnOnce } from '../internal/runtime.js'
+import { native, hasNativePlugin } from '../internal/native.js'
 import { platform } from '../process.js'
 import { netFetch } from './net.js'
 import { protocol } from './protocol.js'
@@ -38,19 +40,108 @@ class WebRequest {
   }
 }
 
+/** Whether `domain` is `parent` or one of its subdomains (leading dots ignored). */
+function withinDomain(domain, parent) {
+  domain = String(domain).replace(/^\./, '').toLowerCase()
+  parent = String(parent).replace(/^\./, '').toLowerCase()
+  return domain === parent || domain.endsWith(`.${parent}`)
+}
+
+/** Electron's `cookies.get` filter, after Rust selected by `url`. */
+export function filterCookies(cookies, filter = {}) {
+  return cookies.filter((cookie) =>
+    (filter.name === undefined || cookie.name === filter.name) &&
+    (filter.domain === undefined || withinDomain(cookie.domain, filter.domain)) &&
+    (filter.path === undefined || cookie.path === filter.path) &&
+    (filter.secure === undefined || cookie.secure === filter.secure) &&
+    (filter.httpOnly === undefined || cookie.httpOnly === filter.httpOnly) &&
+    (filter.session === undefined || cookie.session === filter.session))
+}
+
+/** A cookie as Electron returns it: no `expirationDate` on session cookies. */
+function toElectronCookie(cookie) {
+  const out = { ...cookie }
+  if (out.expirationDate === null || out.expirationDate === undefined) delete out.expirationDate
+  return out
+}
+
+/**
+ * session.cookies, on the webview cookie store of a window in the session
+ * (the hidden main window for the default session). 'changed' is emitted for
+ * changes made through this API only: Tauri reports no others.
+ */
+/**
+ * Session preloads are files loaded at runtime in Electron; tauri-electron's
+ * bundler plugins put the known libraries' ones (electron-log, …, listed in
+ * `__TAURI_ELECTRON_APP__.sessionPreloads`) in every renderer page instead.
+ * Warn about any other.
+ */
+function warnUnbundledPreload(api, file) {
+  const bundled = globalThis.__TAURI_ELECTRON_APP__?.sessionPreloads ?? []
+  const normalized = String(file ?? '').replace(/\\/g, '/')
+  // `…/electron-log/src/renderer/electron-log-preload.js`, `…/@sentry/electron/preload/index.js`, a listed file
+  if (bundled.some((name) => normalized.includes(String(name).replace(/\\/g, '/').replace(/^\.\//, '')))) return
+  warnOnce(`${api}:${file}`, `${api}('${file}'): preloads cannot be loaded at runtime. Add it to the bundler plugin's \`sessionPreloads\` (or \`preload\`) option to run it in renderer pages.`)
+}
+
 class Cookies extends EventEmitter {
-  get() {
-    return Promise.reject(new NotImplementedError('session.cookies.get', { reason: 'unimplemented', hint: 'Tauri has cookie APIs in Rust; tauri-plugin-electron could expose them.' }))
+  constructor(session) {
+    super()
+    this._session = session
   }
 
-  set() {
-    return Promise.reject(new NotImplementedError('session.cookies.set', { reason: 'unimplemented' }))
+  /** A window whose webview uses this session's cookie store. */
+  async _label(api) {
+    if (!hasNativePlugin()) throw new NotImplementedError(api, { reason: 'plugin', hint: 'Cookies need tauri-plugin-electron.' })
+    if (this._session === defaultSession) return MAIN_LABEL
+    const win = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.session === this._session)
+    const missing = () => new Error(`${api}: no window uses partition '${this._session._partition}' yet; its cookie store is reached through one.`)
+    if (!win) throw missing()
+    // The window may close before its native window exists: do not wait forever.
+    await new Promise((resolve, reject) => {
+      const onClosed = () => reject(missing())
+      win.once('closed', onClosed)
+      win._nativeReady.promise.then(() => {
+        win.removeListener('closed', onClosed)
+        resolve()
+      }, reject)
+    })
+    return win._label
   }
 
-  remove() {
-    return Promise.reject(new NotImplementedError('session.cookies.remove', { reason: 'unimplemented' }))
+  async get(filter = {}) {
+    const label = await this._label('session.cookies.get')
+    const cookies = await native('cookies_get', { label, url: filter.url ?? null })
+    return filterCookies(cookies, filter).map(toElectronCookie)
   }
 
+  async set(details) {
+    if (!details?.url) throw new TypeError('session.cookies.set: details.url is required')
+    const label = await this._label('session.cookies.set')
+    const cookie = await native('cookies_set', {
+      label,
+      details: {
+        url: String(details.url),
+        name: String(details.name ?? ''),
+        value: String(details.value ?? ''),
+        domain: details.domain,
+        path: details.path,
+        secure: Boolean(details.secure),
+        httpOnly: Boolean(details.httpOnly),
+        expirationDate: details.expirationDate,
+        sameSite: details.sameSite,
+      },
+    })
+    this.emit('changed', createEvent(), toElectronCookie(cookie), 'explicit', false)
+  }
+
+  async remove(url, name) {
+    const label = await this._label('session.cookies.remove')
+    const removed = await native('cookies_remove', { label, url: String(url), name: String(name) })
+    for (const cookie of removed) this.emit('changed', createEvent(), toElectronCookie(cookie), 'explicit', true)
+  }
+
+  /** The webview writes its store itself. */
   flushStore() {
     return Promise.resolve()
   }
@@ -103,7 +194,7 @@ export class Session extends EventEmitter {
     this._handlers = {}
     this._downloadPath = ''
     this.webRequest = new WebRequest()
-    this.cookies = new Cookies()
+    this.cookies = new Cookies(this)
     this.protocol = protocol
     this.serviceWorkers = new EventEmitter()
     this.extensions = {
@@ -203,12 +294,13 @@ export class Session extends EventEmitter {
   setDownloadPath(path) { this._downloadPath = path }
 
   // --- preloads (tauri-electron injects preloads at build time) -------------------
-  getPreloads() { return [...this._preloads] }
+  getPreloads() { return this._preloads.map((p) => (typeof p === 'object' ? p.filePath : p)) }
   setPreloads(preloads) {
-    warnOnce('session.setPreloads', 'session preloads are not injected: tauri-electron injects preloads at build time (Vite plugin `preload` option).')
+    for (const file of preloads) warnUnbundledPreload('session.setPreloads', file)
     this._preloads = [...preloads]
   }
   registerPreloadScript(script) {
+    warnUnbundledPreload('session.registerPreloadScript', script?.filePath)
     const id = script.id ?? `preload-${this._preloads.length + 1}`
     this._preloads.push({ ...script, id })
     return id

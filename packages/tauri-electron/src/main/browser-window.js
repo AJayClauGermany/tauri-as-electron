@@ -30,6 +30,11 @@ import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 
 const windows = new Map()
+
+// Menu.setApplicationMenu gives every window the new menu: hide it again where the bar is hidden.
+bus.on('application-menu-set', () => {
+  for (const win of windows.values()) if (!win._state.menuBarVisible) win._applyMenuBarVisibility()
+})
 const contentsById = new Map()
 const contentsByLabel = new Map()
 let nextId = 1
@@ -39,7 +44,8 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/i
 const isMac = platform === 'darwin'
 
 /** Events the renderer bootstrap only reports while the main process listens for them. */
-const RENDERER_EVENTS = new Set(['context-menu', 'before-input-event', 'console-message', 'will-navigate', 'will-frame-navigate', 'zoom-changed'])
+// `menu-bar-alt` is internal: Alt pressed alone, for autoHideMenuBar.
+const RENDERER_EVENTS = new Set(['context-menu', 'before-input-event', 'console-message', 'will-navigate', 'will-frame-navigate', 'zoom-changed', 'menu-bar-alt'])
 
 /**
  * Turn a loadFile() path into an app-relative URL Tauri understands. Real
@@ -320,6 +326,9 @@ export class WebContents extends EventEmitter {
         break
       case 'context-menu':
         this.emit('context-menu', createEvent(), { ...data, frame: this.mainFrame, pageURL: data.pageURL ?? this._url })
+        break
+      case 'menu-bar-alt':
+        this._win._onMenuBarAlt()
         break
       case 'before-input-event':
         // Reported after the fact: preventDefault() cannot stop the page from seeing it.
@@ -801,6 +810,7 @@ export class BrowserWindow extends EventEmitter {
       aspectRatio: 0,
     }
     this.webContents = new WebContents(this)
+    if (options.autoHideMenuBar) this.webContents._newListener('menu-bar-alt')
     windows.set(this.id, this)
     bus.emit('browser-window-created', this)
     bus.emit('web-contents-created', this.webContents)
@@ -938,6 +948,7 @@ export class BrowserWindow extends EventEmitter {
       this._refreshGeometry()
       if (this.webContents._zoomFactor !== 1) native.setZoom(this.webContents._zoomFactor).catch(report('setZoom'))
       if (this._options.icon) this.setIcon(this._options.icon)
+      if (!this._state.menuBarVisible) this._applyMenuBarVisibility()
       if (!isAppUrl(url) || url === 'about:blank') {
         // No bootstrap in remote/blank pages: tauri-plugin-electron reports
         // the load; synthesize it if that does not happen in time.
@@ -1544,6 +1555,8 @@ export class BrowserWindow extends EventEmitter {
       // Tauri has no JS "remove menu" call; an empty menu is the closest match.
       const native = menu ? await menu._build() : await TauriMenu.new({ items: [] })
       await native.setAsWindowMenu(n)
+      // A new menu shows: hide it again if the bar is meant to be hidden.
+      if (!this._state.menuBarVisible) this._applyMenuBarVisibility()
     }, 'setMenu')
   }
 
@@ -1551,16 +1564,36 @@ export class BrowserWindow extends EventEmitter {
     this.setMenu(null)
   }
 
+  /** Show or hide the window's menu bar (Windows and Linux; macOS has none per window). */
+  _applyMenuBarVisibility() {
+    if (isMac || !hasNativePlugin() || this._destroyed) return
+    const visible = this._state.menuBarVisible
+    this._call(() => native('set_menu_visible', { label: this._label, visible }), 'setMenuBarVisibility')
+  }
+
   setMenuBarVisibility(visible) {
     this._state.menuBarVisible = Boolean(visible)
+    this._applyMenuBarVisibility()
   }
 
   isMenuBarVisible() {
     return this._state.menuBarVisible
   }
 
+  /** Hides the menu bar; Alt (pressed and released alone) toggles it, as in Electron. */
   setAutoHideMenuBar(hide) {
-    this._state.autoHideMenuBar = Boolean(hide)
+    hide = Boolean(hide)
+    if (hide === this._state.autoHideMenuBar) return
+    this._state.autoHideMenuBar = hide
+    this._state.menuBarVisible = !hide
+    if (hide) this.webContents._newListener('menu-bar-alt')
+    this._applyMenuBarVisibility()
+  }
+
+  _onMenuBarAlt() {
+    if (!this._state.autoHideMenuBar) return
+    this._state.menuBarVisible = !this._state.menuBarVisible
+    this._applyMenuBarVisibility()
   }
 
   isMenuBarAutoHide() {

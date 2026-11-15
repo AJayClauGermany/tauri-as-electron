@@ -32,6 +32,7 @@ import { nodeChecks } from './checks-node.js'
 import { layer2Checks } from './checks-node-layer2.js'
 import { layer3Checks } from './checks-node-layer3.js'
 import { layer4Checks } from './checks-node-layer4.js'
+import { waveAChecks } from './checks-wave-a.js'
 
 const isElectron = Boolean(process.versions.electron)
 
@@ -571,7 +572,7 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
-export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks]
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

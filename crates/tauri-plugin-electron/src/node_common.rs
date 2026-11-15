@@ -178,6 +178,7 @@ pub fn uv(code: &'static str) -> (&'static str, i64) {
         "EISDIR" => libc::EISDIR,
         "ENOTDIR" => libc::ENOTDIR,
         "EROFS" => libc::EROFS,
+        "EBADF" => libc::EBADF,
         "ECONNREFUSED" => libc::ECONNREFUSED,
         "ECONNRESET" => libc::ECONNRESET,
         "ECONNABORTED" => libc::ECONNABORTED,
@@ -193,6 +194,7 @@ pub fn uv(code: &'static str) -> (&'static str, i64) {
     let errno = match code {
         "EOF" => 4095,
         "EACCES" => 4092,
+        "EBADF" => 4083,
         "EBUSY" => 4082,
         "EEXIST" => 4075,
         "EINVAL" => 4071,

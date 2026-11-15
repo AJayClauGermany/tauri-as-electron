@@ -127,7 +127,7 @@ describe('fs sync API', () => {
       expect(a.message).toBe(b.message)
     }
     expect(() => fs.readFileSync('/a\u0000b')).toThrow(/without null bytes/)
-    expect(() => fs.readFileSync(3)).toThrow(/File descriptors are not implemented yet/)
+    expect(() => fs.readFileSync(-1)).toThrow(/"fd" is out of range/)
     expect(state.sync).toEqual([])
   })
 
@@ -193,8 +193,8 @@ describe('fs sync API', () => {
     expect(nodeThrows(() => fs.statSync('/x'))).toMatchObject({ reason: 'plugin' })
   })
 
-  it('leaves descriptors, streams and watchers unimplemented, with a hint', () => {
-    for (const fn of [fs.openSync, fs.createReadStream, fs.watch, fs.cpSync]) {
+  it('leaves watchers and cp unimplemented, with a hint', () => {
+    for (const fn of [fs.watch, fs.cpSync]) {
       expect(nodeThrows(() => fn('/x'))).toMatchObject({ name: 'NotImplementedError', reason: 'unimplemented' })
     }
   })
@@ -265,6 +265,185 @@ describe('fs.promises and callbacks', () => {
     state.features = []
     await expect(fs.promises.stat('/x')).rejects.toMatchObject({ name: 'NotImplementedError', reason: 'feature' })
     expect(state.invoke).toEqual([])
+  })
+})
+
+/**
+ * Answers the descriptor operations with Node's own fs, the way Rust does
+ * (see node_fs.rs), so that the JavaScript side runs end to end.
+ */
+function realDescriptors() {
+  const C = nodeFs.constants
+  const fail = (error, syscall) => ({ status: 400, value: { code: error.code, errno: error.errno, syscall: error.syscall ?? syscall, path: error.path } })
+  const position = (p) => (p === null || p === undefined ? null : p)
+  return (op, args, body) => {
+    try {
+      switch (op) {
+        case 'open': {
+          const f = args.flags
+          let flags = f.read && (f.write || f.append) ? C.O_RDWR : f.write || f.append ? C.O_WRONLY : C.O_RDONLY
+          if (f.append) flags |= C.O_APPEND
+          if (f.create || f.exclusive) flags |= C.O_CREAT
+          if (f.exclusive) flags |= C.O_EXCL
+          if (f.truncate && !f.exclusive) flags |= C.O_TRUNC
+          return { value: nodeFs.openSync(args.path, flags, args.mode) }
+        }
+        case 'close':
+          nodeFs.closeSync(args.fd)
+          return { value: null }
+        case 'fdRead': {
+          if (args.length === undefined) {
+            const chunks = []
+            let at = position(args.position)
+            for (;;) {
+              const chunk = Buffer.alloc(4096)
+              const n = nodeFs.readSync(args.fd, chunk, 0, chunk.length, at)
+              if (n === 0) break
+              if (at !== null) at += n
+              chunks.push(chunk.subarray(0, n))
+            }
+            return { bytes: new Uint8Array(Buffer.concat(chunks)) }
+          }
+          const out = Buffer.alloc(args.length)
+          const n = nodeFs.readSync(args.fd, out, 0, args.length, position(args.position))
+          return { bytes: new Uint8Array(out.subarray(0, n)) }
+        }
+        case 'fdWrite':
+          return { value: nodeFs.writeSync(args.fd, body, 0, body.byteLength, position(args.position)) }
+        case 'fstat': {
+          const s = nodeFs.fstatSync(args.fd)
+          return { value: { size: s.size, mode: s.mode, mtimeMs: s.mtimeMs } }
+        }
+        case 'fsync':
+          nodeFs.fsyncSync(args.fd)
+          return { value: null }
+        case 'fdatasync':
+          nodeFs.fdatasyncSync(args.fd)
+          return { value: null }
+        case 'ftruncate':
+          nodeFs.ftruncateSync(args.fd, args.len)
+          return { value: null }
+        default:
+          throw new Error(`unexpected op ${op}`)
+      }
+    } catch (error) {
+      return fail(error, op)
+    }
+  }
+}
+
+describe('file descriptors', () => {
+  let dir
+  beforeEach(() => {
+    dir = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'te-fd-'))
+    state.answer = realDescriptors()
+  })
+  afterEach(() => nodeFs.rmSync(dir, { recursive: true, force: true }))
+
+  it('decodes Node\'s string and numeric flags', () => {
+    expect(fs.parseFlags('r')).toEqual({ read: true })
+    expect(fs.parseFlags('wx+')).toEqual({ read: true, write: true, create: true, truncate: true, exclusive: true })
+    expect(fs.parseFlags('a')).toEqual({ append: true, create: true })
+    const { O_WRONLY, O_CREAT, O_TRUNC, O_RDWR, O_APPEND } = fs.constants
+    expect(fs.parseFlags(O_WRONLY | O_CREAT | O_TRUNC)).toEqual({ read: false, write: true, append: false, create: true, truncate: true, exclusive: false })
+    expect(fs.parseFlags(O_RDWR | O_APPEND)).toMatchObject({ read: true, write: true, append: true })
+    expect(nodeThrows(() => fs.openSync('/x', 'q'))).toMatchObject({ code: 'ERR_INVALID_ARG_VALUE' })
+  })
+
+  it('open, write, read, fstat, fsync, ftruncate and close synchronously', () => {
+    const file = nodePath.join(dir, 'a.txt')
+    const fd = fs.openSync(file, 'w+')
+    expect(fs.writeSync(fd, 'hello world')).toBe(11)
+    expect(fs.writeSync(fd, Buffer.from('HW'), 0, 1, 0)).toBe(1)
+    fs.fsyncSync(fd)
+    fs.fdatasyncSync(fd)
+    expect(fs.fstatSync(fd).size).toBe(11)
+    const buffer = Buffer.alloc(8)
+    expect(fs.readSync(fd, buffer, 2, 5, 0)).toBe(5)
+    expect(buffer.subarray(2, 7).toString()).toBe('Hello')
+    expect(fs.readSync(fd, buffer, { position: 6, length: 5 })).toBe(5)
+    expect(buffer.subarray(0, 5).toString()).toBe('world')
+    expect(fs.readSync(fd, Buffer.alloc(0))).toBe(0)
+    fs.ftruncateSync(fd, 5)
+    fs.closeSync(fd)
+    expect(nodeFs.readFileSync(file, 'utf8')).toBe('Hello')
+    expect(nodeThrows(() => fs.closeSync(fd))).toMatchObject({ code: 'EBADF' })
+    expect(nodeThrows(() => fs.readSync('3', Buffer.alloc(1)))).toMatchObject({ code: 'ERR_INVALID_ARG_TYPE' })
+    expect(nodeThrows(() => fs.readSync(fd, Buffer.alloc(1), 0, 2))).toMatchObject({ code: 'ERR_OUT_OF_RANGE' })
+    // readFile / writeFile with a descriptor
+    const fd2 = fs.openSync(file, 'r+')
+    expect(fs.readFileSync(fd2, 'utf8')).toBe('Hello')
+    fs.writeFileSync(fd2, '!')
+    fs.closeSync(fd2)
+    expect(nodeFs.readFileSync(file, 'utf8')).toBe('Hello!')
+    expect(nodeThrows(() => fs.openSync(file, 'wx'))).toMatchObject({ code: 'EEXIST', syscall: 'open' })
+  })
+
+  it('run the same operations with callbacks (several values) and FileHandle', async () => {
+    const file = nodePath.join(dir, 'b.txt')
+    const fd = await new Promise((resolve, reject) => fs.open(file, 'w', (e, value) => (e ? reject(e) : resolve(value))))
+    const written = await new Promise((resolve) => fs.write(fd, 'abc', (e, n, data) => resolve([e, n, data])))
+    expect(written).toEqual([null, 3, 'abc'])
+    await new Promise((resolve) => fs.close(fd, resolve))
+    const fd2 = fs.openSync(file, 'r')
+    const read = await new Promise((resolve) => fs.read(fd2, Buffer.alloc(4), 0, 4, null, (e, n, b) => resolve([e, n, b.toString('utf8', 0, n)])))
+    expect(read).toEqual([null, 3, 'abc'])
+    fs.close(fd2)
+
+    const handle = await fs.promises.open(file, 'r+')
+    expect(handle).toBeInstanceOf(fs.FileHandle)
+    expect(await handle.readFile('utf8')).toBe('abc')
+    expect(await handle.write('Z', 0)).toEqual({ bytesWritten: 1, buffer: 'Z' })
+    const { bytesRead, buffer } = await handle.read(Buffer.alloc(3), 0, 3, 0)
+    expect([bytesRead, buffer.toString()]).toEqual([3, 'Zbc'])
+    expect((await handle.stat()).size).toBe(3)
+    await handle.truncate(1)
+    await handle.sync()
+    let closed = false
+    handle.on('close', () => (closed = true))
+    await handle.close()
+    expect([handle.fd, closed]).toEqual([-1, true])
+    await expect(handle.read()).rejects.toMatchObject({ code: 'EBADF', syscall: 'read' })
+    expect(nodeFs.readFileSync(file, 'utf8')).toBe('Z')
+  })
+
+  it('stream a file in chunks, honouring start and end', async () => {
+    const file = nodePath.join(dir, 'c.txt')
+    nodeFs.writeFileSync(file, '0123456789')
+    const chunks = []
+    const stream = fs.createReadStream(file, { highWaterMark: 3, start: 2, end: 8, encoding: 'utf8' })
+    const opened = new Promise((resolve) => stream.on('open', resolve))
+    for await (const chunk of stream) chunks.push(chunk)
+    expect(typeof (await opened)).toBe('number')
+    expect(chunks.join('')).toBe('2345678')
+    expect(stream.bytesRead).toBe(7)
+    await new Promise((resolve) => stream.on('close', resolve).closed && resolve())
+    expect(nodeThrows(() => fs.createReadStream(file, { start: 5, end: 2 }))).toMatchObject({ code: 'ERR_OUT_OF_RANGE' })
+
+    const missing = fs.createReadStream(nodePath.join(dir, 'missing'))
+    await expect(new Promise((resolve, reject) => missing.on('error', reject).on('data', resolve))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('write a stream in order, at start, and close the file at the end', async () => {
+    const file = nodePath.join(dir, 'd.txt')
+    const out = fs.createWriteStream(file)
+    out.write('hello ')
+    out.write(Buffer.from('world'))
+    await new Promise((resolve, reject) => out.on('error', reject).end('!', resolve))
+    await new Promise((resolve) => (out.closed ? resolve() : out.on('close', resolve)))
+    expect(out.bytesWritten).toBe(12)
+    expect(nodeFs.readFileSync(file, 'utf8')).toBe('hello world!')
+
+    const patch = fs.createWriteStream(file, { flags: 'r+', start: 6, flush: true })
+    await new Promise((resolve) => patch.end('WORLD', resolve))
+    await new Promise((resolve) => patch.close(resolve))
+    expect(nodeFs.readFileSync(file, 'utf8')).toBe('hello WORLD!')
+
+    const handle = await fs.promises.open(file, 'r')
+    const text = []
+    for await (const chunk of handle.createReadStream({ encoding: 'utf8', start: 0, end: 4 })) text.push(chunk)
+    expect(text.join('')).toBe('hello')
+    expect(handle.fd).toBe(-1) // the stream closed its FileHandle
   })
 })
 

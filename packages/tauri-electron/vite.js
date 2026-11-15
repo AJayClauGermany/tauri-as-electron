@@ -39,7 +39,7 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -115,6 +115,10 @@ function virtualSrc(id, isDev) {
  * @param {boolean} [options.require=true] Provide a global `require()` for CommonJS Electron code.
  * @param {boolean} [options.moduleScripts=true] Give classic `<script src>` tags `type="module"`.
  * @param {boolean} [options.forwardMainConsole=true] Print the main window's console in the terminal during dev.
+ * @param {false|string[]} [options.sessionPreloads] Preloads that libraries register at runtime
+ *   (`session.registerPreloadScript` / `setPreloads`), put in every renderer page. Those of
+ *   electron-log and @sentry/electron are found when the app depends on them; list module
+ *   specifiers or project-relative files for others, or `false` for none.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -127,6 +131,7 @@ export default function tauriElectron(options = {}) {
   let root = process.cwd()
   let isDev = false
   let outDir = 'dist'
+  let libraryPreloads = []
 
   return {
     name: 'tauri-electron',
@@ -170,6 +175,7 @@ export default function tauriElectron(options = {}) {
 
     configResolved(resolved) {
       root = resolved.root
+      libraryPreloads = sessionPreloads(root, options.sessionPreloads)
       isDev = resolved.command === 'serve'
       outDir = resolved.build?.outDir ?? 'dist'
     },
@@ -229,11 +235,16 @@ export default function tauriElectron(options = {}) {
       if (name === VIRTUAL.main) {
         lines.push(`import 'tauri-electron/node'`)
         if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
-        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev }))}`)
+        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
       }
       if (name === VIRTUAL.renderer) {
         if (withRequire) lines.push(`import 'tauri-electron/require'`)
         lines.push(`import 'tauri-electron/renderer-bootstrap'`)
+        // Library preloads (electron-log, …) before the app's own, as Electron runs session preloads first.
+        for (const preload of libraryPreloads) {
+          const id = preload.file ? (isDev ? `/@fs/${toPosix(preload.id).replace(/^\/+/, '')}` : toPosix(preload.id)) : preload.id
+          lines.push(`import ${JSON.stringify(id)}`)
+        }
         for (const preload of preloads) lines.push(`import ${JSON.stringify('/' + toPosix(preload).replace(/^\/+/, ''))}`)
       }
       return lines.join('\n') + '\n'

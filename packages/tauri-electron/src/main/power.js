@@ -7,11 +7,16 @@
  *   'unknown' / 0. 'resume' is detected heuristically (a timer that fires
  *   much later than scheduled means the machine slept); 'suspend',
  *   'lock-screen', 'unlock-screen' and 'shutdown' are never emitted.
- * - powerSaveBlocker: the Screen Wake Lock API, requested in a visible
- *   window (wake locks need a visible document; the main window is hidden).
+ * - powerSaveBlocker: an operating-system assertion held by
+ *   tauri-plugin-electron (feature `power-save-blocker`, on by default:
+ *   IOPMAssertion, SetThreadExecutionState, logind / ScreenSaver
+ *   inhibitors). Without it, the Screen Wake Lock API in a visible window
+ *   (wake locks need a visible document; the main window is hidden), which
+ *   only holds while that window is visible.
  */
 import { EventEmitter, createEvent } from '../internal/emitter.js'
 import { report, warnOnce } from '../internal/runtime.js'
+import { native, hasNativePlugin, hasFeature } from '../internal/native.js'
 import { BrowserWindow } from './browser-window.js'
 
 const RESUME_CHECK_MS = 5000
@@ -90,6 +95,20 @@ const blockers = new Map()
 let nextBlockerId = 0
 let lockedWindow = null
 
+const useAssertions = () => hasNativePlugin() && hasFeature('power-save-blocker')
+const TYPES = new Set(['prevent-app-suspension', 'prevent-display-sleep'])
+
+/** Hold an OS assertion for blocker `id`; falls back to the wake lock if Rust refuses. */
+function assert(id, type) {
+  const blocker = blockers.get(id)
+  blocker.assertion = native('power_blocker_start', { kind: type }).catch((error) => {
+    warnOnce('powerSaveBlocker-assertion', `powerSaveBlocker: no operating-system assertion (${error?.message ?? error}); using a screen wake lock instead.`)
+    blocker.wakeLock = true
+    syncWakeLock()
+    return null
+  })
+}
+
 const ACQUIRE = `(async () => {
   if (window.__teWakeLock && !window.__teWakeLock.released) return true
   window.__teWakeLock = await navigator.wakeLock.request('screen')
@@ -98,7 +117,7 @@ const ACQUIRE = `(async () => {
 const RELEASE = `(async () => { await window.__teWakeLock?.release(); window.__teWakeLock = null; return true })()`
 
 function syncWakeLock() {
-  if (blockers.size === 0) {
+  if (![...blockers.values()].some((b) => b.wakeLock)) {
     const win = lockedWindow
     lockedWindow = null
     if (win && !win.isDestroyed()) win.webContents.executeJavaScript(RELEASE).catch(() => {})
@@ -119,16 +138,22 @@ function syncWakeLock() {
 
 export const powerSaveBlocker = {
   start(type) {
+    type = String(type)
+    if (!TYPES.has(type)) throw new TypeError(`Invalid powerSaveBlocker type: ${type}`)
     const id = nextBlockerId++
-    blockers.set(id, String(type))
-    syncWakeLock()
+    blockers.set(id, { type, assertion: null, wakeLock: !useAssertions() })
+    if (useAssertions()) assert(id, type)
+    else syncWakeLock()
     return id
   },
 
   stop(id) {
-    const removed = blockers.delete(id)
-    if (removed) syncWakeLock()
-    return removed
+    const blocker = blockers.get(id)
+    if (!blocker) return false
+    blockers.delete(id)
+    blocker.assertion?.then((nativeId) => nativeId !== null && native('power_blocker_stop', { id: nativeId })).catch(report('powerSaveBlocker.stop'))
+    if (blocker.wakeLock) syncWakeLock()
+    return true
   },
 
   isStarted(id) {

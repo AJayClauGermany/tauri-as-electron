@@ -210,7 +210,11 @@ export class Menu extends EventEmitter {
   static setApplicationMenu(menu) {
     applicationMenu = menu
     const build = menu ? menu._build() : TauriMenu.new({ items: [] })
-    build.then((native) => native.setAsAppMenu()).catch(report('Menu.setApplicationMenu'))
+    build
+      .then((native) => native.setAsAppMenu())
+      // Windows whose menu bar is hidden hide the new one too.
+      .then(() => bus.emit('application-menu-set'))
+      .catch(report('Menu.setApplicationMenu'))
   }
 
   static getApplicationMenu() {

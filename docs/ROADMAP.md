@@ -16,42 +16,49 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 
 ## Wave A: quick wins
 
-- [ ] **A1. `fs` file descriptors.** `open`, `close`, `read`, `write`,
+- [x] **A1. `fs` file descriptors.** `open`, `close`, `read`, `write`,
   `fstat`, `fsync`, `fdatasync`, `ftruncate` (sync, callback and
   `fs.promises` `FileHandle`). A descriptor table in `node_fs.rs`.
   *Apps 11 directly; also unblocks `electron-store` (9 apps: `conf` →
   `atomically` opens, writes and fsyncs a temp file), `write-file-atomic`
   and `electron-log`'s tail read (14).* Effort S–M.
-- [ ] **A2. `fs.createReadStream` / `createWriteStream`** on top of A1 and
+  *Done: numbers from 3 up in a process-wide table in `node_fs.rs`; 1 and 2 write to stdout / stderr.*
+- [x] **A2. `fs.createReadStream` / `createWriteStream`** on top of A1 and
   readable-stream (`start` / `end`, `highWaterMark`, `fd` option).
   *Apps 21; `electron-updater` and `builder-util-runtime` need them.*
   Effort S after A1.
-- [ ] **A3. `screen.getCursorScreenPoint()` synchronous.** Answer over the
+  *Done: readable-stream `ReadStream` / `WriteStream`, also from a `FileHandle`.*
+- [x] **A3. `screen.getCursorScreenPoint()` synchronous.** Answer over the
   synchronous bridge from `Window::cursor_position` instead of returning a
   Promise. *Apps 5 call it synchronously (VS Code's window placement,
   Tabby, MarkText, SiYuan).* Effort S.
-- [ ] **A4. Menu-bar visibility.** `setMenuBarVisibility`,
+  *Done.*
+- [x] **A4. Menu-bar visibility.** `setMenuBarVisibility`,
   `isMenuBarVisible`, `autoHideMenuBar` / `setAutoHideMenuBar` through
   `Window::hide_menu` / `show_menu` / `is_menu_visible`; with auto-hide,
   Alt shows the bar (renderer bootstrap). *Apps 14.* Effort S.
-- [ ] **A5. `nativeImage` editing and disk paths.** `resize`, `crop`,
+  *Done (Windows and Linux; macOS has no per-window menu bar, as in Electron).*
+- [x] **A5. `nativeImage` editing and disk paths.** `resize`, `crop`,
   `createThumbnailFromPath` with `OffscreenCanvas`; `createFromPath` for
   absolute paths read through the `node-fs` bridge (today only files
   bundled with the app). *Apps 11 resize / crop, 14 `createFromPath`.*
   Effort S.
-- [ ] **A6. `session.cookies`.** `get` / `set` / `remove` / `flushStore`
+  *Done with a JavaScript PNG codec (fflate), so `resize` / `crop` stay synchronous for PNGs; other formats decode through `createImageBitmap` / `OffscreenCanvas` when used.*
+- [x] **A6. `session.cookies`.** `get` / `set` / `remove` / `flushStore`
   and the `changed` event (emitted for our own changes) through
   `Webview::cookies_for_url` / `cookies` / `set_cookie` / `delete_cookie`.
   *Apps 8 (Bruno, Mattermost, Wire, Joplin, Insomnia, FreeTube, SiYuan,
   Bitwarden).* Effort S.
-- [ ] **A7. File-backed protocols.** `net.fetch('file://…')` reads through
+  *Done; `hostOnly` is not reported (the `cookie` crate drops the leading dot).*
+- [x] **A7. File-backed protocols.** `net.fetch('file://…')` reads through
   the `node-fs` bridge and returns a `Response` (with a MIME type from the
   extension); `protocol.registerFileProtocol` / `registerBufferProtocol` /
   `registerStringProtocol` callback forms become `handle()` adapters. This
   is the usual body of a `protocol.handle` handler. *Apps 10 serve files
   this way (Element's `vector://`, VS Code's `vscode-file://`, Signal,
   Mattermost, Upscayl, ...).* Effort S–M.
-- [ ] **A8. Synchronous clipboard for Electron < 45.** Electron 45 made
+  *Done.*
+- [x] **A8. Synchronous clipboard for Electron < 45.** Electron 45 made
   `clipboard.readText` & co. async; apps pinned to older versions call them
   synchronously. When the app's `electron` dependency is below 45 (the
   bundler plugin reads `package.json`), serve `readText`, `readHTML`,
@@ -59,14 +66,17 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   Add `readHTML` (a Rust command; `plugin-clipboard-manager` reads only
   text and images). *Apps 3 (Joplin, Insomnia, Tabby); `readHTML` 2.*
   Effort S.
-- [ ] **A9. `powerSaveBlocker` with an OS assertion** (for example the
+  *Done (`electron` major version in `__TAURI_ELECTRON_APP__`; reads with arboard).*
+- [x] **A9. `powerSaveBlocker` with an OS assertion** (for example the
   `keepawake` crate: IOPMAssertion, `SetThreadExecutionState`, logind
   inhibitors) instead of a Screen Wake Lock that only holds while a window
   is visible. *Apps 6.* Effort S.
-- [ ] **A10. `electron-log` renderer preload.** Inject scripts registered
+  *Done: feature `power-save-blocker`, on by default; the wake lock remains the fallback.*
+- [x] **A10. `electron-log` renderer preload.** Inject scripts registered
   with `session.registerPreloadScript` / `setPreloads` when the bundler can
   resolve them at build time (`electron-log`, `@sentry/electron`).
   *Apps 14 + 8.* Effort S–M.
+  *Done: the bundler plugins put electron-log's and @sentry/electron's preloads in every renderer page when the app depends on them (option `sessionPreloads` for others); other registered paths warn. @sentry/electron still needs its `sentry-ipc` scheme declared in Rust.*
 
 ## Wave B: one session each, broad reach
 

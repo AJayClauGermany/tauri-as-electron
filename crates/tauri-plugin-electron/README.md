@@ -36,7 +36,7 @@ half (`tauri-electron`) at the same ref.
 | Feature | Default | Electron API | Official plugin |
 | --- | --- | --- | --- |
 | `dialog` | on | `dialog` (including `*Sync`) | `tauri-plugin-dialog` |
-| `clipboard` | on | `clipboard` | `tauri-plugin-clipboard-manager` |
+| `clipboard` | on | `clipboard` (`readHTML` and the synchronous reads of Electron < 45 with `arboard`) | `tauri-plugin-clipboard-manager` |
 | `notification` | on | `Notification` | `tauri-plugin-notification` |
 | `shell` | on | `shell.openExternal`, `openPath`, `showItemInFolder` | `tauri-plugin-opener` |
 | `net` | on | `net.fetch`, `net.request` | `tauri-plugin-http` |
@@ -44,6 +44,7 @@ half (`tauri-electron`) at the same ref.
 | `tray` | on | `Tray` | Tauri's `tray-icon` feature |
 | `protocol-client` | on | `app.setAsDefaultProtocolClient` & co. | `tauri-plugin-deep-link` |
 | `login-item` | on | `app.setLoginItemSettings` / `getLoginItemSettings` | `tauri-plugin-autostart` |
+| `power-save-blocker` | on | `powerSaveBlocker` with operating-system assertions | `keepawake` crate |
 | `single-instance` | off | `app.requestSingleInstanceLock`, `second-instance` | `tauri-plugin-single-instance` |
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |

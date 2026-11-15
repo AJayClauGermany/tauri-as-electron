@@ -17,8 +17,11 @@
 //!   feature): the synchronous variants over the bridge
 //!   (`node/<module>/<op>`), the asynchronous ones over commands (`node_fs`,
 //!   `child_spawn`, `net_connect` & co.).
-//! - **DevTools** (`webContents.openDevTools()` and friends) and
-//!   **`shell.trashItem()`**.
+//! - **DevTools** (`webContents.openDevTools()` and friends),
+//!   **`shell.trashItem()`**, menu-bar visibility, `session.cookies`,
+//!   `clipboard.readHTML` (and the synchronous clipboard reads of Electron
+//!   < 45), `screen.getCursorScreenPoint()` (synchronous, over the bridge)
+//!   and `powerSaveBlocker` (operating-system assertions).
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
 //!   events for every window, including remote pages), macOS `activate`,
 //!   `open-file` / `open-url`, and `second-instance` (with the
@@ -37,6 +40,9 @@ use std::{
     time::Duration,
 };
 
+#[cfg(all(desktop, feature = "clipboard"))]
+mod clipboard;
+mod cookies;
 mod features;
 #[cfg(feature = "node-child-process")]
 mod node_child_process;
@@ -58,6 +64,8 @@ mod node_net_commands;
 mod node_os;
 #[cfg(feature = "node-tls")]
 mod node_tls;
+#[cfg(all(desktop, feature = "power-save-blocker"))]
+mod power;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde::{Deserialize, Serialize};
@@ -374,6 +382,48 @@ fn handle_bridge<R: Runtime>(
                 b"enable the `dialog` feature of tauri-plugin-electron".to_vec(),
             );
         }
+        // screen.getCursorScreenPoint(), synchronous like Electron's. Asked
+        // off the main thread: Tauri answers it through the event loop.
+        "cursor" => {
+            thread::spawn(move || match app.cursor_position() {
+                Ok(p) => respond_json(responder, 200, &json!({ "x": p.x, "y": p.y })),
+                Err(error) => respond(responder, 500, "text/plain", error.to_string().into_bytes()),
+            });
+        }
+        // clipboard.readText() & co. for apps on Electron < 45, where they
+        // are synchronous.
+        p if p.starts_with("clipboard/") => {
+            #[cfg(all(desktop, feature = "clipboard"))]
+            {
+                if label != MAIN_LABEL {
+                    respond(
+                        responder,
+                        403,
+                        "text/plain",
+                        b"clipboard reads are main-process only".to_vec(),
+                    );
+                    return;
+                }
+                let op = p.trim_start_matches("clipboard/").to_string();
+                thread::spawn(move || match clipboard::read(&op) {
+                    Ok(clipboard::Answer::Json(value)) => respond_json(responder, 200, &value),
+                    Ok(clipboard::Answer::Image(bytes)) => {
+                        respond(responder, 200, "application/octet-stream", bytes)
+                    }
+                    Err(error) => respond(responder, 500, "text/plain", error.into_bytes()),
+                });
+            }
+            #[cfg(not(all(desktop, feature = "clipboard")))]
+            {
+                let _ = p;
+                respond(
+                    responder,
+                    501,
+                    "text/plain",
+                    b"enable the `clipboard` feature of tauri-plugin-electron".to_vec(),
+                );
+            }
+        }
         p if p.starts_with("node/") => {
             let query = request.uri().query().unwrap_or("").to_string();
             handle_node(&app, &label, p, &query, request.body().clone(), responder);
@@ -668,6 +718,103 @@ async fn trash_item(path: String) -> Result<(), String> {
     }
 }
 
+/// `setMenuBarVisibility` / `setAutoHideMenuBar`. Not on macOS, where the
+/// menu bar belongs to the app. Async: Tauri changes it on the main thread.
+#[tauri::command]
+async fn set_menu_visible<R: Runtime>(
+    app: AppHandle<R>,
+    label: String,
+    visible: bool,
+) -> Result<(), String> {
+    let Some(window) = app.get_webview_window(&label) else {
+        return Ok(());
+    };
+    if visible {
+        window.show_menu()
+    } else {
+        window.hide_menu()
+    }
+    .map_err(|e| e.to_string())
+}
+
+/// The webview whose cookie store a session uses: one of its windows.
+fn cookie_webview<R: Runtime>(
+    app: &AppHandle<R>,
+    label: &str,
+) -> Result<tauri::WebviewWindow<R>, String> {
+    app.get_webview_window(label)
+        .ok_or_else(|| format!("no webview '{label}' to reach the cookie store through"))
+}
+
+// Cookie commands are async: WebView2 deadlocks when cookies are read on the
+// main thread (wry#583), and the other platforms answer through it.
+
+#[tauri::command]
+async fn cookies_get<R: Runtime>(
+    app: AppHandle<R>,
+    label: String,
+    url: Option<String>,
+) -> Result<Value, String> {
+    cookies::get(&cookie_webview(&app, &label)?, url.as_deref())
+}
+
+#[tauri::command]
+async fn cookies_set<R: Runtime>(
+    app: AppHandle<R>,
+    label: String,
+    details: cookies::Details,
+) -> Result<Value, String> {
+    cookies::set(&cookie_webview(&app, &label)?, details)
+}
+
+#[tauri::command]
+async fn cookies_remove<R: Runtime>(
+    app: AppHandle<R>,
+    label: String,
+    url: String,
+    name: String,
+) -> Result<Value, String> {
+    cookies::remove(&cookie_webview(&app, &label)?, &url, &name)
+}
+
+/// `clipboard.readHTML()`.
+#[tauri::command]
+async fn clipboard_read_html() -> Result<String, String> {
+    #[cfg(all(desktop, feature = "clipboard"))]
+    return clipboard::read_html();
+    #[cfg(not(all(desktop, feature = "clipboard")))]
+    Err("enable the `clipboard` feature of tauri-plugin-electron".into())
+}
+
+/// `powerSaveBlocker.start(type)`: the id of an operating-system assertion.
+/// Async: taking one can mean a blocking D-Bus call (Linux), kept off the
+/// main thread.
+#[tauri::command]
+async fn power_blocker_start<R: Runtime>(app: AppHandle<R>, kind: String) -> Result<u32, String> {
+    #[cfg(all(desktop, feature = "power-save-blocker"))]
+    {
+        let name = app.package_info().name.clone();
+        app.state::<power::Blockers>().start(&kind, &name)
+    }
+    #[cfg(not(all(desktop, feature = "power-save-blocker")))]
+    {
+        let _ = (app, kind);
+        Err("enable the `power-save-blocker` feature of tauri-plugin-electron".into())
+    }
+}
+
+/// `powerSaveBlocker.stop(id)`.
+#[tauri::command]
+async fn power_blocker_stop<R: Runtime>(app: AppHandle<R>, id: u32) -> bool {
+    #[cfg(all(desktop, feature = "power-save-blocker"))]
+    return app.state::<power::Blockers>().stop(id);
+    #[cfg(not(all(desktop, feature = "power-save-blocker")))]
+    {
+        let _ = (app, id);
+        false
+    }
+}
+
 #[cfg(feature = "node-child-process")]
 type SharedChildren = Arc<node_child_process::Children>;
 
@@ -914,6 +1061,13 @@ impl Builder {
                 is_devtools_open,
                 trash_item,
                 bridge_respond,
+                set_menu_visible,
+                cookies_get,
+                cookies_set,
+                cookies_remove,
+                clipboard_read_html,
+                power_blocker_start,
+                power_blocker_stop,
                 node_fs,
                 child_spawn,
                 child_write,
@@ -937,6 +1091,8 @@ impl Builder {
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
+                #[cfg(all(desktop, feature = "power-save-blocker"))]
+                app.manage(power::Blockers::default());
                 #[cfg(feature = "node-child-process")]
                 app.manage(SharedChildren::default());
                 #[cfg(feature = "node-net")]
@@ -952,6 +1108,12 @@ impl Builder {
             // the renderer bootstrap cannot run in.
             .on_page_load(|webview, payload| {
                 if webview.label() == MAIN_LABEL {
+                    // A reloaded main process starts with no open files, as a
+                    // restarted Node would: close what the previous page left open.
+                    #[cfg(feature = "node-fs")]
+                    if matches!(payload.event(), PageLoadEvent::Started) {
+                        node_fs::close_all();
+                    }
                     return;
                 }
                 let event = match payload.event() {

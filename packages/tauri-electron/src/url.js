@@ -17,7 +17,9 @@ export function fileURLToPath(url) {
 /** A path → `file://` URL (absolute paths only make sense on the file system). */
 export function pathToFileURL(path) {
   const normalized = String(path).replace(/\\/g, '/')
-  return new URL(`file://${normalized.startsWith('/') ? '' : '/'}${encodeURI(normalized)}`)
+  // encodeURI leaves `#` and `?` alone; in a path they are characters, not URL syntax.
+  const encoded = encodeURI(normalized).replace(/#/g, '%23').replace(/\?/g, '%3F')
+  return new URL(`file://${normalized.startsWith('/') ? '' : '/'}${encoded}`)
 }
 
 /** Legacy `url.parse()` shaped on top of `URL`. */

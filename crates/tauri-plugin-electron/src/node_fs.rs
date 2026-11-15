@@ -11,16 +11,22 @@
 //! failure is a [`FsError`] carrying what Node puts on its errors (`code`,
 //! `errno`, `syscall`, `path`, `dest`); the JavaScript side builds Node's
 //! message from it (`ENOENT: no such file or directory, open '/x'`).
+//!
+//! File descriptors (`fs.open` & co.) are entries of a process-wide table
+//! ([`FDS`]): numbers from 3 up that name an open [`File`] here, not the
+//! operating system's descriptors. Writes to 1 and 2 go to this process's
+//! stdout and stderr, like Node's.
 
 // FsError is the payload sent to JavaScript, not an error passed around.
 #![allow(clippy::result_large_err)]
 
 use std::{
-    collections::hash_map::RandomState,
+    collections::{hash_map::RandomState, HashMap},
     fs::{self, File, OpenOptions},
     hash::{BuildHasher, Hasher},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -60,6 +66,17 @@ impl Args<'_> {
 
     fn num(&self, key: &str) -> Option<f64> {
         self.0.get(key).and_then(Value::as_f64)
+    }
+
+    fn fd(&self) -> Result<i64, FsError> {
+        self.num("fd")
+            .map(|n| n as i64)
+            .ok_or_else(|| FsError::invalid("missing number argument `fd`"))
+    }
+
+    /// A file position: absent, null or negative means the current one.
+    fn position(&self) -> Option<u64> {
+        self.num("position").filter(|p| *p >= 0.0).map(|p| p as u64)
     }
 }
 
@@ -149,8 +166,265 @@ pub fn run(op: &str, args: &Value, data: &[u8]) -> FsResult {
             &args.str("path")?,
             args.opt_str("type").as_deref(),
         ),
+        "open" => open(
+            &args.str("path")?,
+            args.0.get("flags").unwrap_or(&Value::Null),
+            args.num("mode"),
+        ),
+        "close" => {
+            let fd = args.fd()?;
+            match fds().lock().unwrap().files.remove(&fd) {
+                Some(_) => Ok(Output::Json(Value::Null)),
+                None => Err(bad_fd("close")),
+            }
+        }
+        "fdRead" => fd_read(
+            args.fd()?,
+            args.num("length").map(|l| l.max(0.0) as usize),
+            args.position(),
+        ),
+        "fdWrite" => fd_write(args.fd()?, args.position(), data),
+        "fstat" => {
+            let meta = file("fstat", args.fd()?)?
+                .metadata()
+                .map_err(|e| FsError::io(&e, "fstat", None, None))?;
+            Ok(Output::Json(stats_json(&meta)))
+        }
+        "fsync" => {
+            file("fsync", args.fd()?)?
+                .sync_all()
+                .map_err(|e| FsError::io(&e, "fsync", None, None))?;
+            Ok(Output::Json(Value::Null))
+        }
+        "fdatasync" => {
+            file("fdatasync", args.fd()?)?
+                .sync_data()
+                .map_err(|e| FsError::io(&e, "fdatasync", None, None))?;
+            Ok(Output::Json(Value::Null))
+        }
+        "ftruncate" => {
+            let len = args.num("len").unwrap_or(0.0).max(0.0) as u64;
+            file("ftruncate", args.fd()?)?
+                .set_len(len)
+                .map_err(|e| FsError::io(&e, "ftruncate", None, None))?;
+            Ok(Output::Json(Value::Null))
+        }
         other => Err(FsError::invalid(format!("unknown fs operation `{other}`"))),
     }
+}
+
+// --- file descriptors -----------------------------------------------------------------------------
+
+/// Open files by descriptor number. A file is shared (`Arc`) so that a long
+/// read does not hold the table's lock.
+struct FdTable {
+    next: i64,
+    files: HashMap<i64, Arc<File>>,
+}
+
+/// The process-wide descriptor table. Descriptors start at 3: 0–2 are stdio.
+fn fds() -> &'static Mutex<FdTable> {
+    static FDS: OnceLock<Mutex<FdTable>> = OnceLock::new();
+    FDS.get_or_init(|| {
+        Mutex::new(FdTable {
+            next: 3,
+            files: HashMap::new(),
+        })
+    })
+}
+
+/// Close every descriptor (the main page reloaded).
+pub fn close_all() {
+    fds().lock().unwrap().files.clear();
+}
+
+fn bad_fd(syscall: &str) -> FsError {
+    let (code, errno) = uv("EBADF");
+    FsError {
+        code: code.into(),
+        errno,
+        syscall: syscall.into(),
+        path: None,
+        dest: None,
+        message: "bad file descriptor".into(),
+    }
+}
+
+fn file(syscall: &str, fd: i64) -> Result<Arc<File>, FsError> {
+    fds()
+        .lock()
+        .unwrap()
+        .files
+        .get(&fd)
+        .cloned()
+        .ok_or_else(|| bad_fd(syscall))
+}
+
+/// `flags` is what the JavaScript side decoded from Node's flags (`'r+'`,
+/// `'wx'`, `O_WRONLY | O_CREAT`, …): `{ read, write, append, create,
+/// truncate, exclusive }`.
+fn open(path: &str, flags: &Value, mode: Option<f64>) -> FsResult {
+    let flag = |key: &str| flags.get(key).and_then(Value::as_bool).unwrap_or(false);
+    let mut options = OpenOptions::new();
+    options
+        .read(flag("read"))
+        .write(flag("write") && !flag("append"))
+        .append(flag("append"))
+        .truncate(flag("truncate") && !flag("exclusive"));
+    if flag("exclusive") {
+        options.create_new(true);
+    } else {
+        options.create(flag("create"));
+    }
+    if !flag("read") && !flag("write") && !flag("append") {
+        options.read(true);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode.map(|m| m as u32).unwrap_or(0o666));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_FLAG_BACKUP_SEMANTICS: directories open too, as with libuv.
+        options.custom_flags(0x0200_0000);
+        let _ = mode;
+    }
+    #[cfg(not(any(unix, windows)))]
+    let _ = mode;
+    // Node allows `O_RDONLY | O_CREAT`; std refuses to create without write
+    // access, so create the file first, then open it for reading.
+    if (flag("create") || flag("exclusive")) && !flag("write") && !flag("append") {
+        let mut create = OpenOptions::new();
+        create.write(true);
+        if flag("exclusive") {
+            create.create_new(true);
+        } else {
+            create.create(true);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            create.mode(mode.map(|m| m as u32).unwrap_or(0o666));
+        }
+        create
+            .open(path)
+            .map_err(|e| FsError::io(&e, "open", Some(path), None))?;
+        options.create(false).create_new(false).truncate(false);
+    }
+    let opened = options
+        .open(path)
+        .map_err(|e| FsError::io(&e, "open", Some(path), None))?;
+    let mut table = fds().lock().unwrap();
+    let fd = table.next;
+    table.next += 1;
+    table.files.insert(fd, Arc::new(opened));
+    Ok(Output::Json(json!(fd)))
+}
+
+/// Read `length` bytes (or up to the end without one) at `position`, or at
+/// the current position without one (which then advances).
+fn fd_read(fd: i64, length: Option<usize>, position: Option<u64>) -> FsResult {
+    let file = file("read", fd)?;
+    let fail = |e: io::Error| FsError::io(&e, "read", None, None);
+    let mut bytes = Vec::new();
+    match length {
+        Some(length) => {
+            bytes.resize(length, 0);
+            let mut filled = 0;
+            while filled < length {
+                let n = match position {
+                    Some(at) => read_at(&file, &mut bytes[filled..], at + filled as u64),
+                    None => (&*file).read(&mut bytes[filled..]),
+                };
+                match n {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(fail(e)),
+                }
+            }
+            bytes.truncate(filled);
+        }
+        None => {
+            if let Some(at) = position {
+                (&*file).seek(SeekFrom::Start(at)).map_err(fail)?;
+            }
+            (&*file).read_to_end(&mut bytes).map_err(fail)?;
+        }
+    }
+    Ok(Output::Bytes(bytes))
+}
+
+/// Write all of `data` at `position` (or the current position); returns
+/// the number of bytes written.
+fn fd_write(fd: i64, position: Option<u64>, data: &[u8]) -> FsResult {
+    let fail = |e: io::Error| FsError::io(&e, "write", None, None);
+    match fd {
+        1 => {
+            let mut out = io::stdout().lock();
+            out.write_all(data)
+                .and_then(|_| out.flush())
+                .map_err(fail)?;
+            return Ok(Output::Json(json!(data.len())));
+        }
+        2 => {
+            io::stderr().lock().write_all(data).map_err(fail)?;
+            return Ok(Output::Json(json!(data.len())));
+        }
+        _ => {}
+    }
+    let file = file("write", fd)?;
+    match position {
+        Some(at) => {
+            let mut written = 0;
+            while written < data.len() {
+                match write_at(&file, &data[written..], at + written as u64) {
+                    Ok(0) => return Err(fail(io::Error::from(io::ErrorKind::WriteZero))),
+                    Ok(n) => written += n,
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                    Err(e) => return Err(fail(e)),
+                }
+            }
+        }
+        None => (&*file).write_all(data).map_err(fail)?,
+    }
+    Ok(Output::Json(json!(data.len())))
+}
+
+#[cfg(unix)]
+fn read_at(file: &File, buf: &mut [u8], at: u64) -> io::Result<usize> {
+    std::os::unix::fs::FileExt::read_at(file, buf, at)
+}
+
+#[cfg(unix)]
+fn write_at(file: &File, buf: &[u8], at: u64) -> io::Result<usize> {
+    std::os::unix::fs::FileExt::write_at(file, buf, at)
+}
+
+// Windows has no pread / pwrite: positioned I/O moves the file pointer, as
+// it does with libuv there.
+#[cfg(windows)]
+fn read_at(file: &File, buf: &mut [u8], at: u64) -> io::Result<usize> {
+    std::os::windows::fs::FileExt::seek_read(file, buf, at)
+}
+
+#[cfg(windows)]
+fn write_at(file: &File, buf: &[u8], at: u64) -> io::Result<usize> {
+    std::os::windows::fs::FileExt::seek_write(file, buf, at)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn read_at(mut file: &File, buf: &mut [u8], at: u64) -> io::Result<usize> {
+    file.seek(SeekFrom::Start(at))?;
+    file.read(buf)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn write_at(mut file: &File, buf: &[u8], at: u64) -> io::Result<usize> {
+    file.seek(SeekFrom::Start(at))?;
+    file.write(buf)
 }
 
 fn read(path: &str) -> FsResult {
@@ -752,6 +1026,101 @@ mod tests {
         ));
         let stats = json_of(call("stat", json!({ "path": copy }), &[]));
         assert_eq!(stats["mtimeMs"].as_f64().unwrap().round(), 2_000_500.0);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn bytes_of(output: FsResult) -> Vec<u8> {
+        match output {
+            Ok(Output::Bytes(bytes)) => bytes,
+            _ => panic!("expected bytes"),
+        }
+    }
+
+    #[test]
+    fn descriptors() {
+        let dir = temp_dir();
+        let path = display(dir.join("fd.txt"));
+        let flags = json!({ "write": true, "create": true, "truncate": true });
+        let fd = json_of(call("open", json!({ "path": path, "flags": flags }), &[]));
+        assert!(fd.as_i64().unwrap() >= 3);
+        assert_eq!(
+            json_of(call("fdWrite", json!({ "fd": fd }), b"hello")),
+            json!(5)
+        );
+        assert_eq!(
+            json_of(call("fdWrite", json!({ "fd": fd, "position": 0 }), b"J")),
+            json!(1)
+        );
+        json_of(call("fsync", json!({ "fd": fd }), &[]));
+        json_of(call("fdatasync", json!({ "fd": fd }), &[]));
+        assert_eq!(
+            json_of(call("fstat", json!({ "fd": fd }), &[]))["size"],
+            json!(5)
+        );
+        json_of(call("ftruncate", json!({ "fd": fd, "len": 4 }), &[]));
+        json_of(call("close", json!({ "fd": fd }), &[]));
+        let error = call("close", json!({ "fd": fd }), &[]).err().unwrap();
+        assert_eq!(
+            (error.code.as_str(), error.syscall.as_str()),
+            ("EBADF", "close")
+        );
+
+        let fd = json_of(call(
+            "open",
+            json!({ "path": path, "flags": { "read": true } }),
+            &[],
+        ));
+        assert_eq!(
+            bytes_of(call(
+                "fdRead",
+                json!({ "fd": fd, "length": 2, "position": 1 }),
+                &[]
+            )),
+            b"el"
+        );
+        // The positioned read left the current position alone.
+        assert_eq!(
+            bytes_of(call("fdRead", json!({ "fd": fd, "length": 3 }), &[])),
+            b"Jel"
+        );
+        assert_eq!(bytes_of(call("fdRead", json!({ "fd": fd }), &[])), b"l");
+        assert_eq!(
+            bytes_of(call("fdRead", json!({ "fd": fd, "length": 8 }), &[])),
+            b""
+        );
+        let error = call("fdWrite", json!({ "fd": fd }), b"x").err().unwrap();
+        assert_eq!(error.syscall, "write");
+        json_of(call("close", json!({ "fd": fd }), &[]));
+
+        let error = call(
+            "open",
+            json!({ "path": path, "flags": { "write": true, "create": true, "exclusive": true } }),
+            &[],
+        )
+        .err()
+        .unwrap();
+        assert_eq!(
+            (error.code.as_str(), error.syscall.as_str()),
+            ("EEXIST", "open")
+        );
+        let fd = json_of(call(
+            "open",
+            json!({ "path": path, "flags": { "append": true, "create": true } }),
+            &[],
+        ));
+        json_of(call("fdWrite", json!({ "fd": fd }), b"!"));
+        json_of(call("close", json!({ "fd": fd }), &[]));
+        assert_eq!(fs::read(&path).unwrap(), b"Jell!");
+
+        // O_RDONLY | O_CREAT creates the file, as in Node.
+        let created = display(dir.join("created"));
+        let fd = json_of(call(
+            "open",
+            json!({ "path": created, "flags": { "read": true, "create": true } }),
+            &[],
+        ));
+        json_of(call("close", json!({ "fd": fd }), &[]));
+        assert!(Path::new(&created).exists());
         fs::remove_dir_all(dir).unwrap();
     }
 
