@@ -198,10 +198,11 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 - [ ] **C2. `worker_threads`** on Web Workers that load the Node layer
   (`Worker`, `parentPort`, `workerData`, `MessageChannel`, `isMainThread`).
   Needs the bridge to accept workers. *Apps 8.* Effort L.
-- [ ] **C3. `utilityProcess.fork` and `child_process.fork`.** A Node
+- [x] **C3. `utilityProcess.fork` and `child_process.fork`.** A Node
   sidecar (bundled runtime via `plugin-shell`), `MessagePortMain` bridged
   over stdio, `'ipc'` stdio for `fork`. *Apps 5 + 5 (VS Code, AFFiNE,
   Trilium, Beekeeper, Insomnia, Joplin, Logseq).* Effort L.
+  *Done: the child is a real Node.js started through `child_process`'s spawn path (`node-child-process` feature) rather than `plugin-shell`, whose sidecar API cannot hand a child a socket: the `execPath` option, `$TAURI_ELECTRON_NODE`, a `<crate>-node` / `node` sidecar next to the executable (`bundle.externalBin`; `npx github:AJayClauGermany/tauri-as-electron --node-sidecar` sets it up) or, in debug builds, `node` on PATH. `child_process.fork` (also `spawn` with `'ipc'`, and `spawn(process.execPath)` with `ELECTRON_RUN_AS_NODE`) gets Node's own channel (`NODE_CHANNEL_FD` on a socketpair, `json` serialization); `utilityProcess` gets `process.parentPort` and `MessagePortMain`s (relayed by the main process, so main- and renderer-held ports both work) from a bootstrap loaded with `--require`, over a socket of the same kind. The bundler plugins find fork entries with static paths (option `fork` for others), bundle them for Node with `electron` mapped to a child module (`net`) and ship them in `<resources>/fork`. Not supported: `serialization: 'advanced'`, handles over `send()`, ports from the child back to the main process, native addons in bundled entries. Windows connects the child back over loopback TCP with a token (written, tested on Linux only); macOS not verified.*
 - [ ] **C4. `vm`** contexts on iframe realms (feasibility verified in
   [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)): `runInNewContext`,
   `createContext`, `Script`. *Apps 10.* Effort M–L.

@@ -147,7 +147,7 @@ for more):
 | `ipcRenderer.send/invoke/on/once/off/removeAllListeners/sendToHost` | ✅ | |
 | `ipcRenderer.sendSync`, `event.returnValue` | ✅ | [native] A blocking request to the plugin's URI scheme, answered when a listener sets `returnValue` (also after an `await`). Times out after 25 s. Without the plugin: async send, returns `undefined`. |
 | `ipcRenderer.postMessage(channel, message, [MessagePort])` | ✅ | Main receives `MessagePortMain`s in `event.ports`. |
-| `MessageChannelMain`, `MessagePortMain` | ✅ | Main ↔ main, main ↔ renderer and renderer ↔ renderer (a port received from one window can be posted to another). Ports cannot be transferred *through* a port. |
+| `MessageChannelMain`, `MessagePortMain` | ✅ | Main ↔ main, main ↔ renderer and renderer ↔ renderer (a port received from one window can be posted to another), and main / renderer → utility process (`utilityProcess`'s `postMessage`). Ports cannot be transferred *through* a port. |
 | `contextBridge.exposeInMainWorld` | 🟡 | Assigns a frozen object to `window`; there is no isolated world. |
 
 ### Other modules
@@ -188,13 +188,14 @@ for more):
 | `powerSaveBlocker` | ✅ | [native, `keepawake` crate, feature `power-save-blocker` (default)] An operating-system assertion per blocker: IOPMAssertion on macOS, `SetThreadExecutionState` on Windows, logind / ScreenSaver inhibitors on Linux. Falls back to a Screen Wake Lock in a visible window when the assertion cannot be taken. |
 | `systemPreferences` | 🟡 | `getAnimationSettings`, `getAccentColor` and `getColor` (CSS system colours), `getEffectiveAppearance`, `getMediaAccessStatus` (`granted`), `getUserDefault` (empty defaults), notification subscriptions (never fire). |
 | `safeStorage` | ✅ | [native] `safe-storage` feature (on by default). AES-256-GCM with a random key kept in the OS keychain (Keychain, Credential Manager, Secret Service). `encryptString` / `decryptString` synchronous, `encryptStringAsync` / `decryptStringAsync` / `isAsyncEncryptionAvailable`; `getSelectedStorageBackend()` is `gnome_libsecret` or, with no Secret Service, `basic_text` (encryption then unavailable until `setUsePlainTextEncryption(true)`), as in Electron. Main process only. Ciphertext is not compatible with Electron's. |
+| `utilityProcess.fork` | 🟡 | [native, feature `node-child-process`] The module runs in a real Node.js: a sidecar the app bundles (`<crate>-node` / `node` next to the executable; `npx github:AJayClauGermany/tauri-as-electron --node-sidecar`), `$TAURI_ELECTRON_NODE`, or `node` on PATH in debug builds. `postMessage(message, [MessagePortMain])` (structured-clone-like; ports relayed by the main process, so a port whose other end is in a window works), `kill()`, `pid`, `stdout` / `stderr` (`stdio: 'pipe'`), `'spawn'`, `'exit'`, `'message'`; `env`, `execArgv`, `cwd`, `serviceName` (process title). In the child: `process.parentPort` (`'message'` with `{ data, ports }`, `postMessage`, `start` / `pause`), `MessagePortMain`, `process.type === 'utility'`, `require('electron').net` (Node's `fetch`); main-process modules throw. The bundler plugins bundle entries with static paths for Node (option `fork` for others) into `<resources>/fork`. Not supported: the `'error'` event (V8 fatal errors), `respondToAuthRequestsFromMainProcess`, ports from the child to the main process, native addons in bundled entries. Windows (loopback channel) and macOS not verified. See [MIGRATING.md](MIGRATING.md#utilityprocessfork-and-child_processfork). |
 | `crashReporter` | ⚪ | `start` and parameter APIs accepted; crashes are not collected. |
 | `process` | 🟡 | `platform`, `arch`, `versions`, `type`, `argv`, `env`, `execPath`, `pid`, `cwd()` ([native]), `exit`, `nextTick`, `getSystemVersion`, `getProcessMemoryInfo` & co. (zeros). |
 | `path` / `node:path` | ✅ | POSIX implementation. |
 | `webFrame` | 🟡 | Zoom, `insertCSS`, `executeJavaScript`. |
 | `webUtils.getPathForFile` | ✅ | Files dropped on a window come from Tauri's native drop event and are re-dispatched as HTML5 drag events; their `File` objects have names and paths but no contents. |
 | `TouchBar` | ⚪ | Constructible, ignored. |
-| `utilityProcess`, `desktopCapturer`, `contentTracing`, `inAppPurchase`, `netLog`, `pushNotifications`, `sharedTexture`, `IpcMainServiceWorker` | 🚫 | Present so imports resolve; every member throws with `reason: 'unsupported'` and a hint. `utilityProcess` → a Node sidecar via `plugin-shell` is the closest equivalent. |
+| `desktopCapturer`, `contentTracing`, `inAppPurchase`, `netLog`, `pushNotifications`, `sharedTexture`, `IpcMainServiceWorker` | 🚫 | Present so imports resolve; every member throws with `reason: 'unsupported'` and a hint. |
 | `ShareMenu` | ❌ | macOS share sheet; needs a Rust command. |
 
 ## CommonJS and Node.js built-ins
@@ -209,7 +210,7 @@ for more):
 | `require('buffer')`, global `Buffer` | ✅ | The `buffer` npm package (a `Uint8Array` subclass); the global is installed in the main process. |
 | `path.win32` | ✅ | A real Windows implementation (`path` itself stays POSIX). |
 | `require('os')` | ✅ | [native] Main process, feature `node-os`. Every `os` function; CPU `times` are zeros outside Linux. |
-| `require('child_process')` | 🟡 | [native] Main process, feature `node-child-process`. `spawn`, `exec`, `execFile` and their `*Sync` forms, with Node's errors and shells. No `fork()`, no `'ipc'` stdio. |
+| `require('child_process')` | 🟡 | [native] Main process, feature `node-child-process`. `spawn`, `exec`, `execFile` and their `*Sync` forms, with Node's errors and shells. `fork()` runs a real Node.js (see `utilityProcess.fork`) with Node's own IPC channel (`NODE_CHANNEL_FD`, `json` serialization): `send`, `'message'`, `disconnect`, `connected`, `silent`, `execPath`; so does `spawn` with `'ipc'` in `stdio` and `spawn(process.execPath)` with `ELECTRON_RUN_AS_NODE`. No `serialization: 'advanced'`, no handles over `send()`. |
 | `require('util')`, `util/types`, `events` | ✅ | Pure JavaScript; `util.inspect` / `format` print like Node's. `EventEmitter` can be called the pre-class way. |
 | `require('stream')`, `stream/promises`, `string_decoder` | ✅ | readable-stream (Node's streams), `string_decoder` npm package. |
 | `require('crypto')` | 🟡 | Hashes, HMAC, PBKDF2, HKDF, scrypt, random values, `webcrypto` / `subtle`. No ciphers, signatures or key pairs yet. |
