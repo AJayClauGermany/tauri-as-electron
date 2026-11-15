@@ -220,14 +220,16 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   for custom schemes and `net.fetch`. Mostly used to relax CSP / CORS or
   set headers for remote pages. *Apps 18 (FreeTube depends on it to talk
   to YouTube).* Effort L, partial at best.
-- [ ] **C8. `printToPDF` and `capturePage`** per platform through
+- [x] **C8. `printToPDF` and `capturePage`** per platform through
   `with_webview` (WKWebView `createPDF` / `takeSnapshot`, WebView2
   `PrintToPdf` / `CapturePreview`, WebKitGTK print operation to a file /
   `get_snapshot`). *Apps 7 and 5 (draw.io, Joplin, Zettlr, MarkText,
   SiYuan export PDFs).* Effort M–L.
-- [ ] **C9. Screen capture.** `desktopCapturer.getSources` and
+  *Done: `print_to_pdf` / `capture_page` commands (`src/capture.rs`), started on the main thread and finished in the webview's completion callback. Linux: a WebKitGTK print operation without a dialog to GTK's "Print to File" printer (paper size, `landscape`, margins, `scale`, `pageRanges`, `printBackground`) and a snapshot of the visible page (empty for a hidden window); Windows: `PrintToPdf` with `ICoreWebView2PrintSettings` (every option; `displayHeaderFooter` prints WebView2's own header and footer) and `CapturePreview`; macOS: `createPDF`, one page as tall as the content (no paper size, margins, orientation, scale or page ranges), and `takeSnapshot`. `headerTemplate` / `footerTemplate`, `preferCSSPageSize`, tagged PDFs and outlines are ignored (warned once); Electron < 21's microns, `marginsType` and `{ from, to }` page ranges are accepted. No new crates (the gtk, cairo, png, webview2-com, windows and objc2 versions Tauri already builds). Linux verified; Windows / macOS compile-checked only.*
+- [x] **C9. Screen capture.** `desktopCapturer.getSources` and
   `setDisplayMediaRequestHandler` for screen sharing; depends on each
   webview's `getDisplayMedia` support. *Apps 8 (the chat apps).* Effort L.
+  *Done, with the webviews' limits: `getSources` (feature `desktop-capturer`, on by default; `src/desktop_capturer.rs`) lists screens and windows with thumbnails and window icons through X11 on Linux (x11rb; under Wayland screens only, without thumbnails), GDI on Windows and CoreGraphics on macOS (no window icons). No webview lets the app pick the captured source: `getUserMedia({ chromeMediaSource: 'desktop' })` becomes `getDisplayMedia()` in app pages, so the webview's picker appears (the desktop portal with PipeWire on Linux, WebView2's on Windows, the system's on macOS), and that request is answered by the permission request handler (`'media'`). A page's `getDisplayMedia()` calls `setDisplayMediaRequestHandler` (Linux: WebKitGTK's display-device permission request; Windows: WebView2 `ScreenCaptureStarting` where the runtime has it, else WebView2 asks the user itself); without a handler it is denied, as in Electron; `callback({ video })` grants, the named source is not applied, `useSystemPicker` grants without the handler. macOS reports no screen-capture request (WebKit asks the user itself). BrowserWindows on Linux now have WebKitGTK's media-stream and WebRTC settings on (getUserMedia, getDisplayMedia, RTCPeerConnection), like every Electron page. `getMediaSourceId` stays unsupported; xcap was not used (it needs libpipewire to build). Linux verified with WebKit's mock capture devices (`TAURI_ELECTRON_MOCK_CAPTURE=1`, set by the smoke); a real capture needs a desktop portal. Windows / macOS compile-checked only.*
 - [ ] **C10. TLS and auth events.** `certificate-error`,
   `setCertificateVerifyProc`, `select-client-certificate`, `login`
   (WebView2 `ServerCertificateErrorDetected` / `BasicAuthenticationRequested`,
