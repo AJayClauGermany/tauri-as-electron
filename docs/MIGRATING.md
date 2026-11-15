@@ -300,7 +300,7 @@ off (the template and the scaffolder write this for you):
 tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-electron", features = [
   "node-fs",            # fs, fs/promises: file access from the main process
   "node-os",            # os: host, user, memory, CPUs, network interfaces
-  "node-child-process", # child_process: runs arbitrary commands; delete to disable
+  "node-child-process", # child_process (also fork, utilityProcess): runs arbitrary commands; delete to disable
   "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
   "node-tls",           # tls, https servers (rustls); implies node-net
 ] }

@@ -222,6 +222,22 @@ describe('fork entry points', () => {
 })
 
 describe('the Vite plugin', () => {
+  it('watches in development: the first build is there when it resolves, changes rebuild', async () => {
+    const root = tempDir('tauri-electron-fork-watch-')
+    fs.cpSync(fixture, root, { recursive: true })
+    const devPlan = forkShared.forkPlan(root, undefined, shared.scanSources(root))
+    const dir = path.join(root, forkShared.DEV_DIR)
+    const watcher = await buildForks({ root, plan: devPlan, outDir: dir, dev: true, watch: true })
+    try {
+      const child = path.join(dir, 'src/workers/child.cjs')
+      expect(fs.readFileSync(child, 'utf8')).toContain('child started')
+      fs.appendFileSync(path.join(root, 'src/workers/child.js'), "process.stdout.write('changed\\n')\n")
+      await vi.waitFor(() => expect(fs.readFileSync(child, 'utf8')).toContain('changed'), { timeout: 15000, interval: 100 })
+    } finally {
+      await watcher.close()
+    }
+  }, 30000)
+
   it('builds fork entries into src-tauri/electron-resources/fork and describes them in the main page', async () => {
     const root = tempDir('tauri-electron-fork-app-')
     fs.cpSync(fixture, root, { recursive: true })
