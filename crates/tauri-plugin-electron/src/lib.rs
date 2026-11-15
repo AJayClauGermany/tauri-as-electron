@@ -1240,17 +1240,25 @@ fn fs_unwatch<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<bool, V
 
 /// Page loads, for the lifetime of the files and watchers a page opened
 /// (see `node_fs::owners`): a load takes a stamp when it starts; once it has
-/// finished at the URL it started for, what the webview opened before is
-/// closed, as a restarted Node process starts with nothing open. A load that
-/// never finishes, or finishes elsewhere (a link that becomes a download, a
-/// cancelled navigation reported on the current page), closes nothing.
+/// finished, what the webview opened before is closed, as a restarted Node
+/// process starts with nothing open. A load that never finishes, or that
+/// finishes back on the page already shown at another URL than it started
+/// for (a link that becomes a download, a cancelled navigation), closes
+/// nothing. Per label: the load under way, and the URL of the page shown.
 #[cfg(feature = "node-fs")]
-static PAGE_LOADS: std::sync::LazyLock<Mutex<HashMap<String, (u64, String)>>> =
+#[derive(Default)]
+struct PageLoads {
+    started: HashMap<String, (u64, String)>,
+    shown: HashMap<String, String>,
+}
+
+#[cfg(feature = "node-fs")]
+static PAGE_LOADS: std::sync::LazyLock<Mutex<PageLoads>> =
     std::sync::LazyLock::new(Default::default);
 
 fn node_page_started(label: &str, url: &str) {
     #[cfg(feature = "node-fs")]
-    PAGE_LOADS.lock().unwrap().insert(
+    PAGE_LOADS.lock().unwrap().started.insert(
         label.to_string(),
         (node_fs::owners::stamp(), url.to_string()),
     );
@@ -1260,9 +1268,18 @@ fn node_page_started(label: &str, url: &str) {
 fn node_page_finished(label: &str, url: &str) {
     #[cfg(feature = "node-fs")]
     {
-        let load = PAGE_LOADS.lock().unwrap().remove(label);
-        if let Some((stamp, started)) = load.filter(|(_, started)| started == url) {
-            let _ = started;
+        let stamp = {
+            let mut loads = PAGE_LOADS.lock().unwrap();
+            let load = loads.started.remove(label);
+            let shown = loads.shown.insert(label.to_string(), url.to_string());
+            match load {
+                // Back on the page that was shown: nothing replaced it.
+                Some((_, started)) if started != url && shown.as_deref() == Some(url) => None,
+                Some((stamp, _)) => Some(stamp),
+                None => None,
+            }
+        };
+        if let Some(stamp) = stamp {
             node_fs::close_owned_before(label, stamp);
             node_fs_watch::close_owned_before(label, stamp);
         }
@@ -1274,7 +1291,11 @@ fn node_page_finished(label: &str, url: &str) {
 fn node_window_closed(label: &str) {
     #[cfg(feature = "node-fs")]
     {
-        let _ = PAGE_LOADS.lock().unwrap().remove(label);
+        {
+            let mut loads = PAGE_LOADS.lock().unwrap();
+            loads.started.remove(label);
+            loads.shown.remove(label);
+        }
         node_fs::close_owned_before(label, u64::MAX);
         node_fs_watch::close_owned_before(label, u64::MAX);
     }
