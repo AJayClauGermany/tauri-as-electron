@@ -125,6 +125,10 @@ fn emitter(channel: Channel<Value>, socket: Option<u32>) -> Emit {
 }
 
 /// Read until EOF, error or destroy, honouring pause.
+/// Node's default `handshakeTimeout` for TLS servers.
+#[cfg(feature = "node-tls")]
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(120);
+
 async fn pump(mut reader: BoxRead, mut paused: watch::Receiver<bool>, emit: Emit) {
     let mut buffer = vec![0u8; 64 * 1024];
     loop {
@@ -186,6 +190,7 @@ impl Net {
         writer: BoxWrite,
         tcp: Option<std::net::TcpStream>,
         emit: Emit,
+        announce: Option<(&Channel<Value>, Value)>,
     ) {
         let (pause, paused) = watch::channel(false);
         let socket = Arc::new(Socket {
@@ -195,6 +200,11 @@ impl Net {
             tcp,
         });
         self.insert(id, Handle::Socket(socket.clone()));
+        // An accepted socket: JS learns its id only once it is in the table (so
+        // writes find it), and before the reader can send its first data.
+        if let Some((channel, event)) = announce {
+            let _ = channel.send(event);
+        }
         *socket.reader.lock().unwrap() = Some(tokio_task(tauri::async_runtime::spawn(pump(
             reader, paused, emit,
         ))));
@@ -212,7 +222,7 @@ impl Net {
         let emit = emitter(channel, None);
         if let Some(path) = &options.path {
             let (reader, writer) = connect_path(path).await?;
-            self.adopt(id, reader, writer, None, emit);
+            self.adopt(id, reader, writer, None, emit, None);
             return Ok(json!({ "id": id, "path": path }));
         }
         let host = options.host.clone().unwrap_or_else(|| "localhost".into());
@@ -272,7 +282,7 @@ impl Net {
                     crate::node_tls::connect(stream, &host, &tls_options).await?;
                 merge(&mut info, session);
                 let (reader, writer) = tokio::io::split(stream);
-                self.adopt(id, Box::new(reader), Box::new(writer), control, emit);
+                self.adopt(id, Box::new(reader), Box::new(writer), control, emit, None);
                 info["id"] = json!(id);
                 return Ok(info);
             }
@@ -283,7 +293,7 @@ impl Net {
             }
         }
         let (reader, writer) = stream.into_split();
-        self.adopt(id, Box::new(reader), Box::new(writer), control, emit);
+        self.adopt(id, Box::new(reader), Box::new(writer), control, emit, None);
         info["id"] = json!(id);
         Ok(info)
     }
@@ -442,27 +452,34 @@ impl Net {
                 if let Some(acceptor) = acceptor.clone() {
                     let (net, channel) = (net.clone(), channel.clone());
                     tauri::async_runtime::spawn(async move {
-                        match acceptor.accept(stream).await {
-                            Ok(tls) => {
+                        // Node's handshakeTimeout default: a client that never
+                        // finishes the handshake does not hold the socket forever.
+                        let handshake =
+                            tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream))
+                                .await;
+                        let error = match handshake {
+                            Ok(Ok(tls)) => {
                                 merge(&mut info, crate::node_tls::server_info(&tls));
-                                let _ = channel.send(info);
                                 let (reader, writer) = tokio::io::split(tls);
                                 net.adopt(
                                     socket_id,
                                     Box::new(reader),
                                     Box::new(writer),
                                     control,
-                                    emitter(channel, Some(socket_id)),
+                                    emitter(channel.clone(), Some(socket_id)),
+                                    Some((&channel, info)),
                                 );
+                                return;
                             }
-                            Err(e) => {
-                                let _ = channel.send(json!({ "type": "tlsClientError", "error": { "code": "ECONNRESET", "message": e.to_string() }, "remoteAddress": peer.ip().to_string(), "remotePort": peer.port() }));
+                            Ok(Err(e)) => json!({ "code": "ECONNRESET", "message": e.to_string() }),
+                            Err(_) => {
+                                json!({ "code": "ERR_TLS_HANDSHAKE_TIMEOUT", "message": "TLS handshake timeout" })
                             }
-                        }
+                        };
+                        let _ = channel.send(json!({ "type": "tlsClientError", "error": error, "remoteAddress": peer.ip().to_string(), "remotePort": peer.port() }));
                     });
                     continue;
                 }
-                let _ = channel.send(info);
                 let (reader, writer) = stream.into_split();
                 net.adopt(
                     socket_id,
@@ -470,6 +487,7 @@ impl Net {
                     Box::new(writer),
                     control,
                     emitter(channel.clone(), Some(socket_id)),
+                    Some((&channel, info)),
                 );
             }
         });
@@ -503,7 +521,6 @@ impl Net {
                 match listener.accept().await {
                     Ok((stream, _)) => {
                         let socket_id = net.id();
-                        let _ = channel.send(json!({ "type": "connection", "socket": socket_id }));
                         let (reader, writer) = stream.into_split();
                         net.adopt(
                             socket_id,
@@ -511,6 +528,10 @@ impl Net {
                             Box::new(writer),
                             None,
                             emitter(channel.clone(), Some(socket_id)),
+                            Some((
+                                &channel,
+                                json!({ "type": "connection", "socket": socket_id }),
+                            )),
                         );
                     }
                     Err(e) => {
@@ -567,7 +588,6 @@ impl Net {
                     }
                 };
                 let socket_id = net.id();
-                let _ = channel.send(json!({ "type": "connection", "socket": socket_id }));
                 let (reader, writer) = tokio::io::split(connected);
                 net.adopt(
                     socket_id,
@@ -575,6 +595,10 @@ impl Net {
                     Box::new(writer),
                     None,
                     emitter(channel.clone(), Some(socket_id)),
+                    Some((
+                        &channel,
+                        json!({ "type": "connection", "socket": socket_id }),
+                    )),
                 );
             }
         });

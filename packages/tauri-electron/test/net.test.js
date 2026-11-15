@@ -74,7 +74,7 @@ vi.mock('../src/internal/native.js', async (importOriginal) => {
               ...(args.options.tls ? { authorized: false, protocol: 'TLSv1.3', servername: args.options.tls.servername } : {}),
             }),
           )
-          const tls = args.options.tls ? { authorized: true, authorizationError: null, protocol: 'TLSv1.3', alpnProtocol: args.options.tls.ALPNProtocols[0] ?? null, servername: args.options.tls.servername ?? host } : {}
+          const tls = args.options.tls ? { authorized: true, authorizationError: null, protocol: 'TLSv1.3', alpnProtocol: args.options.tls.ALPNProtocols[0] ?? null, servername: args.options.tls.servername ?? host, peerCertificate: Buffer.from('fake DER').toString('base64') } : {}
           return { id: client, remoteAddress: '127.0.0.1', remotePort: port, remoteFamily: 'IPv4', localAddress: '127.0.0.1', localPort: clientPort, localFamily: 'IPv4', ...tls }
         }
         case 'net_write':
@@ -244,6 +244,19 @@ describe('net', () => {
     first.close()
   })
 
+  it('closes a server whose listen() has not finished yet', async () => {
+    const server = net.createServer()
+    server.listen(0)
+    const closed = new Promise((resolve) => server.close(resolve))
+    await closed
+    expect(server.listening).toBe(false)
+    // The listener Rust opened was destroyed again.
+    const id = state.calls.find((c) => c.command === 'net_listen') && [...state.calls].reverse().find((c) => c.command === 'net_destroy')?.args.id
+    expect(id).toBeTypeOf('number')
+    expect(state.servers.has(id)).toBe(false)
+    expect(() => net.createServer().listen(0).listen(0)).toThrow(expect.objectContaining({ code: 'ERR_SERVER_ALREADY_LISTEN' }))
+  })
+
   it('explains itself when the feature is off', () => {
     state.features = []
     expect(() => net.connect(80)).toThrow(/node-net/)
@@ -269,6 +282,30 @@ describe('tls', () => {
     let text = ''
     for await (const chunk of socket) text += chunk
     expect(text).toBe('secure')
+    server.close()
+  })
+
+  it('calls checkServerIdentity and never passes a certificate it cannot check', async () => {
+    const server = tls.createServer({ key: 'K', cert: 'C' }, (socket) => socket.end())
+    const connections = []
+    server.on('connection', (socket) => connections.push(socket))
+    const port = await listening(server)
+    const pinned = tls.connect({ port, host: 'localhost', checkServerIdentity: (host, cert) => new Error(`pin mismatch for ${host} ${typeof cert.fingerprint256}`) })
+    const [error] = await once(pinned, 'error')
+    expect(error.message).toBe('pin mismatch for localhost string')
+    let seen
+    const accepted = tls.connect({ port, host: 'localhost', checkServerIdentity: (host) => void (seen = host) })
+    await once(accepted, 'secureConnect')
+    expect(seen).toBe('localhost')
+    // The exported check passes only what rustls verified for that name.
+    const cert = accepted.getPeerCertificate()
+    expect(tls.checkServerIdentity('localhost', cert)).toBeUndefined()
+    expect(tls.checkServerIdentity('other.test', cert)).toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' })
+    expect(tls.checkServerIdentity('localhost', { raw: Buffer.alloc(1) })).toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' })
+    accepted.destroy()
+    // tls.Server emits 'connection' as well as 'secureConnection'.
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(connections.length).toBe(2)
     server.close()
   })
 
@@ -472,6 +509,43 @@ describe('http server', () => {
     let text = ''
     for await (const chunk of socket) text += chunk
     expect(text.endsWith('\r\n\r\nsecure true')).toBe(true)
+    server.close()
+  })
+
+  it('keeps connections alive after close() and listen() again', async () => {
+    const server = http.createServer((req, res) => res.end('ok'))
+    await listening(server)
+    await new Promise((resolve) => server.close(resolve))
+    const port = await listening(server)
+    const reply = await exchange(port, 'GET / HTTP/1.1\r\nHost: x\r\n\r\n', /\r\n\r\nok$/)
+    expect(reply).toMatch(/Connection: keep-alive/)
+    server.closeAllConnections()
+    server.close()
+  })
+
+  it('stops reading pipelined requests while a response is running', async () => {
+    let release
+    const server = http.createServer((req, res) => {
+      if (req.url === '/slow') release = () => res.end('slow')
+      else res.end('fast')
+    })
+    const port = await listening(server)
+    const socket = net.connect(port)
+    const filler = `GET /fast HTTP/1.1\r\nHost: x\r\nX-Pad: ${'p'.repeat(1000)}\r\n\r\n`
+    socket.write('GET /slow HTTP/1.1\r\nHost: x\r\n\r\n' + filler.repeat(30))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const accepted = [...state.sockets.entries()].find(([, v]) => v.peer === socket._id)[0]
+    const serverSocket = [...server._connections][0]
+    expect(serverSocket.isPaused()).toBe(true)
+    expect(accepted).toBeTypeOf('number')
+    let text = ''
+    socket.on('data', (chunk) => (text += chunk))
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(text.match(/HTTP\/1\.1 200 OK/g)).toHaveLength(31)
+    expect(serverSocket.isPaused()).toBe(false)
+    socket.destroy()
+    server.closeAllConnections()
     server.close()
   })
 

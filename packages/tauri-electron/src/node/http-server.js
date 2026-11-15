@@ -258,6 +258,7 @@ function serve(server, socket) {
   let parsing = true
   let idleTimer = null
   let ended = false // the client sent FIN
+  let pipelinePaused = false // reading stopped until the current response is done
   const pending = [] // ServerResponses waiting for their turn
 
   server._connections.add(socket)
@@ -318,6 +319,10 @@ function serve(server, socket) {
     if (pending.length) return startNext()
     // Requests that arrived meanwhile (pipelined) are still in the buffer.
     parse()
+    if (pipelinePaused) {
+      pipelinePaused = false
+      socket.resume()
+    }
     if (responding) return
     // The client half-closed and every request is answered.
     if (ended) socket.end()
@@ -479,8 +484,13 @@ function serve(server, socket) {
   const onData = (chunk) => {
     buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk
     parse()
-    // Back-pressure: stop reading while a request body is not being consumed.
+    // Back-pressure: stop reading while a request body is not being consumed,
+    // or while pipelined requests pile up behind a response still running.
     if (request && request.readableLength > request.readableHighWaterMark) socket.pause()
+    else if (responding && !body && buffer.length > MAX_HEADER_SIZE) {
+      pipelinePaused = true
+      socket.pause()
+    }
   }
   socket.on('data', onData)
 }
@@ -519,6 +529,11 @@ function httpServerMixin(Base) {
 
     closeIdleConnections() {
       for (const socket of this._connections) if (socket._httpIdle) socket.destroy()
+    }
+
+    listen(...args) {
+      this._closingAll = false
+      return super.listen(...args)
     }
 
     /** Like Node 19+: stop accepting and close idle keep-alive connections. */

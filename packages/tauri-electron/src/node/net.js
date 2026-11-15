@@ -398,7 +398,7 @@ export class Server extends EventEmitter {
   listen(...args) {
     const [options, callback] = normalizeListenArgs(args)
     checkNet('net.Server.listen', this._tlsOptions() ? 'node-tls' : FEATURE)
-    if (this.listening) {
+    if (this.listening || this._listenPending) {
       const error = new Error('Listen method has been called more than once without closing.')
       error.code = 'ERR_SERVER_ALREADY_LISTEN'
       throw error
@@ -407,14 +407,31 @@ export class Server extends EventEmitter {
     const channel = new Channel()
     channel.onmessage = (event) => this._onEvent(event)
     const request = { host: options.host, port: options.port, path: options.path, backlog: options.backlog, ipv6Only: Boolean(options.ipv6Only), tls: this._tlsOptions() }
+    this._listenPending = true
     native('net_listen', { options: request, onEvent: channel }).then(
       (info) => {
+        this._listenPending = false
+        // close() came before Rust answered: stop the listener it just opened.
+        if (this._closeWhenListening) {
+          this._closeWhenListening = false
+          native('net_destroy', { id: info.id }).catch(() => {})
+          queueMicrotask(() => this.emit('close'))
+          return
+        }
         this._id = info.id
         this._address = info.path ?? { address: info.address, family: info.family, port: info.port }
         this.listening = true
         this.emit('listening')
       },
-      (error) => this.emit('error', socketError(error, 'net.Server.listen')),
+      (error) => {
+        this._listenPending = false
+        if (this._closeWhenListening) {
+          this._closeWhenListening = false
+          queueMicrotask(() => this.emit('close'))
+          return
+        }
+        this.emit('error', socketError(error, 'net.Server.listen'))
+      },
     )
     return this
   }
@@ -455,6 +472,11 @@ export class Server extends EventEmitter {
 
   /** Stops accepting; 'close' follows once every connection has closed. */
   close(callback) {
+    if (this._listenPending) {
+      this._closeWhenListening = true
+      if (callback) this.once('close', callback)
+      return this
+    }
     if (callback) {
       if (!this.listening) {
         const error = new Error('Server is not running.')

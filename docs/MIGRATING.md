@@ -410,10 +410,15 @@ page holds handles and gets data over a channel.
   you pass; SNI, ALPN, client certificates, `rejectUnauthorized: false`
   (still reporting `authorized` / `authorizationError`). Failures carry
   OpenSSL's codes (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`, `CERT_HAS_EXPIRED`,
-  `ERR_TLS_CERT_ALTNAME_INVALID`). TLS 1.2 and 1.3 only. Not yet: upgrading
-  an existing socket (`tls.connect({ socket })`, STARTTLS), session
-  resumption, `getPeerCertificate()` details beyond the raw DER and
-  fingerprints.
+  `ERR_TLS_CERT_ALTNAME_INVALID`). TLS 1.2 and 1.3 only. A
+  `checkServerIdentity` option is called after the chain is trusted (for
+  pinning, with `fingerprint256`); `tls.checkServerIdentity()` itself only
+  passes names rustls already verified, and fails anything else. Not yet:
+  upgrading an existing socket (`tls.connect({ socket })`, STARTTLS),
+  session resumption, `getPeerCertificate()` details beyond the raw DER and
+  fingerprints, `requestCert` without `ca` (client certificates are only
+  requested when `ca` is given). `tls.rootCertificates` is empty, so
+  `ca: [...tls.rootCertificates, myCA]` trusts `myCA` only.
 - `dgram`: bind, send, receive, `connect`, broadcast, multicast
   membership, TTLs and buffer sizes.
 - `dns`: `lookup` asks the operating system, like Node (`/etc/hosts`

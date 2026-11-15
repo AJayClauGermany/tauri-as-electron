@@ -48,6 +48,8 @@ function tlsError(error, host) {
   return error
 }
 
+const VERIFIED_FOR = Symbol('tauri-electron.verifiedFor')
+
 function fingerprint(raw, algorithm) {
   return createHash(algorithm).update(raw).digest('hex').toUpperCase().match(/../g).join(':')
 }
@@ -80,7 +82,10 @@ export class TLSSocket extends Socket {
   getPeerCertificate() {
     if (!this._session.peerCertificate) return {}
     const raw = Buffer.from(this._session.peerCertificate, 'base64')
-    return { raw, fingerprint: fingerprint(raw, 'sha1'), fingerprint256: fingerprint(raw, 'sha256'), fingerprint512: fingerprint(raw, 'sha512'), subject: {}, issuer: {} }
+    const cert = { raw, fingerprint: fingerprint(raw, 'sha1'), fingerprint256: fingerprint(raw, 'sha256'), fingerprint512: fingerprint(raw, 'sha512'), subject: {}, issuer: {} }
+    // The name rustls checked the certificate against, for checkServerIdentity().
+    Object.defineProperty(cert, VERIFIED_FOR, { value: this.authorized ? this.servername : undefined })
+    return cert
   }
 
   getProtocol() {
@@ -138,7 +143,15 @@ export function connect(...args) {
   const servername = merged.servername ?? (/^[\d.:]+$/.test(host) ? undefined : host)
   const socket = new TLSSocket(null, merged)
   socket._connectError = (error) => tlsError(error, servername ?? host)
-  socket._onConnected = () => queueMicrotask(() => socket.emit('secureConnect'))
+  socket._onConnected = () =>
+    queueMicrotask(() => {
+      // Node calls checkServerIdentity after the chain is trusted (pinning, custom name rules).
+      if (socket.authorized && typeof merged.checkServerIdentity === 'function') {
+        const error = merged.checkServerIdentity(servername ?? host, socket.getPeerCertificate())
+        if (error instanceof Error) return socket.destroy(error)
+      }
+      socket.emit('secureConnect')
+    })
   return socket._connect(merged, callback, {
     servername,
     rejectUnauthorized,
@@ -173,7 +186,9 @@ export class TLSServer extends Server {
     return new TLSSocket(null, { allowHalfOpen: this._options.allowHalfOpen })
   }
 
+  /** Node emits 'connection' for the TCP socket, then 'secureConnection'; here both follow the handshake. */
   _onConnection(socket) {
+    this.emit('connection', socket)
     this.emit('secureConnection', socket)
   }
 
@@ -194,9 +209,20 @@ export function createSecureContext(options = {}) {
   return { context: { ...options } }
 }
 
-/** rustls checks the name during the handshake; this only answers for already-checked peers. */
-export function checkServerIdentity() {
-  return undefined
+/**
+ * rustls checks the name during the handshake, and certificates are not
+ * parsed in JavaScript: this passes only a certificate rustls verified for
+ * `hostname`, and fails any other (never a silent pass).
+ */
+export function checkServerIdentity(hostname, cert) {
+  const verified = cert?.[VERIFIED_FOR]
+  if (verified && String(verified).toLowerCase() === String(hostname).toLowerCase()) return undefined
+  return Object.assign(new Error(`Hostname/IP does not match certificate's altnames: Host: ${hostname}. tauri-electron can only confirm names rustls verified during the handshake`), {
+    code: 'ERR_TLS_CERT_ALTNAME_INVALID',
+    host: hostname,
+    reason: 'not verified by rustls',
+    cert,
+  })
 }
 
 export function getCiphers() {

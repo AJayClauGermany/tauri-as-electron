@@ -66,7 +66,7 @@ in JavaScript:
 | --- | --- | --- |
 | Socket table | `crates/…/src/node_net.rs`, `node_net_commands.rs` | Features `node-net` (tokio, socket2, hickory-resolver) and `node-tls` (rustls with ring, as tauri-plugin-http; implies `node-net`); permission set `electron:node-net`. One `Net` state holds TCP / IPC sockets, servers and UDP sockets by id. `net_connect`, `net_listen`, `udp_bind` take a Channel; a server's channel also carries the events of the sockets it accepted (tagged `socket: id`), so one channel per server, not per connection. `net_write` resolves after the bytes are flushed (the JS stream's back-pressure), `net_pause` stops the reader task through a watch channel. Error codes for the socket errors were added to `node_common.rs` (libc on Unix, WSA codes mapped to libuv's numbers on Windows). |
 | `net` | `src/node/net.js` | `Socket` is a Duplex; `Server` hands accepted ids to `_createSocket()` (overridden by `tls`). IPC through `path`: Unix sockets, Windows named pipes. Not done: `BlockList`, `autoSelectFamily` racing (the OS order is used), `server.maxConnections` is enforced in JS after accept. |
-| `tls` | `src/node/tls.js`, `crates/…/src/node_tls.rs` | rustls; Mozilla's roots (webpki-roots) or `ca`. With `rejectUnauthorized: false` a recording verifier still runs WebPKI and reports the failure as `authorizationError`. rustls errors map to OpenSSL's codes. Not done: STARTTLS (`{ socket }`), sessions, parsed `getPeerCertificate()` (raw DER and fingerprints only), `rootCertificates` (empty), TLS < 1.2. |
+| `tls` | `src/node/tls.js`, `crates/…/src/node_tls.rs` | rustls; Mozilla's roots (webpki-roots) or `ca`. Accepted handshakes time out after 120 s (Node's `handshakeTimeout`). A `checkServerIdentity` option runs after the chain is trusted; the exported `checkServerIdentity()` fails any name rustls did not verify, rather than passing silently. With `rejectUnauthorized: false` a recording verifier still runs WebPKI and reports the failure as `authorizationError`. rustls errors map to OpenSSL's codes. Not done: STARTTLS (`{ socket }`), sessions, parsed `getPeerCertificate()` (raw DER and fingerprints only), `rootCertificates` (empty), TLS < 1.2. |
 | `dgram` | `src/node/dgram.js` | Bind, send (all of Node's overloads), `connect` (filtered in JS), broadcast, TTLs, multicast membership, buffer sizes. |
 | `dns`, `dns/promises` | `src/node/dns.js`, `crates/…/src/node_dns.rs` | `lookup` is the OS resolver (`getaddrinfo` via tokio's `lookup_host`), like Node. `resolve*`, `reverse`, `Resolver` (servers, `timeout`, `tries`, `ttl`) use hickory-resolver; `getServers()` is answered synchronously over the bridge. Not done: `lookupService`. |
 | `http` / `https` servers | `src/node/http-server.js` | HTTP/1.1 written in JS on `net.Server` / `tls.Server`, so `'connection'`, `'upgrade'`, `'connect'` and `req.socket` are real sockets. Keep-alive with `keepAliveTimeout`, pipelining (answered in order), chunked and `Content-Length` bodies both ways, trailers, `Expect: 100-continue` / `'checkContinue'`, HEAD / 204 / 304, `'clientError'` with 400 / 431, `closeAllConnections` / `closeIdleConnections`, `close()` closing idle connections as Node 19+. `ServerResponse` is a Writable; `OutgoingMessage` is an alias of it. |
@@ -82,7 +82,7 @@ a DNS server written with `dgram` that `Resolver.resolve4` queries, TLS with
 a private CA (`src/fixtures/tls-test-cert.js`) including untrusted and
 mismatched certificates, and HTTP / HTTPS servers.
 
-Measured after layer 4: 162 unit tests and 9 Rust tests pass; kitchen-sink
+Measured after layer 4: 166 unit tests and 9 Rust tests pass; kitchen-sink
 smoke 166 pass, 0 fail on Tauri (debug build), 170 pass, 0 fail on real
 Electron, with 15 new checks in `src/checks-node-layer4.js`.
 
@@ -103,6 +103,11 @@ Open points from layer 4:
   the client onto `net` / `tls` would fix both, at the cost of redirects /
   proxies / HTTP/2 that reqwest gives today.
 - `http2`, STARTTLS, `dns.lookupService`, `net.BlockList`.
+- `tls.rootCertificates` is empty (webpki-roots has trust anchors, not
+  certificates), so `ca: [...tls.rootCertificates, extra]` loses the
+  defaults. A fix: a marker entry that Rust expands to the default roots.
+- `requestCert` without `ca` requests no client certificate; Node asks and
+  reports it unauthorized. Needs a custom rustls client verifier.
 - Every chunk crosses the Tauri IPC as base64 in a Channel message, and
   every write is a command call: throughput is bounded by the IPC, not the
   socket. The kitchen sink's 1 MiB transfer with a pause per chunk takes
