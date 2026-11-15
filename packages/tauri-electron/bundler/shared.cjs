@@ -66,11 +66,24 @@ const NODE_SHIMS = {
   'dns/promises': 'tauri-electron/dns/promises',
 }
 
+/**
+ * npm packages with native code tauri-electron re-implements on
+ * tauri-plugin-electron's `keytar`, `sqlite` and `pty` features (part of
+ * PACKAGE_SHIMS). Their real builds cannot load in a webview.
+ */
+const NATIVE_MODULE_SHIMS = {
+  keytar: 'tauri-electron/keytar',
+  'better-sqlite3': 'tauri-electron/better-sqlite3',
+  sqlite3: 'tauri-electron/sqlite3',
+  'node-pty': 'tauri-electron/node-pty',
+}
+
 /** Electron helper packages tauri-electron replaces (aliased like `electron`). */
 const PACKAGE_SHIMS = {
   '@electron/remote': 'tauri-electron/remote',
   '@electron/remote/renderer': 'tauri-electron/remote/renderer',
   '@electron/remote/main': 'tauri-electron/remote/main',
+  ...NATIVE_MODULE_SHIMS,
 }
 
 /** Dev-server endpoint the hidden main window posts its console output to. */
@@ -88,17 +101,18 @@ const PATH_GLOBALS =
 
 // `require('x')` of a shimmed built-in, outside comments and strings.
 const BUILTIN_REQUIRE =
-  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|(?<![.$\w])require\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
+  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|(?<![.$\w])require\(\s*(['"])((?:node:)?[a-z0-9_/-]+)\2\s*\)/g
 
 /**
  * In a Vite (rolldown) build, CommonJS code that `require()`s an ES module
  * gets its namespace object, so `require('assert')(x)`, `new (require('events'))()`
  * or `require('console').log` would fail. Every shim's default export is the
- * complete Node-shaped module (callable where Node's is), so take that.
+ * complete Node-shaped module (callable where Node's is), so take that; the
+ * same for the native-module shims (`new (require('better-sqlite3'))(file)`).
  */
 function rewriteBuiltinRequires(code) {
   return code.replace(BUILTIN_REQUIRE, (match, skipped, _quote, id) => {
-    if (skipped || !NODE_SHIMS[id.replace(/^node:/, '')]) return match
+    if (skipped || !(NODE_SHIMS[id.replace(/^node:/, '')] || NATIVE_MODULE_SHIMS[id])) return match
     return `((m) => (m && m.default) || m)(${match})`
   })
 }
@@ -467,6 +481,7 @@ module.exports = {
   NODE_BUILTINS,
   NODE_SHIMS,
   PACKAGE_SHIMS,
+  NATIVE_MODULE_SHIMS,
   LOG_ENDPOINT,
   STAGING_DIR,
   rewritePathGlobals,

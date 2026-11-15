@@ -7,6 +7,8 @@
  * It
  *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron,
  *    and `@electron/remote` (`/main`, `/renderer`) to its remote-module shim,
+ *    `keytar`, `better-sqlite3`, `sqlite3` and `node-pty` to versions on
+ *    tauri-plugin-electron's `keytar` / `sqlite` / `pty` features,
  *    and `path` / `node:path` to a browser-safe implementation,
  *  - aliases the Node built-ins it implements (`path`, `process`, `events`,
  *    `url`, `buffer`, `util`, `stream`, `crypto`, `http`, `zlib`, …, and `fs`,
