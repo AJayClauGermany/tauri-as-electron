@@ -22,6 +22,8 @@ import { windowConfig } from './window-config.js'
 import { postToMain, rendererReady, commandHandlers } from './ipc-renderer.js'
 import { registerFilePath } from './web-utils.js'
 import { installWindowControls } from './window-controls.js'
+import { installDesktopCapture, DESKTOP_CAPTURE_CHANNEL } from './display-media.js'
+import { ipcRenderer } from './ipc-renderer.js'
 
 installProcessShim()
 
@@ -477,6 +479,8 @@ if (isRenderer) {
   trackFileDrops()
   // titleBarStyle 'hidden' + titleBarOverlay (Windows, Linux): minimize / maximize / close buttons.
   if (config?.titleBarOverlay) installWindowControls(config.titleBarOverlay)
+  // getUserMedia({ chromeMediaSource: 'desktop' }) → getDisplayMedia() (screen sharing).
+  installDesktopCapture(navigator.mediaDevices, (request) => ipcRenderer.invoke(DESKTOP_CAPTURE_CHANNEL, request))
   // Like Electron, window.close() closes the BrowserWindow ('close' is still emitted).
   window.close = () => {
     getCurrentWindow().close().catch(report('window.close'))

@@ -29,6 +29,7 @@ import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
 import { downloadURL } from './downloads.js'
+import { printToPDF, capturePage } from './capture.js'
 
 const windows = new Map()
 
@@ -698,7 +699,7 @@ export class WebContents extends EventEmitter {
   startDrag() { warnOnce('startDrag', 'webContents.startDrag() is a no-op in tauri-electron.') }
   beginFrameSubscription() { throw new NotImplementedError('webContents.beginFrameSubscription', { reason: 'unsupported' }) }
   endFrameSubscription() {}
-  getMediaSourceId() { throw new NotImplementedError('webContents.getMediaSourceId', { reason: 'unsupported', hint: 'There is no desktopCapturer.' }) }
+  getMediaSourceId() { throw new NotImplementedError('webContents.getMediaSourceId', { reason: 'unsupported', hint: 'Sources cannot be chosen by the app: getUserMedia({ chromeMediaSource: \'desktop\' }) opens the webview\'s screen picker.' }) }
 
   /** Single native process: the app's pid (from tauri-plugin-electron). */
   getOSProcessId() {
@@ -709,12 +710,14 @@ export class WebContents extends EventEmitter {
     return this.id
   }
 
-  capturePage() {
-    return Promise.reject(new NotImplementedError('webContents.capturePage', { reason: 'unsupported', hint: 'Tauri exposes no page capture; render to a canvas inside the page instead.' }))
+  /** The visible page as a NativeImage (./capture.js). */
+  capturePage(rect, opts) {
+    return capturePage(this, rect, opts)
   }
 
-  printToPDF() {
-    return Promise.reject(new NotImplementedError('webContents.printToPDF', { reason: 'unsupported', hint: 'Use webContents.print(); the system print dialog can save a PDF.' }))
+  /** A PDF of the page (./capture.js). */
+  printToPDF(options) {
+    return printToPDF(this, options)
   }
 
   savePage() {
@@ -1581,7 +1584,7 @@ export class BrowserWindow extends EventEmitter {
   invalidateShadow() {}
   setAccentColor() {}
   getAccentColor() { return '' }
-  getMediaSourceId() { throw new NotImplementedError('BrowserWindow.getMediaSourceId', { reason: 'unsupported', hint: 'There is no desktopCapturer.' }) }
+  getMediaSourceId() { throw new NotImplementedError('BrowserWindow.getMediaSourceId', { reason: 'unsupported', hint: 'Sources cannot be chosen by the app: getUserMedia({ chromeMediaSource: \'desktop\' }) opens the webview\'s screen picker.' }) }
 
   // --- menus ---------------------------------------------------------------------------
 
@@ -1662,8 +1665,8 @@ export class BrowserWindow extends EventEmitter {
     throw new NotImplementedError('BrowserWindow.getNativeWindowHandle', { reason: 'unsupported', hint: 'Native handles exist only in Rust (tauri::Window::hwnd / ns_window / gtk_window).' })
   }
 
-  capturePage() {
-    return this.webContents.capturePage()
+  capturePage(rect, opts) {
+    return this.webContents.capturePage(rect, opts)
   }
 
   // --- statics ------------------------------------------------------------------------------

@@ -254,7 +254,8 @@ export class Session extends EventEmitter {
 
   /** Stored: Tauri has no hook for permission checks (navigator.permissions.query). */
   setPermissionCheckHandler(handler) { this._handlers.permissionCheck = handler }
-  setDisplayMediaRequestHandler(handler) { this._handlers.displayMedia = handler }
+  /** Called for a page's getDisplayMedia() (./display-media.js); the webview's picker chooses the source. */
+  setDisplayMediaRequestHandler(handler, options) { this._handlers.displayMedia = typeof handler === 'function' ? handler : null; this._handlers.displayMediaOptions = { ...options } }
   setDevicePermissionHandler(handler) { this._handlers.devicePermission = handler }
   setCertificateVerifyProc(proc) { this._handlers.certificateVerify = proc }
   setBluetoothPairingHandler(handler) { this._handlers.bluetoothPairing = handler }
