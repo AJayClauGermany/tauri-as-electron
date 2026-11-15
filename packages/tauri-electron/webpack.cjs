@@ -48,7 +48,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, NATIVE_MODULE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -157,6 +157,8 @@ function requireFromProject(id, context) {
 function redirect(request, { aliasPath, userResolved }) {
   if (ELECTRON_REQUEST.test(request)) return MODULES.electron
   if (request === 'electron-updater' && !userResolved.has(request)) return MODULES.electronUpdater
+  // A project's own alias for a native module (a wasm SQLite, say) wins, as for electron-updater.
+  if (NATIVE_MODULE_SHIMS[request] && userResolved.has(request)) return null
   if (PACKAGE_SHIMS[request]) return SHIM_FILES[PACKAGE_SHIMS[request]]
   const bare = request.replace(/^node:/, '')
   if (userResolved.has(bare) || userResolved.has(request)) return null

@@ -560,6 +560,8 @@ describe('module aliases', () => {
     expect(at('node-pty')).toMatch(/native[\\/]node-pty\.js$/)
     expect(at('better-sqlite3')).toMatch(/bundler[\\/]better-sqlite3\.cjs$/)
     expect(at('sqlite3')).toMatch(/bundler[\\/]sqlite3\.cjs$/)
+    // A project's own alias wins.
+    expect(redirect('better-sqlite3', { userResolved: new Set(['better-sqlite3']) })).toBeNull()
     const require = createRequire(import.meta.url)
     const BetterSqlite3 = require(at('better-sqlite3'))
     expect(typeof BetterSqlite3).toBe('function')
