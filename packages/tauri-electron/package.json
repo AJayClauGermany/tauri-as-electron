@@ -59,6 +59,8 @@
     "./dgram": "./src/node/dgram.js",
     "./dns": "./src/node/dns.js",
     "./dns/promises": "./src/node/dns-promises.js",
+    "./vm": "./src/node/vm.js",
+    "./worker_threads": "./src/node/worker-threads.js",
     "./renderer-node": "./src/renderer/node.js",
     "./remote": "./src/remote/index.js",
     "./remote/renderer": "./src/remote/renderer.js",

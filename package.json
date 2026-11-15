@@ -60,6 +60,8 @@
     "./dgram": "./packages/tauri-electron/src/node/dgram.js",
     "./dns": "./packages/tauri-electron/src/node/dns.js",
     "./dns/promises": "./packages/tauri-electron/src/node/dns-promises.js",
+    "./vm": "./packages/tauri-electron/src/node/vm.js",
+    "./worker_threads": "./packages/tauri-electron/src/node/worker-threads.js",
     "./renderer-node": "./packages/tauri-electron/src/renderer/node.js",
     "./remote": "./packages/tauri-electron/src/remote/index.js",
     "./remote/renderer": "./packages/tauri-electron/src/remote/renderer.js",

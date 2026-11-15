@@ -65,14 +65,14 @@ const MAIN_ONLY = {
   dns: 'node-net',
   'dns/promises': 'node-net',
   tls: 'node-tls',
+  vm: null,
+  worker_threads: null,
 }
 
 /** Node built-ins that cannot exist in a webview, with the nearest replacement. */
 export const NODE_BUILTINS = {
   ...Object.fromEntries(Object.keys(MAIN_ONLY).map((name) => [name, null])),
-  worker_threads: 'Web Workers',
   v8: 'nothing',
-  vm: 'nothing',
   http2: 'net.fetch / https (HTTP/2 is negotiated there), or a Rust command',
   cluster: 'nothing (there is one webview process)',
 }

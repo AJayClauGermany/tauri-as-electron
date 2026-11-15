@@ -21,8 +21,16 @@ export function currentLabel() {
     window.__TAURI_INTERNALS__.metadata?.currentWindow?.label ?? null
 }
 
-export const isMainProcess = currentLabel() === MAIN_LABEL
-export const isRenderer = inTauri && !isMainProcess
+/**
+ * A `worker_threads` worker (a dedicated Web Worker with the Node layer): it
+ * runs Node code for its window but is neither the main process nor a
+ * renderer, so Electron's modules stay inert there, as in Electron's workers.
+ */
+export const inWorker =
+  typeof WorkerGlobalScope !== 'undefined' && typeof self !== 'undefined' && self instanceof WorkerGlobalScope
+
+export const isMainProcess = !inWorker && currentLabel() === MAIN_LABEL
+export const isRenderer = inTauri && !inWorker && !isMainProcess
 
 export function deferred() {
   let resolve
