@@ -36,14 +36,18 @@
  *    `registerSchemesAsPrivileged`) to `src-tauri/electron-schemes.json`,
  *    where `tauri_plugin_electron::bundled_schemes!()` reads them at build time,
  *  - in dev, forwards the hidden main window's console to the terminal (the
- *    window has no visible devtools; Electron devs expect main logs there).
+ *    window has no visible devtools; Electron devs expect main logs there),
+ *  - bundles `worker_threads` worker scripts (those it finds in
+ *    `new Worker(...)` calls and its `workers` option) into a Web Worker
+ *    that loads the Node layer first (bundler/worker-entry.js).
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan, workerThreads, workerEntriesSource, rewriteWorkerUrls, mentionsWorkerThreads } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -76,12 +80,24 @@ const VIRTUAL = {
   main: 'virtual:tauri-electron/main', // Node built-ins, app files and require() for the main process
   renderer: 'virtual:tauri-electron/renderer', // require(), bootstrap, preload(s)
   rendererNode: 'virtual:tauri-electron/renderer-node', // Node built-ins for nodeIntegration windows
+  workers: 'virtual:tauri-electron/workers', // where worker_threads workers come from (bundler/worker-entry.js)
 }
 const RESOLVED = '\0'
 
 const NODE_BUILTIN_PREFIX = '\0tauri-electron:node:'
 
 const SOURCE_FILE = /\.(m?[jt]sx?|cjs|cts)$/
+
+// The worker_threads worker bundle and the module listing its scripts (see bundler/worker-entry.js).
+const BUNDLER_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'bundler')
+const WORKER_ENTRY = path.join(BUNDLER_DIR, 'worker-entry.js')
+const WORKER_ENTRIES = path.join(BUNDLER_DIR, 'worker-entries.js')
+
+/** bundler/worker-entries.js in dev: the dev server serves every project file, so import it by URL. */
+const DEV_WORKER_ENTRIES = `export default function loadEntry(path) {
+  return import(/* @vite-ignore */ new URL(path, self.location.origin).href)
+}
+`
 
 /**
  * Electron renderer pages load their scripts with plain `<script src>`; Vite
@@ -131,6 +147,10 @@ function virtualSrc(id, isDev) {
  * @param {boolean|'auto'} [options.rendererNode='auto'] Load the Node layer in renderer pages, for
  *   windows created with `nodeIntegration: true` or `sandbox: false` (installed only in those).
  *   `'auto'`: when the app depends on Electron < 20 or its sources mention either option.
+ * @param {boolean|string[]} [options.workers] worker_threads scripts to bundle besides those found
+ *   in `new Worker(...)` calls of the app's sources (project-relative paths); `true` builds the worker
+ *   runtime even when no source imports worker_threads (`eval: true` workers of dependencies);
+ *   `false`: no worker threads.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -145,8 +165,15 @@ export default function tauriElectron(options = {}) {
   let outDir = 'dist'
   let libraryPreloads = []
   let withRendererNode = false
+  let workers = null // workerThreads(): { entries, aliases } when the app uses worker_threads
+  let workerType = 'classic'
 
-  return {
+  /** The hooks worker bundles need (Vite builds them with their own plugin list). */
+  function workerPlugin() {
+    return { name: 'tauri-electron:worker', enforce: 'pre', resolveId: plugin.resolveId, load: plugin.load, transform: plugin.transform }
+  }
+
+  const plugin = {
     name: 'tauri-electron',
     enforce: 'pre',
 
@@ -163,6 +190,8 @@ export default function tauriElectron(options = {}) {
 
       const config = {
         resolve: { alias },
+        // Worker bundles run their own plugin pipeline: give them the hooks that resolve and load ours.
+        worker: { plugins: () => [workerPlugin()] },
         // Vite replaces a bare `process.env` with `{}`; Electron code expects
         // the real environment (filled in by tauri-electron's process shim).
         define: userConfig.define?.['process.env'] ? {} : { 'process.env': '(globalThis.process?.env ?? {})' },
@@ -196,6 +225,8 @@ export default function tauriElectron(options = {}) {
       const scan = lazySourceScan(root)
       withRendererNode = rendererNode(root, options.rendererNode, scan)
       isDev = resolved.command === 'serve'
+      workers = workerThreads(root, options.workers, scan)
+      workerType = isDev || resolved.worker?.format === 'es' ? 'module' : 'classic'
       outDir = resolved.build?.outDir ?? 'dist'
       // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
       const schemes = writeSchemes(root, options.schemes, scan)
@@ -240,6 +271,8 @@ export default function tauriElectron(options = {}) {
     },
 
     load(id) {
+      // The worker bundle's list of worker scripts (bundler/worker-entry.js imports it).
+      if (toPosix(id.split('?')[0]) === toPosix(WORKER_ENTRIES)) return isDev ? DEV_WORKER_ENTRIES : workerEntriesSource(workers?.entries ?? [])
       if (id.startsWith(NODE_BUILTIN_PREFIX)) {
         const name = JSON.stringify(id.slice(NODE_BUILTIN_PREFIX.length))
         // Build: a CommonJS module, so `require('fs')`, `import fs from 'fs'`
@@ -254,12 +287,22 @@ export default function tauriElectron(options = {}) {
       if (!Object.values(VIRTUAL).includes(name)) return null
       const lines = []
       if (name === VIRTUAL.console) lines.push(CONSOLE_FORWARDER)
+      if (name === VIRTUAL.workers) {
+        // Vite bundles bundler/worker-entry.js as a Web Worker and gives its URL.
+        const entry = isDev ? `/@fs/${toPosix(WORKER_ENTRY).replace(/^\/+/, '')}` : toPosix(WORKER_ENTRY)
+        const registry = { type: workerType, entries: isDev ? null : (workers?.entries ?? []).map((e) => e.path), aliases: workers?.aliases ?? {}, dev: isDev }
+        lines.push(`import url from ${JSON.stringify(`${entry}?worker&url`)}`)
+        lines.push(`const registry = ${JSON.stringify(registry)}`)
+        lines.push(`if (!globalThis.__TAURI_ELECTRON_WORKERS__) globalThis.__TAURI_ELECTRON_WORKERS__ = { ...registry, url, create: (options) => new Worker(url, { ...options, type: registry.type }) }`)
+      }
       if (name === VIRTUAL.main) {
+        if (workers) lines.push(`import ${JSON.stringify(VIRTUAL.workers)}`)
         lines.push(`import 'tauri-electron/node'`)
         if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
         lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
       }
       if (name === VIRTUAL.rendererNode) {
+        if (workers) lines.push(`import ${JSON.stringify(VIRTUAL.workers)}`)
         lines.push(`import { hasNode } from 'tauri-electron/renderer-node'`)
         lines.push(`if (hasNode && !globalThis.__TAURI_ELECTRON_APP__) globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
       }
@@ -287,6 +330,10 @@ export default function tauriElectron(options = {}) {
       if (!isDev && mentionsRequire(result) && !file.includes('/tauri-electron/') && !file.includes('/packages/tauri-electron/')) {
         result = rewriteBuiltinRequires(result)
       }
+      // new Worker(new URL('./w.js', import.meta.url)) → the script's project path (before Vite makes it a Web Worker).
+      if (!file.includes('/node_modules/') && file.startsWith(root) && mentionsWorkerThreads(result)) {
+        result = rewriteWorkerUrls(result, file, root)
+      }
       if (!file.includes('/node_modules/') && file.startsWith(root) && mentionsPathGlobals(result)) {
         const relative = '/' + toPosix(path.relative(root, file))
         result = rewritePathGlobals(result, path.posix.dirname(relative), relative)
@@ -310,4 +357,5 @@ export default function tauriElectron(options = {}) {
       },
     },
   }
+  return plugin
 }

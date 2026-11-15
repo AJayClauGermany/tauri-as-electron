@@ -12,8 +12,7 @@ const path = require('node:path')
 
 /** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
 const NODE_BUILTINS = [
-  'cluster', 'http2', 'inspector', 'inspector/promises', 'repl', 'trace_events', 'v8', 'vm', 'wasi',
-  'worker_threads',
+  'cluster', 'http2', 'inspector', 'inspector/promises', 'repl', 'trace_events', 'v8', 'wasi',
 ]
 
 /** Node built-ins tauri-electron implements (aliased, like `electron` itself). */
@@ -64,6 +63,8 @@ const NODE_SHIMS = {
   dgram: 'tauri-electron/dgram',
   dns: 'tauri-electron/dns',
   'dns/promises': 'tauri-electron/dns/promises',
+  vm: 'tauri-electron/vm',
+  worker_threads: 'tauri-electron/worker_threads',
 }
 
 /** Electron helper packages tauri-electron replaces (aliased like `electron`). */
@@ -376,7 +377,7 @@ function schemesInSource(code) {
  * `writeSchemes`, which walk only if they need to.
  */
 function scanSources(root) {
-  const result = { node: false, schemes: new Set() }
+  const result = { node: false, schemes: new Set(), workerThreads: false, workers: [] }
   let seen = 0
   let dirs = 0
   const visit = (dir, depth) => {
@@ -402,6 +403,7 @@ function scanSources(root) {
           const code = fs.readFileSync(full, 'utf8')
           if (!result.node && SCANNED_SOURCE.test(entry.name) && NODE_WINDOW.test(code)) result.node = true
           for (const scheme of schemesInSource(code)) result.schemes.add(scheme)
+          if (SCANNED_SOURCE.test(entry.name)) collectWorkers(code, full, root, result)
         } catch {
           /* unreadable: skip */
         }
@@ -461,6 +463,293 @@ function writeSchemes(root, extra, scan) {
   return schemes
 }
 
+// --- worker_threads: the scripts `new Worker(...)` runs -----------------------------------------
+
+/** `require('worker_threads')`, `from 'node:worker_threads'`, `import('worker_threads')`. */
+const WORKER_THREADS = /(?:\brequire\s*\(\s*|\bfrom\s*|\bimport\s*\(\s*)['"](?:node:)?worker_threads['"]/
+const JS_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.jsx', '.tsx']
+const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
+
+function mentionsWorkerThreads(code) {
+  return code.includes('worker_threads') && WORKER_THREADS.test(code)
+}
+
+/** The local names `Worker` goes by in a file (`{ Worker: NodeWorker }`, `{ Worker as W }`). */
+function workerNames(code) {
+  const names = new Set(['Worker'])
+  for (const match of code.matchAll(/\bWorker\s*(?::|\bas\b)\s*([A-Za-z_$][\w$]*)/g)) names.add(match[1])
+  return names
+}
+
+/** Index just past the string, template or comment starting at `i`, or -1 if none starts there. */
+function skipLiteral(code, i) {
+  const ch = code[i]
+  if (ch === '/' && code[i + 1] === '/') {
+    const end = code.indexOf('\n', i)
+    return end === -1 ? code.length : end
+  }
+  if (ch === '/' && code[i + 1] === '*') {
+    const end = code.indexOf('*/', i + 2)
+    return end === -1 ? code.length : end + 2
+  }
+  if (ch === '"' || ch === "'" || ch === '`') {
+    let j = i + 1
+    while (j < code.length && code[j] !== ch) {
+      if (code[j] === '\\') j++
+      else if (ch === '`' && code[j] === '$' && code[j + 1] === '{') {
+        // Skip the substitution (balanced braces).
+        let depth = 1
+        j += 2
+        while (j < code.length && depth) {
+          const skipped = skipLiteral(code, j)
+          if (skipped !== -1) {
+            j = skipped
+            continue
+          }
+          if (code[j] === '{') depth++
+          else if (code[j] === '}') depth--
+          j++
+        }
+        continue
+      }
+      j++
+    }
+    return j + 1
+  }
+  return -1
+}
+
+/**
+ * Split `text` at top-level occurrences of `separator` (a character), outside
+ * brackets, strings and comments. `end`: stop at the first unmatched closing
+ * bracket (returns its index as `stop`).
+ */
+function splitTopLevel(text, separator, start = 0) {
+  const parts = []
+  let depth = 0
+  let from = start
+  let i = start
+  for (; i < text.length; i++) {
+    const skipped = skipLiteral(text, i)
+    if (skipped !== -1) {
+      i = skipped - 1
+      continue
+    }
+    const ch = text[i]
+    if (ch === '(' || ch === '[' || ch === '{') depth++
+    else if (ch === ')' || ch === ']' || ch === '}') {
+      if (depth === 0) break
+      depth--
+    } else if (depth === 0 && ch === separator) {
+      parts.push(text.slice(from, i))
+      from = i + 1
+    } else if (depth === 0 && separator === ',' && ch === ';') break
+  }
+  parts.push(text.slice(from, i))
+  return { parts, stop: i }
+}
+
+function stringValue(expr) {
+  const match = /^(['"])((?:\\.|(?!\1)[^\\])*)\1$/s.exec(expr) ?? /^`((?:\\.|[^`\\$]|\$(?!\{))*)`$/s.exec(expr)
+  if (!match) return null
+  const raw = match.length === 3 ? match[2] : match[1]
+  return raw.replace(/\\(.)/g, '$1')
+}
+
+function stripParens(expr) {
+  let value = expr.trim()
+  while (value.startsWith('(') && value.endsWith(')') && splitTopLevel(value, '\0', 1).stop === value.length - 1) value = value.slice(1, -1).trim()
+  return value
+}
+
+const META_FILE = /^(?:__filename|import\.meta\.filename|fileURLToPath\(\s*import\.meta\.url\s*\)|(?:url\.)?fileURLToPath\(\s*import\.meta\.url\s*\)|import\.meta\.url|new\s+URL\(\s*import\.meta\.url\s*\))$/
+const META_DIR = /^(?:__dirname|import\.meta\.dirname|(?:path\.)?dirname\(\s*(?:__filename|import\.meta\.filename|(?:url\.)?fileURLToPath\(\s*import\.meta\.url\s*\))\s*\))$/
+const PATH_CALL = /^(?:(?:path|nodePath|pathModule)(?:\.posix|\.win32)?\.)?(join|resolve)\(([\s\S]*)\)$/
+
+/**
+ * The value of a path expression in `file`, as far as it can be known
+ * statically: string literals, `__dirname` / `__filename` and their ES
+ * module forms, `path.join` / `path.resolve`, `+` and template literals,
+ * `new URL('…', import.meta.url)`, `require.resolve('…')`, and a `const`
+ * holding one of those. Returns a string or null.
+ */
+function staticPath(expr, scope, depth = 0) {
+  if (depth > 4) return null
+  const value = stripParens(expr)
+  const literal = stringValue(value)
+  if (literal !== null) return literal
+  if (META_FILE.test(value)) return scope.file
+  if (META_DIR.test(value)) return path.dirname(scope.file)
+  if (value === 'process.cwd()') return scope.root
+  let match = /^new\s+URL\(\s*([\s\S]+?)\s*,\s*import\.meta\.url\s*\)$/.exec(value)
+  if (match) {
+    const relative = staticPath(match[1], scope, depth + 1)
+    return relative === null ? null : path.resolve(path.dirname(scope.file), relative.replace(/^file:\/\//, ''))
+  }
+  match = /^require\.resolve\(\s*([\s\S]+?)\s*\)$/.exec(value)
+  if (match) {
+    const request = staticPath(match[1], scope, depth + 1)
+    return request === null || !request.startsWith('.') ? null : path.resolve(path.dirname(scope.file), request)
+  }
+  match = PATH_CALL.exec(value)
+  if (match) {
+    const args = splitTopLevel(match[2], ',').parts.map((part) => part.trim()).filter(Boolean)
+    const segments = args.map((arg) => staticPath(arg, scope, depth + 1))
+    if (!segments.length || segments.includes(null)) return null
+    return match[1] === 'join' ? path.join(...segments) : path.resolve(scope.root, ...segments)
+  }
+  const template = /^`([\s\S]*)`$/.exec(value)
+  if (template) {
+    let out = ''
+    let rest = template[1]
+    while (rest.length) {
+      const at = rest.indexOf('${')
+      if (at === -1) {
+        out += rest
+        break
+      }
+      out += rest.slice(0, at)
+      const { stop } = splitTopLevel(rest, '\0', at + 2)
+      const inner = staticPath(rest.slice(at + 2, stop), scope, depth + 1)
+      if (inner === null) return null
+      out += inner
+      rest = rest.slice(stop + 1)
+    }
+    return out
+  }
+  const sum = splitTopLevel(value, '+').parts
+  if (sum.length > 1) {
+    let out = ''
+    for (const part of sum) {
+      const piece = staticPath(part, scope, depth + 1)
+      if (piece === null) return null
+      out += piece
+    }
+    return out
+  }
+  if (IDENTIFIER.test(value)) {
+    const declaration = new RegExp(`\\b(?:const|let|var)\\s+${value.replace(/\$/g, '\\$')}\\s*=`).exec(scope.code)
+    if (!declaration) return null
+    // The initializer runs to a top-level `,` or `;`, or (without semicolons) to the end of a line:
+    // take the longest run of its first lines that is a path expression.
+    const lines = splitTopLevel(scope.code, ',', declaration.index + declaration[0].length).parts[0].split('\n').slice(0, 6)
+    for (let n = lines.length; n > 0; n--) {
+      const found = staticPath(lines.slice(0, n).join('\n'), scope, depth + 1)
+      if (found !== null) return found
+    }
+  }
+  return null
+}
+
+/**
+ * The project file for a worker script path (absolute, or relative to the
+ * project as Node's are to the working directory), trying the other
+ * JavaScript / TypeScript extensions (`worker.js` → `worker.ts`), or null.
+ */
+function resolveWorkerScript(requested, root) {
+  const absolute = path.resolve(root, requested)
+  const relative = path.relative(root, absolute)
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null
+  const toProject = (file) => '/' + path.relative(root, file).split(path.sep).join('/')
+  const isFile = (file) => {
+    try {
+      return fs.statSync(file).isFile()
+    } catch {
+      return false
+    }
+  }
+  const ext = path.extname(absolute)
+  const base = JS_EXTENSIONS.includes(ext) ? absolute.slice(0, -ext.length) : absolute
+  const candidates = isFile(absolute) ? [absolute] : JS_EXTENSIONS.map((e) => base + e).filter(isFile)
+  if (!candidates.length || !JS_EXTENSIONS.includes(path.extname(candidates[0]))) return null
+  return { path: toProject(candidates[0]), file: candidates[0], requested: toProject(absolute) }
+}
+
+/** The worker scripts `new Worker(...)` calls of one source file start, into `result.workers`. */
+function collectWorkers(code, file, root, result) {
+  if (!mentionsWorkerThreads(code)) return
+  result.workerThreads = true
+  for (const found of workerScripts(code, file, root)) result.workers.push(found)
+}
+
+/** `[{ path, file, requested }]` for the `new Worker(<static path>)` calls in `code`. */
+function workerScripts(code, file, root) {
+  const found = []
+  const names = [...workerNames(code)].map((n) => n.replace(/\$/g, '\\$')).join('|')
+  const call = new RegExp(`\\bnew\\s+(?:[A-Za-z_$][\\w$]*\\.)*(?:${names})\\s*\\(`, 'g')
+  const scope = { code, file, root }
+  for (const match of code.matchAll(call)) {
+    const { parts } = splitTopLevel(code, ',', match.index + match[0].length)
+    const requested = staticPath(parts[0], scope)
+    if (requested === null) continue
+    const script = resolveWorkerScript(requested.replace(/^file:\/\//, ''), root)
+    if (script) found.push(script)
+  }
+  return found
+}
+
+/**
+ * Worker threads for the bundler plugins: null when the app does not use
+ * them, else `{ entries: [{ path, file }], aliases }` (project path →
+ * script; requested path → found path, `/src/w.js` → `/src/w.ts`).
+ * `option`: the plugins' `workers` option: false (none), true (build the
+ * worker runtime even if no source imports worker_threads), or extra
+ * project-relative scripts (those started from dependencies or with
+ * computed paths).
+ */
+function workerThreads(root, option, scan) {
+  if (option === false) return null
+  const result = sourceScan(root, scan)
+  const entries = new Map()
+  const aliases = {}
+  const add = (script) => {
+    entries.set(script.path, script.file)
+    if (script.requested !== script.path) aliases[script.requested] = script.path
+  }
+  for (const script of result.workers ?? []) add(script)
+  for (const extra of Array.isArray(option) ? option : []) {
+    const script = resolveWorkerScript(String(extra), root)
+    if (script) add(script)
+    else console.warn(`[tauri-electron] workers: ${extra} is not a script in the project`)
+  }
+  if (!entries.size && !result.workerThreads && option !== true && !Array.isArray(option)) return null
+  return { entries: [...entries].map(([p, f]) => ({ path: p, file: f })), aliases }
+}
+
+/** bundler/worker-entries.js for a build: each script as a lazy chunk of the worker bundle. */
+function workerEntriesSource(entries) {
+  const lines = entries.map(({ path: p, file }) => `  ${JSON.stringify(p)}: () => import(${JSON.stringify(file.split(path.sep).join('/'))}),`)
+  return `const entries = {\n${lines.join('\n')}\n}\nexport default function loadEntry(path) {\n  const load = entries[path]\n  return load ? load() : undefined\n}\n`
+}
+
+/**
+ * `new Worker(new URL('./w.js', import.meta.url))` in a file using
+ * worker_threads → `new Worker(new URL("file:///src/w.js"))`: a project
+ * path the worker runtime looks up, instead of a URL the bundler would turn
+ * into a plain Web Worker or asset.
+ */
+function rewriteWorkerUrls(code, file, root) {
+  if (!mentionsWorkerThreads(code)) return code
+  const names = [...workerNames(code)].map((n) => n.replace(/\$/g, '\\$')).join('|')
+  const constructor = `\\bnew\\s+(?:[A-Za-z_$][\\w$]*\\.)*(?:${names})\\s*\\(\\s*`
+  const projectPath = (relative) => {
+    const rel = path.relative(root, path.resolve(path.dirname(file), relative))
+    return !rel || rel.startsWith('..') || path.isAbsolute(rel) ? null : '/' + rel.split(path.sep).join('/')
+  }
+  const url = new RegExp(`(${constructor})new\\s+URL\\(\\s*(['"\`])([^'"\`$]+)\\2\\s*,\\s*import\\.meta\\.url\\s*\\)`, 'g')
+  // require.resolve('./w') is resolved by the bundler's require() (the path relative to the project).
+  const resolve = new RegExp(`(${constructor})require\\.resolve\\(\\s*(['"])(\\.{1,2}/[^'"]+)\\2\\s*\\)`, 'g')
+  return code
+    .replace(url, (match, head, _quote, relative) => {
+      const target = projectPath(relative)
+      return target ? `${head}new URL(${JSON.stringify('file://' + target)})` : match
+    })
+    .replace(resolve, (match, head, _quote, relative) => {
+      const target = projectPath(relative)
+      return target ? `${head}${JSON.stringify(target)}` : match
+    })
+}
+
 module.exports = {
   scanSources,
   lazySourceScan,
@@ -482,4 +771,9 @@ module.exports = {
   schemesInSource,
   collectSchemes,
   writeSchemes,
+  workerThreads,
+  workerScripts,
+  workerEntriesSource,
+  rewriteWorkerUrls,
+  mentionsWorkerThreads,
 }
