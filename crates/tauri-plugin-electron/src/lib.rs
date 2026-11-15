@@ -1240,36 +1240,41 @@ fn fs_unwatch<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<bool, V
 
 /// Page loads, for the lifetime of the files and watchers a page opened
 /// (see `node_fs::owners`): a load takes a stamp when it starts; once it has
-/// finished, what the webview opened before is closed, as a restarted Node
-/// process starts with nothing open. A load that never finishes (a link that
-/// becomes a download) closes nothing.
+/// finished at the URL it started for, what the webview opened before is
+/// closed, as a restarted Node process starts with nothing open. A load that
+/// never finishes, or finishes elsewhere (a link that becomes a download, a
+/// cancelled navigation reported on the current page), closes nothing.
 #[cfg(feature = "node-fs")]
-static PAGE_LOADS: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
+static PAGE_LOADS: std::sync::LazyLock<Mutex<HashMap<String, (u64, String)>>> =
     std::sync::LazyLock::new(Default::default);
 
-fn node_page_started(label: &str) {
+fn node_page_started(label: &str, url: &str) {
     #[cfg(feature = "node-fs")]
-    PAGE_LOADS
-        .lock()
-        .unwrap()
-        .insert(label.to_string(), node_fs::owners::stamp());
-    let _ = label;
+    PAGE_LOADS.lock().unwrap().insert(
+        label.to_string(),
+        (node_fs::owners::stamp(), url.to_string()),
+    );
+    let _ = (label, url);
 }
 
-fn node_page_finished(label: &str) {
+fn node_page_finished(label: &str, url: &str) {
     #[cfg(feature = "node-fs")]
-    if let Some(stamp) = PAGE_LOADS.lock().unwrap().remove(label) {
-        node_fs::close_owned_before(label, stamp);
-        node_fs_watch::close_owned_before(label, stamp);
+    {
+        let load = PAGE_LOADS.lock().unwrap().remove(label);
+        if let Some((stamp, started)) = load.filter(|(_, started)| started == url) {
+            let _ = started;
+            node_fs::close_owned_before(label, stamp);
+            node_fs_watch::close_owned_before(label, stamp);
+        }
     }
-    let _ = label;
+    let _ = (label, url);
 }
 
 /// The window closed: everything its pages opened.
 fn node_window_closed(label: &str) {
     #[cfg(feature = "node-fs")]
     {
-        PAGE_LOADS.lock().unwrap().remove(label);
+        let _ = PAGE_LOADS.lock().unwrap().remove(label);
         node_fs::close_owned_before(label, u64::MAX);
         node_fs_watch::close_owned_before(label, u64::MAX);
     }
@@ -1539,9 +1544,10 @@ impl Builder {
             .on_page_load(|webview, payload| {
                 // A reloaded page (the main process, or a window with Node)
                 // starts with no open files, as a restarted Node would.
+                let url = payload.url().as_str();
                 match payload.event() {
-                    PageLoadEvent::Started => node_page_started(webview.label()),
-                    PageLoadEvent::Finished => node_page_finished(webview.label()),
+                    PageLoadEvent::Started => node_page_started(webview.label(), url),
+                    PageLoadEvent::Finished => node_page_finished(webview.label(), url),
                 }
                 if webview.label() == MAIN_LABEL {
                     return;

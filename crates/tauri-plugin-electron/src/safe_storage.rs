@@ -32,7 +32,9 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::{json, Value};
 
 const KEY_TIMEOUT: Duration = Duration::from_secs(10);
-const RETRY_AFTER: Duration = Duration::from_secs(300);
+const RETRY_AFTER: Duration = Duration::from_secs(60);
+/// How long a retry may hold a caller (the first ask waits `KEY_TIMEOUT`).
+const RETRY_WAIT: Duration = Duration::from_secs(2);
 const TAG_KEYCHAIN: &[u8; 4] = b"tev1";
 const TAG_PLAIN: &[u8; 4] = b"tev0";
 /// The `basic_text` key: public, like Chromium's "peanuts".
@@ -88,9 +90,9 @@ impl SafeStorage {
     }
 
     /// The keychain key, waiting for the keychain at most `KEY_TIMEOUT` the
-    /// first time. After a failure the keychain is asked again in the
-    /// background every `RETRY_AFTER` (the keyring may have been locked at
-    /// login); callers get the last answer meanwhile, without waiting.
+    /// first time. After a failure the keychain is asked again at most every
+    /// `RETRY_AFTER` (the keyring may have been locked at login), waiting
+    /// `RETRY_WAIT` for it; other callers get the last answer meanwhile.
     fn key(&self) -> KeyResult {
         let (lock, ready) = &*self.slot;
         let mut slot = lock.lock().unwrap();
@@ -98,8 +100,16 @@ impl SafeStorage {
         if !slot.started || retry {
             self.ask(&mut slot);
         }
+        // A retry is waited for briefly, so the call that finds the keychain
+        // unlocked gets the key; slower answers serve the next call.
         let (slot, _) = ready
-            .wait_timeout_while(slot, KEY_TIMEOUT, |s| s.result.is_none())
+            .wait_timeout_while(slot, if retry { RETRY_WAIT } else { KEY_TIMEOUT }, |s| {
+                if retry {
+                    s.retrying
+                } else {
+                    s.result.is_none()
+                }
+            })
             .unwrap();
         slot.result
             .clone()

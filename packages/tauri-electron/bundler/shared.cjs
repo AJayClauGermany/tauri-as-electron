@@ -246,7 +246,7 @@ const SCAN_LIMIT = 20000
 
 /** Whether a project source file (outside dependencies and build output) asks for Node in a window. */
 function sourcesAskForNode(root, scan) {
-  return (scan?.() ?? scanSources(root)).node
+  return sourceScan(root, scan).node
 }
 
 /**
@@ -378,7 +378,10 @@ function schemesInSource(code) {
 function scanSources(root) {
   const result = { node: false, schemes: new Set() }
   let seen = 0
-  const visit = (dir) => {
+  let dirs = 0
+  const visit = (dir, depth) => {
+    // Bounded however the tree looks: folders count too, not only source files.
+    if (depth > 32 || ++dirs > SCAN_LIMIT) return
     let names
     try {
       names = fs.readdirSync(dir, { withFileTypes: true })
@@ -386,12 +389,12 @@ function scanSources(root) {
       return
     }
     for (const entry of names) {
-      if (seen > SCAN_LIMIT) return
+      if (seen > SCAN_LIMIT || dirs > SCAN_LIMIT) return
       if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
       const full = path.join(dir, entry.name)
       // Symbolic links are not followed (Dirent reports them as such), so the walk ends.
       if (entry.isDirectory()) {
-        visit(full)
+        visit(full, depth + 1)
       } else if (SCHEME_SOURCE.test(entry.name)) {
         if (++seen > SCAN_LIMIT) return
         try {
@@ -405,8 +408,14 @@ function scanSources(root) {
       }
     }
   }
-  visit(root)
+  visit(root, 0)
   return result
+}
+
+/** `scan`: a `scanSources()` result, a `lazySourceScan()` function, or nothing (walk now). */
+function sourceScan(root, scan) {
+  if (typeof scan === 'function') return scan()
+  return scan ?? scanSources(root)
 }
 
 /** `scanSources(root)`, run on the first call only. */
@@ -423,7 +432,7 @@ function lazySourceScan(root) {
  */
 function collectSchemes(root, extra, scan) {
   if (extra === false) return []
-  const found = new Set((scan?.() ?? scanSources(root)).schemes)
+  const found = new Set(sourceScan(root, scan).schemes)
   const pkg = readPackageJson(root)
   const deps = { ...pkg.optionalDependencies, ...pkg.devDependencies, ...pkg.dependencies }
   for (const [name, schemes] of Object.entries(LIBRARY_SCHEMES)) if (deps[name]) schemes.forEach((s) => found.add(s))

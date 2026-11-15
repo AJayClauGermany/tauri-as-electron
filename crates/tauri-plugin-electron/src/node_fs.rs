@@ -239,13 +239,12 @@ fn fds() -> &'static Mutex<FdTable> {
 }
 
 /// [`run`] for the webview `owner`: descriptors it opens are closed by
-/// [`owners::close_before`] once a later page of that webview has loaded,
-/// or its window closed.
+/// [`close_owned_before`] once a later page of that webview has loaded, or
+/// its window closed. The stamp is taken when the request arrives, so an
+/// open the previous page asked for belongs to it however long it takes.
 pub fn run_for(owner: &str, op: &str, args: &Value, data: &[u8]) -> FsResult {
-    owners::CURRENT.with(|current| *current.borrow_mut() = Some(owner.to_string()));
-    let result = run(op, args, data);
-    owners::CURRENT.with(|current| *current.borrow_mut() = None);
-    result
+    let _guard = owners::Current::set(owner.to_string(), owners::stamp());
+    run(op, args, data)
 }
 
 /// Close the descriptors `owner` opened before `stamp`.
@@ -278,8 +277,24 @@ pub mod owners {
     static NEXT: AtomicU64 = AtomicU64::new(1);
 
     thread_local! {
-        /// The webview the operation on this thread runs for.
-        pub(crate) static CURRENT: RefCell<Option<String>> = const { RefCell::new(None) };
+        /// The webview the operation on this thread runs for, and its stamp.
+        static CURRENT: RefCell<Option<(String, u64)>> = const { RefCell::new(None) };
+    }
+
+    /// Sets the current owner for as long as it lives (also through a panic).
+    pub struct Current;
+
+    impl Current {
+        pub fn set(owner: String, stamp: u64) -> Self {
+            CURRENT.with(|current| *current.borrow_mut() = Some((owner, stamp)));
+            Current
+        }
+    }
+
+    impl Drop for Current {
+        fn drop(&mut self) {
+            CURRENT.with(|current| *current.borrow_mut() = None);
+        }
     }
 
     /// A stamp later than every one taken before.
@@ -287,8 +302,8 @@ pub mod owners {
         NEXT.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// The webview the current operation runs for, if any.
-    pub fn current() -> Option<String> {
+    /// The webview the current operation runs for and its stamp, if any.
+    pub fn current() -> Option<(String, u64)> {
         CURRENT.with(|current| current.borrow().clone())
     }
 }
@@ -375,9 +390,8 @@ fn open(path: &str, flags: &Value, mode: Option<f64>) -> FsResult {
     let fd = table.next;
     table.next += 1;
     table.files.insert(fd, Arc::new(opened));
-    // Stamped under the table's lock, so a page load cannot slip in between.
     if let Some(owner) = owners::current() {
-        table.owners.insert(fd, (owner, owners::stamp()));
+        table.owners.insert(fd, owner);
     }
     Ok(Output::Json(json!(fd)))
 }

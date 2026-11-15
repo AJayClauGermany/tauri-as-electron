@@ -105,6 +105,9 @@ fn event_type(kind: &EventKind) -> Option<&'static str> {
 /// Start watching `path` (bridge `node/fs/watch?a={ path, recursive }`):
 /// `{ id }`. Events are kept until [`attach`].
 pub fn watch(owner: &str, args: &Value) -> Result<Value, NodeError> {
+    // Stamped when asked: a watch the previous page started belongs to it,
+    // however long a recursive walk takes.
+    let stamp = crate::node_fs::owners::stamp();
     let path = args["path"]
         .as_str()
         .ok_or_else(|| NodeError::invalid("path must be a string"))?
@@ -151,13 +154,12 @@ pub fn watch(owner: &str, args: &Value) -> Result<Value, NodeError> {
         .watch(Path::new(&path), mode)
         .map_err(|e| watch_error(e, &path))?;
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    // Stamped under the table's lock, so a page load cannot slip in between.
     let mut watchers = WATCHERS.lock().unwrap();
     watchers.insert(
         id,
         Entry {
             owner: owner.to_string(),
-            stamp: crate::node_fs::owners::stamp(),
+            stamp,
             _watcher: watcher,
             sink,
         },
