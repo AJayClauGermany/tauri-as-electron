@@ -8,6 +8,8 @@
  * `file://` URLs are read through Node `fs` (feature `node-fs` of
  * tauri-plugin-electron), as in Electron, with a content type from the
  * file extension: the usual body of a `protocol.handle()` handler.
+ * `session.webRequest` listeners apply through the hook ./web-request.js
+ * installs (`netFetch`); `fetchDirect` skips them.
  */
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { EventEmitter } from '../internal/emitter.js'
