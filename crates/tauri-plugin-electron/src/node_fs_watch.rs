@@ -52,8 +52,9 @@ impl Sink {
 }
 
 struct Entry {
-    /// The webview that created it (stopped when that page reloads or closes).
+    /// The webview that created it, and when (see `node_fs::owners`).
     owner: String,
+    stamp: u64,
     _watcher: RecommendedWatcher,
     sink: Arc<Mutex<Sink>>,
 }
@@ -150,10 +151,13 @@ pub fn watch(owner: &str, args: &Value) -> Result<Value, NodeError> {
         .watch(Path::new(&path), mode)
         .map_err(|e| watch_error(e, &path))?;
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    WATCHERS.lock().unwrap().insert(
+    // Stamped under the table's lock, so a page load cannot slip in between.
+    let mut watchers = WATCHERS.lock().unwrap();
+    watchers.insert(
         id,
         Entry {
             owner: owner.to_string(),
+            stamp: crate::node_fs::owners::stamp(),
             _watcher: watcher,
             sink,
         },
@@ -193,12 +197,13 @@ pub fn unwatch(owner: &str, id: u32) -> bool {
     false
 }
 
-/// Stop the watchers `owner` created (its page reloaded, or it closed).
-pub fn close_owned(owner: &str) {
+/// Stop the watchers `owner` created before `stamp` (a later page loaded,
+/// or the window closed).
+pub fn close_owned_before(owner: &str, stamp: u64) {
     WATCHERS
         .lock()
         .unwrap()
-        .retain(|_, entry| entry.owner != owner);
+        .retain(|_, entry| entry.owner != owner || entry.stamp >= stamp);
 }
 
 #[cfg(test)]

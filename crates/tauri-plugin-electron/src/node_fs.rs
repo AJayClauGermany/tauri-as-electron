@@ -222,8 +222,8 @@ pub fn run(op: &str, args: &Value, data: &[u8]) -> FsResult {
 struct FdTable {
     next: i64,
     files: HashMap<i64, Arc<File>>,
-    /// The webview that opened each descriptor (closed when it reloads or closes).
-    owners: HashMap<i64, String>,
+    /// The webview that opened each descriptor, and when (see [`owners`]).
+    owners: HashMap<i64, (String, u64)>,
 }
 
 /// The process-wide descriptor table. Descriptors start at 3: 0–2 are stdio.
@@ -239,32 +239,57 @@ fn fds() -> &'static Mutex<FdTable> {
 }
 
 /// [`run`] for the webview `owner`: descriptors it opens are closed by
-/// [`close_owned`] when that page reloads or its window closes.
+/// [`owners::close_before`] once a later page of that webview has loaded,
+/// or its window closed.
 pub fn run_for(owner: &str, op: &str, args: &Value, data: &[u8]) -> FsResult {
+    owners::CURRENT.with(|current| *current.borrow_mut() = Some(owner.to_string()));
     let result = run(op, args, data);
-    if op == "open" {
-        if let Ok(Output::Json(fd)) = &result {
-            if let Some(fd) = fd.as_i64() {
-                fds().lock().unwrap().owners.insert(fd, owner.to_string());
-            }
-        }
-    }
+    owners::CURRENT.with(|current| *current.borrow_mut() = None);
     result
 }
 
-/// Close the descriptors `owner` opened (its page reloaded, or it closed),
-/// as a restarted Node process would start with none.
-pub fn close_owned(owner: &str) {
+/// Close the descriptors `owner` opened before `stamp`.
+pub fn close_owned_before(owner: &str, stamp: u64) {
     let mut table = fds().lock().unwrap();
     let owned: Vec<i64> = table
         .owners
         .iter()
-        .filter(|(_, o)| o.as_str() == owner)
+        .filter(|(_, (o, at))| o.as_str() == owner && *at < stamp)
         .map(|(fd, _)| *fd)
         .collect();
     for fd in owned {
         table.owners.remove(&fd);
         table.files.remove(&fd);
+    }
+}
+
+/// Which page a descriptor or watcher belongs to. A page is a webview label
+/// plus a moment: resources are stamped from one counter when they are
+/// created, a page load takes a stamp when it starts, and once it has
+/// finished, what the label created before that stamp is closed, as a
+/// restarted Node process starts with nothing open. A load that never
+/// finishes (a link that turns into a download) closes nothing.
+pub mod owners {
+    use std::{
+        cell::RefCell,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+
+    thread_local! {
+        /// The webview the operation on this thread runs for.
+        pub(crate) static CURRENT: RefCell<Option<String>> = const { RefCell::new(None) };
+    }
+
+    /// A stamp later than every one taken before.
+    pub fn stamp() -> u64 {
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// The webview the current operation runs for, if any.
+    pub fn current() -> Option<String> {
+        CURRENT.with(|current| current.borrow().clone())
     }
 }
 
@@ -350,6 +375,10 @@ fn open(path: &str, flags: &Value, mode: Option<f64>) -> FsResult {
     let fd = table.next;
     table.next += 1;
     table.files.insert(fd, Arc::new(opened));
+    // Stamped under the table's lock, so a page load cannot slip in between.
+    if let Some(owner) = owners::current() {
+        table.owners.insert(fd, (owner, owners::stamp()));
+    }
     Ok(Output::Json(json!(fd)))
 }
 
@@ -1064,6 +1093,29 @@ mod tests {
             Ok(Output::Bytes(bytes)) => bytes,
             _ => panic!("expected bytes"),
         }
+    }
+
+    #[test]
+    fn descriptors_belong_to_their_page() {
+        let dir = temp_dir();
+        let path = display(dir.join("owned.txt"));
+        let flags = json!({ "write": true, "create": true });
+        let open = |owner: &str| {
+            json_of(run_for(owner, "open", &json!({ "path": path, "flags": flags }), &[]))
+        };
+        let old = open("page-test");
+        let other = open("other-test");
+        // The next page of "page-test" starts loading, opens a file, then finishes.
+        let started = owners::stamp();
+        let new = open("page-test");
+        close_owned_before("page-test", started);
+        let alive = |fd: &Value| call("fstat", json!({ "fd": fd }), &[]).is_ok();
+        assert!(!alive(&old), "the previous page's descriptor is closed");
+        assert!(alive(&new), "the new page's descriptor stays open");
+        assert!(alive(&other), "other webviews are not affected");
+        close_owned_before("page-test", u64::MAX);
+        close_owned_before("other-test", u64::MAX);
+        assert!(!alive(&new) && !alive(&other));
     }
 
     #[test]

@@ -43,7 +43,7 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, scanSources } = shared
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -193,8 +193,7 @@ export default function tauriElectron(options = {}) {
       root = resolved.root
       libraryPreloads = sessionPreloads(root, options.sessionPreloads)
       // One walk over the project's sources for both the Node check and the schemes.
-      const fixedNode = typeof options.rendererNode === 'boolean'
-      const scan = fixedNode && options.schemes === false ? undefined : scanSources(root)
+      const scan = lazySourceScan(root)
       withRendererNode = rendererNode(root, options.rendererNode, scan)
       isDev = resolved.command === 'serve'
       outDir = resolved.build?.outDir ?? 'dist'

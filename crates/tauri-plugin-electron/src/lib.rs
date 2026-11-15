@@ -1238,13 +1238,40 @@ fn fs_unwatch<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<bool, V
     }
 }
 
-/// Close the files and watchers a page opened: it reloaded or its window
-/// closed, and a restarted Node process starts with none.
-fn close_node_resources(label: &str) {
+/// Page loads, for the lifetime of the files and watchers a page opened
+/// (see `node_fs::owners`): a load takes a stamp when it starts; once it has
+/// finished, what the webview opened before is closed, as a restarted Node
+/// process starts with nothing open. A load that never finishes (a link that
+/// becomes a download) closes nothing.
+#[cfg(feature = "node-fs")]
+static PAGE_LOADS: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn node_page_started(label: &str) {
+    #[cfg(feature = "node-fs")]
+    PAGE_LOADS
+        .lock()
+        .unwrap()
+        .insert(label.to_string(), node_fs::owners::stamp());
+    let _ = label;
+}
+
+fn node_page_finished(label: &str) {
+    #[cfg(feature = "node-fs")]
+    if let Some(stamp) = PAGE_LOADS.lock().unwrap().remove(label) {
+        node_fs::close_owned_before(label, stamp);
+        node_fs_watch::close_owned_before(label, stamp);
+    }
+    let _ = label;
+}
+
+/// The window closed: everything its pages opened.
+fn node_window_closed(label: &str) {
     #[cfg(feature = "node-fs")]
     {
-        node_fs::close_owned(label);
-        node_fs_watch::close_owned(label);
+        PAGE_LOADS.lock().unwrap().remove(label);
+        node_fs::close_owned_before(label, u64::MAX);
+        node_fs_watch::close_owned_before(label, u64::MAX);
     }
     let _ = label;
 }
@@ -1512,8 +1539,9 @@ impl Builder {
             .on_page_load(|webview, payload| {
                 // A reloaded page (the main process, or a window with Node)
                 // starts with no open files, as a restarted Node would.
-                if matches!(payload.event(), PageLoadEvent::Started) {
-                    close_node_resources(webview.label());
+                match payload.event() {
+                    PageLoadEvent::Started => node_page_started(webview.label()),
+                    PageLoadEvent::Finished => node_page_finished(webview.label()),
                 }
                 if webview.label() == MAIN_LABEL {
                     return;
@@ -1546,7 +1574,7 @@ impl Builder {
                     label,
                     event: tauri::WindowEvent::Destroyed,
                     ..
-                } => close_node_resources(label),
+                } => node_window_closed(label),
                 _ => {
                     let _ = app;
                 }

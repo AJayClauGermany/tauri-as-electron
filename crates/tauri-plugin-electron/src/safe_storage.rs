@@ -32,7 +32,7 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use serde_json::{json, Value};
 
 const KEY_TIMEOUT: Duration = Duration::from_secs(10);
-const RETRY_AFTER: Duration = Duration::from_secs(30);
+const RETRY_AFTER: Duration = Duration::from_secs(300);
 const TAG_KEYCHAIN: &[u8; 4] = b"tev1";
 const TAG_PLAIN: &[u8; 4] = b"tev0";
 /// The `basic_text` key: public, like Chromium's "peanuts".
@@ -47,6 +47,8 @@ struct KeySlot {
     /// When the keychain last failed: it is asked again after `RETRY_AFTER`
     /// (a prompt was dismissed, or the keyring was still locked at login).
     failed_at: Option<Instant>,
+    /// A retry is under way (the previous answer is still served).
+    retrying: bool,
 }
 
 /// Plugin state: the keychain key once known, and the plaintext switch.
@@ -67,32 +69,34 @@ impl SafeStorage {
         }
     }
 
-    /// The keychain key, waiting for the keychain at most `KEY_TIMEOUT`.
+    /// Ask the keychain on a worker thread; the answer replaces `result`.
+    fn ask(&self, slot: &mut KeySlot) {
+        slot.started = true;
+        slot.retrying = slot.result.is_some();
+        let shared = self.slot.clone();
+        let (service, account) = (self.service.clone(), self.account.clone());
+        thread::spawn(move || {
+            let result = load_or_create_key(&service, &account);
+            let (lock, ready) = &*shared;
+            let mut slot = lock.lock().unwrap();
+            slot.failed_at = result.is_err().then(Instant::now);
+            slot.retrying = false;
+            slot.result = Some(result);
+            drop(slot);
+            ready.notify_all();
+        });
+    }
+
+    /// The keychain key, waiting for the keychain at most `KEY_TIMEOUT` the
+    /// first time. After a failure the keychain is asked again in the
+    /// background every `RETRY_AFTER` (the keyring may have been locked at
+    /// login); callers get the last answer meanwhile, without waiting.
     fn key(&self) -> KeyResult {
         let (lock, ready) = &*self.slot;
         let mut slot = lock.lock().unwrap();
-        if matches!(slot.result, Some(Err(_)))
-            && slot.failed_at.is_some_and(|at| at.elapsed() >= RETRY_AFTER)
-        {
-            slot.started = false;
-            slot.result = None;
-            slot.failed_at = None;
-        }
-        if !slot.started {
-            slot.started = true;
-            let shared = self.slot.clone();
-            let (service, account) = (self.service.clone(), self.account.clone());
-            thread::spawn(move || {
-                let result = load_or_create_key(&service, &account);
-                let (lock, ready) = &*shared;
-                let mut slot = lock.lock().unwrap();
-                if result.is_err() {
-                    slot.failed_at = Some(Instant::now());
-                }
-                slot.result = Some(result);
-                drop(slot);
-                ready.notify_all();
-            });
+        let retry = !slot.retrying && slot.failed_at.is_some_and(|at| at.elapsed() >= RETRY_AFTER);
+        if !slot.started || retry {
+            self.ask(&mut slot);
         }
         let (slot, _) = ready
             .wait_timeout_while(slot, KEY_TIMEOUT, |s| s.result.is_none())
@@ -218,6 +222,7 @@ mod tests {
             started: true,
             result: Some(key),
             failed_at: None,
+            retrying: false,
         };
         storage
     }

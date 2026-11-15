@@ -110,7 +110,7 @@ export class Notification extends EventEmitter {
           live.set(this._id, this)
           // Only Linux reports 'close', so elsewhere entries would never leave:
           // keep the most recent ones (older notifications are long gone from the screen).
-          while (live.size > MAX_LIVE) live.delete(live.keys().next().value)
+          if (platform !== 'linux') while (live.size > MAX_LIVE) live.delete(live.keys().next().value)
           await listenForNative()
           await native('notification_show', {
             options: { id: this._id, title: this.title, body, icon: this.icon, silent: this.silent, actions: this._buttons() },

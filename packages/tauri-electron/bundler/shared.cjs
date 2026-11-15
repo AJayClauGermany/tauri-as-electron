@@ -246,7 +246,7 @@ const SCAN_LIMIT = 20000
 
 /** Whether a project source file (outside dependencies and build output) asks for Node in a window. */
 function sourcesAskForNode(root, scan) {
-  return (scan ?? scanSources(root)).node
+  return (scan?.() ?? scanSources(root)).node
 }
 
 /**
@@ -372,12 +372,13 @@ function schemesInSource(code) {
  * One walk over the project's own sources (outside dependencies, `src-tauri`
  * and build output) for what the plugins look for: whether a window asks for
  * Node (`node`) and the custom schemes passed to `protocol` (`schemes`).
- * The plugins make one and pass it to `rendererNode` and `writeSchemes`.
+ * The plugins pass `lazySourceScan(root)` to `rendererNode` and
+ * `writeSchemes`, which walk only if they need to.
  */
 function scanSources(root) {
   const result = { node: false, schemes: new Set() }
   let seen = 0
-  const visit = (dir, depth) => {
+  const visit = (dir) => {
     let names
     try {
       names = fs.readdirSync(dir, { withFileTypes: true })
@@ -385,10 +386,12 @@ function scanSources(root) {
       return
     }
     for (const entry of names) {
+      if (seen > SCAN_LIMIT) return
       if (entry.name.startsWith('.') || UNSTAGED_DIRS.has(entry.name)) continue
       const full = path.join(dir, entry.name)
+      // Symbolic links are not followed (Dirent reports them as such), so the walk ends.
       if (entry.isDirectory()) {
-        if (depth < 12) visit(full, depth + 1)
+        visit(full)
       } else if (SCHEME_SOURCE.test(entry.name)) {
         if (++seen > SCAN_LIMIT) return
         try {
@@ -402,8 +405,14 @@ function scanSources(root) {
       }
     }
   }
-  visit(root, 0)
+  visit(root)
   return result
+}
+
+/** `scanSources(root)`, run on the first call only. */
+function lazySourceScan(root) {
+  let result = null
+  return () => (result ??= scanSources(root))
 }
 
 /**
@@ -414,7 +423,7 @@ function scanSources(root) {
  */
 function collectSchemes(root, extra, scan) {
   if (extra === false) return []
-  const found = new Set((scan ?? scanSources(root)).schemes)
+  const found = new Set((scan?.() ?? scanSources(root)).schemes)
   const pkg = readPackageJson(root)
   const deps = { ...pkg.optionalDependencies, ...pkg.devDependencies, ...pkg.dependencies }
   for (const [name, schemes] of Object.entries(LIBRARY_SCHEMES)) if (deps[name]) schemes.forEach((s) => found.add(s))
@@ -445,6 +454,7 @@ function writeSchemes(root, extra, scan) {
 
 module.exports = {
   scanSources,
+  lazySourceScan,
   NODE_BUILTINS,
   NODE_SHIMS,
   PACKAGE_SHIMS,

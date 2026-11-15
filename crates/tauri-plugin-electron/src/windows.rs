@@ -76,11 +76,12 @@ pub async fn create_window<R: Runtime>(
 }
 
 /// WebKitGTK keeps the proxy on the web context, which the windows of the
-/// default data store share: wry sets it when a window with a proxy is
-/// created and never unsets it. A window whose session set no proxy
-/// (`setProxy` to direct) puts the context back on the system settings; a
-/// window of a session that never called `setProxy` leaves it as it is, so
-/// it does not undo another session's proxy.
+/// default data store share (the default session and `persist:`
+/// partitions), so on Linux those sessions share one proxy: the last one set
+/// wins for all their windows. wry sets it when a window with a proxy is
+/// created and never unsets it; a window whose session chose no proxy
+/// (`setProxy` to direct) puts the context back on the system settings,
+/// while a window of a session that never called `setProxy` leaves it as it is.
 #[cfg(any(
     target_os = "linux",
     target_os = "dragonfly",

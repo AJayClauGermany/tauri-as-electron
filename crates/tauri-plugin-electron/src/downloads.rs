@@ -170,12 +170,14 @@ fn emit_started<R: Runtime>(
     mime_type: &str,
     total: u64,
     can_pause: bool,
+    failed: bool,
 ) {
     emit(
         app,
         json!({
             "event": "started", "id": id, "label": label, "tag": tag, "url": url,
             "filename": filename, "mimeType": mime_type, "totalBytes": total, "canPause": can_pause,
+            "failed": failed,
         }),
     );
 }
@@ -280,6 +282,7 @@ pub fn start_http<R: Runtime>(
                 &mime,
                 total,
                 true,
+                false,
             );
             started.store(true, Ordering::Relaxed);
             if !response.status().is_success() {
@@ -329,13 +332,17 @@ pub fn start_http<R: Runtime>(
                 // A failure before the response: the item still starts (so
                 // the app sees it fail), marked failed so no save dialog asks.
                 if !started.load(Ordering::Relaxed) {
-                    emit(
+                    emit_started(
                         &app,
-                        json!({
-                            "event": "started", "id": id, "label": label, "tag": tag, "url": url,
-                            "filename": name_from_url(&url), "mimeType": "", "totalBytes": 0,
-                            "canPause": false, "failed": true,
-                        }),
+                        id,
+                        &label,
+                        tag.as_deref(),
+                        &url,
+                        &name_from_url(&url),
+                        "",
+                        0,
+                        false,
+                        true,
                     );
                 }
                 emit_done(&app, id, "interrupted", received, 0);
@@ -392,6 +399,7 @@ pub fn on_download<R: Runtime>(
                 &filename,
                 "",
                 0,
+                false,
                 false,
             );
             // Progress: the size of the file being written.
@@ -575,6 +583,7 @@ pub mod gtk {
                             &safe_name(&filename),
                             &mime,
                             total,
+                            false,
                             false,
                         );
                     },
