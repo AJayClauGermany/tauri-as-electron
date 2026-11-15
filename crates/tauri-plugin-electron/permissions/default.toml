@@ -32,4 +32,5 @@ permissions = [
   "allow-download-control",
   "allow-download-commit",
   "allow-download-discard",
+  "allow-set-trusted-renderer",
 ]

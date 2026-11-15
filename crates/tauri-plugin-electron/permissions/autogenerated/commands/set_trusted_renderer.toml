@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-set-trusted-renderer"
+description = "Enables the set_trusted_renderer command without any pre-configured scope."
+commands.allow = ["set_trusted_renderer"]
+
+[[permission]]
+identifier = "deny-set-trusted-renderer"
+description = "Denies the set_trusted_renderer command without any pre-configured scope."
+commands.deny = ["set_trusted_renderer"]

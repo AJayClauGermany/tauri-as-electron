@@ -33,6 +33,7 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-download-control`
 - `allow-download-commit`
 - `allow-download-discard`
+- `allow-set-trusted-renderer`
 
 ## Permission Table
 
@@ -1209,6 +1210,32 @@ Enables the set_menu_visible command without any pre-configured scope.
 <td>
 
 Denies the set_menu_visible command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-set-trusted-renderer`
+
+</td>
+<td>
+
+Enables the set_trusted_renderer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-set-trusted-renderer`
+
+</td>
+<td>
+
+Denies the set_trusted_renderer command without any pre-configured scope.
 
 </td>
 </tr>

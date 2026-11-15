@@ -51,12 +51,17 @@ pub fn grant<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> 
     let first = windows.capable.lock().unwrap().insert(label.to_string());
     let permissions = permissions();
     if first && !permissions.is_empty() {
-        let capability = json!({
+        let mut capability = json!({
             "identifier": format!("electron-node-{label}"),
             "description": "A BrowserWindow created with nodeIntegration or an unsandboxed preload: Node built-ins, like Electron gives it.",
             "windows": [label],
             "permissions": permissions,
         });
+        // Also on trusted origins declared with `node: true` (trusted_origins.rs).
+        let remote = crate::trusted_origins::node_patterns(app);
+        if !remote.is_empty() {
+            capability["remote"] = json!({ "urls": remote });
+        }
         if let Err(error) = app.add_capability(capability.to_string()) {
             windows.capable.lock().unwrap().remove(label);
             return Err(error.to_string());

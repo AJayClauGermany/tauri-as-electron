@@ -142,7 +142,7 @@ const MAIN_CORE: &[&str] = &[
 /// main process, zoom, `window.close()`, dragging `-webkit-app-region`
 /// areas, and the minimize / maximize / close buttons of `titleBarOverlay`. Sync IPC and window configuration use tauri-plugin-electron's URI
 /// scheme, which needs no permission.
-const RENDERER: &[&str] = &[
+pub(crate) const RENDERER: &[&str] = &[
     "core:event:default",
     "core:window:default",
     "core:webview:default",

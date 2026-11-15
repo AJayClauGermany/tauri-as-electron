@@ -36,6 +36,49 @@ bundler plugins) on to `bundled_schemes!()`; copy it from the
 for you. Pin with `tag = "v0.1.0"` (or `branch`, `rev`); keep the JavaScript
 half (`tauri-electron`) at the same ref.
 
+## Trusted origins: IPC for pages of a local server
+
+Pages the app does not serve itself get no preload and no IPC, unless their
+origin is declared trusted, for apps that start a server and show its pages
+in a window (SiYuan's kernel at `http://127.0.0.1:6806`):
+
+```jsonc
+// src-tauri/tauri.conf.json
+"plugins": {
+  "electron": {
+    "trustedOrigins": [
+      "http://127.0.0.1:*",                                  // any port: a server that picks it at startup
+      { "origin": "http://localhost:6806", "node": true }    // and Node built-ins in nodeIntegration windows
+    ]
+  }
+}
+```
+
+or in Rust: `Builder::new().trusted_origin("http://127.0.0.1:*")` /
+`.trusted_origin_with_node("http://localhost:6806")` (then set the bundler
+plugin's `trustedOrigins: true`, as it only reads tauri.conf.json). Tauri's
+`generate_context!()` needs `serde_json = "1"` in the app's `Cargo.toml`
+once tauri.conf.json has a `plugins` section (the template has it).
+
+- `http` origins and `*` ports are accepted on loopback hosts only
+  (`localhost`, `127.0.0.0/8`, `[::1]`); `https` on any host, with a fixed
+  port. No host wildcards or paths. `node: true` on loopback only. An
+  invalid entry stops the app at startup.
+- Pages of those origins get the renderer bootstrap and the preloads: the
+  bundler plugins build them as one classic script
+  (`__tauri-electron/trusted-renderer.js`), the main process hands it over
+  (`set_trusted_renderer`), and every window created afterwards runs it as
+  an initialization script whose first lines check the page's origin
+  against the list, on every page load. The renderer permissions are
+  granted to them through `remote.urls` (capability
+  `electron-trusted-origins`), and the scheme's `sync-ipc` and
+  `window-config` answer them.
+- Everything such a server serves is trusted like the app's own pages, and
+  with a `*` port so is any other local server the window is sent to:
+  prefer exact ports, and keep windows on the server (`will-navigate`).
+- Main frame only (iframes get neither the preload nor IPC). With
+  `default_capabilities(false)`, add the `remote.urls` capability yourself.
+
 ## Features
 
 | Feature | Default | Electron API | Official plugin |
@@ -111,11 +154,12 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `new BrowserWindow()` | `create_window`: Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's `new WebviewWindow()`, plus the hooks below (`src/windows.rs`) |
 | `session.on('will-download')`, `DownloadItem`, `downloadURL` | Downloads go to a temporary file, moved to the save path by `download_commit`. Page downloads: WebKitGTK's download signals (Linux), `on_download` (Windows, macOS). `download_url`: a reqwest transfer with the window's cookies (`net` feature) that can pause and cancel (`src/downloads.rs`) |
 | `session.setPermissionRequestHandler` | WebKitGTK's `permission-request`, answered when the handler calls back (Linux); `on_permission_request` answered from the handler's earlier decisions (Windows, macOS) (`src/permissions.rs`) |
+| Preloads and IPC in pages of trusted origins | An initialization script added by `create_window` (the renderer script the main process registered with `set_trusted_renderer`, run only on the listed origins), a capability with `remote.urls`, and the scheme's caller checks (`src/trusted_origins.rs`) |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
 
 Everything is delivered to the hidden `electron-main` window, which runs the
 app's Electron main-process code. Renderers never get `electron:default`:
-they use the URI scheme, which serves sync IPC from any window but serves
-the window configuration only to the window it belongs to, and sync
-dialogs only to the main window.
+they use the URI scheme, which serves sync IPC and the window
+configuration (each window its own) only to the app's own pages, its custom
+schemes' pages and trusted origins, and sync dialogs only to the main window.

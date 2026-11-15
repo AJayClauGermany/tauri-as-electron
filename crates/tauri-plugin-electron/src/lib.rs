@@ -26,6 +26,9 @@
 //! - **BrowserWindows created in Rust** (`create_window`), for what Tauri only
 //!   offers on the webview builder: downloads (`will-download`, `downloadURL`)
 //!   and `setPermissionRequestHandler`.
+//! - **Trusted origins** (`trustedOrigins`, see `trusted_origins.rs`): pages
+//!   of a server the app starts (`http://127.0.0.1:<port>`) get the preload
+//!   and IPC like the app's own pages.
 //! - **Lifecycle events** that only exist in Rust: page loads (navigation
 //!   events for every window, including remote pages), macOS `activate`,
 //!   `open-file` / `open-url`, and `second-instance` (with the
@@ -83,6 +86,7 @@ mod power;
 mod power_monitor;
 #[cfg(feature = "safe-storage")]
 mod safe_storage;
+mod trusted_origins;
 mod windows;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -351,7 +355,12 @@ fn handle_bridge<R: Runtime>(
                 .get(&label)
                 .cloned()
                 .unwrap_or(Value::Null);
-            respond_json(responder, 200, &config);
+            // Only for the app's own pages and trusted origins (not a page
+            // the window navigated to elsewhere).
+            match trusted_origins::page_config(&app, &label, config) {
+                Some(config) => respond_json(responder, 200, &config),
+                None => respond(responder, 403, "text/plain", Vec::new()),
+            }
         }
         // ipcRenderer.sendSync(): answered by ipcMain in the main window.
         "sync-ipc" => {
@@ -361,6 +370,15 @@ fn handle_bridge<R: Runtime>(
                     400,
                     "text/plain",
                     b"sendSync from the main process".to_vec(),
+                );
+                return;
+            }
+            if !trusted_origins::ipc_allowed(&app, &label) {
+                respond(
+                    responder,
+                    403,
+                    "text/plain",
+                    b"the page is neither the app's own nor on a trusted origin".to_vec(),
                 );
                 return;
             }
@@ -592,7 +610,8 @@ fn is_app_page<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
 
 /// Why a native Node built-in may not run for this caller, if it may not.
 /// The main window, and renderer windows created with `nodeIntegration` or an
-/// unsandboxed preload (see `node_windows.rs`), while they show the app's page.
+/// unsandboxed preload (see `node_windows.rs`), while they show the app's page
+/// (or a trusted origin declared with `node: true`, see `trusted_origins.rs`).
 fn node_refusal<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<Value> {
     let main = label == MAIN_LABEL;
     if !main && !app.state::<node_windows::NodeWindows>().is_granted(label) {
@@ -600,7 +619,7 @@ fn node_refusal<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<Value> {
             json!({ "code": "ERR_ACCESS_DENIED", "message": "Node built-ins that use the operating system are only available in the main process and in windows created with nodeIntegration (or sandbox: false)" }),
         );
     }
-    if !is_app_page(app, label) {
+    if !is_app_page(app, label) && !trusted_origins::node_page(app, label) {
         return Some(json!({
             "code": "ERR_ACCESS_DENIED",
             "message": if main { "the main window is not showing the app's own page" } else { "the window is not showing the app's own page" },
@@ -794,6 +813,8 @@ struct ProcessInfo {
     resources_path: String,
     /// Enabled Cargo features of this crate (see `features.rs`).
     features: Vec<&'static str>,
+    /// Origins whose pages get the preload and IPC (see `trusted_origins.rs`).
+    trusted_origins: Vec<Value>,
 }
 
 #[tauri::command]
@@ -815,6 +836,7 @@ fn process_info<R: Runtime>(app: AppHandle<R>) -> ProcessInfo {
             .unwrap_or_default(),
         env: std::env::vars().collect(),
         features: features::enabled(),
+        trusted_origins: trusted_origins::describe(&app),
         resources_path: app
             .path()
             .resource_dir()
@@ -1415,6 +1437,7 @@ pub fn on_second_instance<R: Runtime>(app: &AppHandle<R>, argv: Vec<String>, cwd
 pub struct Builder {
     protocols: Vec<String>,
     default_capabilities: bool,
+    trusted_origins: Vec<Value>,
 }
 
 impl Default for Builder {
@@ -1422,6 +1445,7 @@ impl Default for Builder {
         Self {
             protocols: Vec::new(),
             default_capabilities: true,
+            trusted_origins: Vec::new(),
         }
     }
 }
@@ -1460,6 +1484,27 @@ impl Builder {
         self
     }
 
+    /// Trust the pages of `origin` like the app's own: they get the renderer
+    /// bootstrap and preload, and may use IPC. For apps that load a server
+    /// they start themselves (`http://127.0.0.1:*`, `*` standing for a port
+    /// chosen at runtime). Plain `http` and port wildcards only on loopback
+    /// hosts; `https` on any host. Usually declared in `tauri.conf.json`
+    /// instead (`plugins.electron.trustedOrigins`), where the bundler plugins
+    /// see it and build the renderer script.
+    pub fn trusted_origin(mut self, origin: impl Into<String>) -> Self {
+        self.trusted_origins.push(json!(origin.into()));
+        self
+    }
+
+    /// Like [`Builder::trusted_origin`], and windows created with
+    /// `nodeIntegration` (or `sandbox: false`) keep their Node built-ins on
+    /// that origin. Loopback origins only.
+    pub fn trusted_origin_with_node(mut self, origin: impl Into<String>) -> Self {
+        self.trusted_origins
+            .push(json!({ "origin": origin.into(), "node": true }));
+        self
+    }
+
     /// Register the plugin on an app builder, together with the official
     /// Tauri plugins of the enabled Cargo features (dialog, clipboard, ...,
     /// and opt-in ones such as `single-instance` and `updater`). Call it on
@@ -1478,10 +1523,13 @@ impl Builder {
     }
 
     /// The plugin alone, without the official plugins of its features.
-    /// Prefer [`Builder::install`].
-    pub fn build<R: Runtime>(self) -> TauriPlugin<R> {
+    /// Prefer [`Builder::install`]. Its configuration is `plugins.electron`
+    /// of tauri.conf.json (`trustedOrigins`).
+    pub fn build<R: Runtime>(self) -> TauriPlugin<R, Value> {
         let default_capabilities = self.default_capabilities;
-        let mut builder = PluginBuilder::new("electron")
+        let trusted = self.trusted_origins;
+        let trusted_schemes = self.protocols.clone();
+        let mut builder = PluginBuilder::<R, Value>::new("electron")
             .invoke_handler(tauri::generate_handler![
                 process_info,
                 set_window_config,
@@ -1533,7 +1581,8 @@ impl Builder {
                 windows::download_url,
                 windows::download_control,
                 windows::download_commit,
-                windows::download_discard
+                windows::download_discard,
+                trusted_origins::set_trusted_renderer
             ])
             .setup(move |app, _api| {
                 app.manage(SharedBridge::default());
@@ -1558,6 +1607,7 @@ impl Builder {
                         app.add_capability(capability)?;
                     }
                 }
+                trusted_origins::setup(app, trusted, trusted_schemes, default_capabilities)?;
                 Ok(())
             })
             // Navigation events for every window, including remote pages that
@@ -1665,7 +1715,7 @@ macro_rules! bundled_schemes {
 }
 
 /// The plugin with no custom protocols.
-pub fn init<R: Runtime>() -> TauriPlugin<R> {
+pub fn init<R: Runtime>() -> TauriPlugin<R, Value> {
     Builder::new().build()
 }
 

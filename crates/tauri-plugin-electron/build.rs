@@ -50,6 +50,7 @@ const COMMANDS: &[&str] = &[
     "download_control",
     "download_commit",
     "download_discard",
+    "set_trusted_renderer",
 ];
 
 fn main() {
