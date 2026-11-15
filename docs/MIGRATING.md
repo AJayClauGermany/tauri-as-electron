@@ -248,7 +248,7 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `webContents.openDevTools()` | Debug builds only. For release builds, add the `devtools` feature (uses private APIs on macOS). |
 | `webContents.on('before-input-event')` + `preventDefault()` | Reported after the page saw the key; block keys with a `keydown` listener in the page. |
 | Renderer calls to privileged Tauri APIs | Renderers only get IPC permissions (like context-isolated, sandboxed Electron renderers). Route through the main process, or add a capability file in `src-tauri/capabilities/`. |
-| `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
+| `utilityProcess.fork()`, `child_process.fork()` | Run in a real Node.js: in development the one on `PATH`; for a release, bundle one as a sidecar (`npx github:AJayClauGermany/tauri-as-electron --node-sidecar`). Entry modules with static paths are found and bundled for Node; list others with the plugin's `fork` option. See [Node.js code](#utilityprocessfork-and-child_processfork). |
 | `fs`, `os`, `child_process` in a renderer (`nodeIntegration: true`, `sandbox: false`) | Work, as in Electron, in windows created with those options, when the bundler plugin loads the Node layer in renderer pages: option `rendererNode` (default `'auto'` detects the options in your sources; set `true` if it misses them, e.g. options built at runtime). Sandboxed windows (the default) get a `NotImplementedError`: expose what the page needs with `ipcMain.handle`. |
 | `@electron/remote` | Works without changes: the bundler plugins alias it to tauri-electron's implementation. Keep `initialize()` and `enable(webContents)` in the main process. Every access is a synchronous round trip, as in Electron, so prefer IPC in hot paths. |
 | `safeStorage` ciphertext | Encrypted with a key tauri-plugin-electron keeps in the OS keychain, not Electron's: values an Electron build of the app stored cannot be decrypted. Re-encrypt from the plain value (ask the user again for a stored password or token). |
@@ -263,7 +263,8 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 ## 4. Node.js code
 
 Electron's main process is a Node.js process. Here it is a webview, and no
-Node.js is shipped. tauri-electron implements some Node built-ins itself
+Node.js is shipped (unless the app bundles one for `utilityProcess.fork` /
+`child_process.fork`). tauri-electron implements some Node built-ins itself
 (the plan and status: [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)):
 
 | Built-in | Status |
@@ -272,7 +273,7 @@ Node.js is shipped. tauri-electron implements some Node built-ins itself
 | `buffer` and the global `Buffer` (main process) | The `buffer` npm package: a `Uint8Array` subclass. |
 | `fs`, `fs/promises`, `original-fs` | Rust, behind the `node-fs` feature of `tauri-plugin-electron` (main process only). |
 | `os` | Rust, behind `node-os` (main process only). |
-| `child_process` | Rust, behind `node-child-process` (main process only). |
+| `child_process` | Rust, behind `node-child-process` (main process only). `fork()` runs a real Node.js (a sidecar the app bundles; see [below](#utilityprocessfork-and-child_processfork)). |
 | `util`, `util/types`, `events`, `stream`, `stream/promises`, `string_decoder` | Pure JavaScript (`util` in-house; `stream` is readable-stream, Node's own streams). |
 | `crypto` | Hashes, HMAC, PBKDF2, HKDF, scrypt (@noble/hashes), random values and `webcrypto` / `subtle` (Web Crypto). No ciphers, signatures or key pairs yet. |
 | `http`, `https` | The client (`request`, `get`) over tauri-plugin-http; servers (`createServer`) over `net` / `tls`, see [Sockets](#sockets-net-tls-dgram-dns-http-servers). |
@@ -299,7 +300,7 @@ off (the template and the scaffolder write this for you):
 tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-electron", features = [
   "node-fs",            # fs, fs/promises: file access from the main process
   "node-os",            # os: host, user, memory, CPUs, network interfaces
-  "node-child-process", # child_process: runs arbitrary commands; delete to disable
+  "node-child-process", # child_process (also fork, utilityProcess): runs arbitrary commands; delete to disable
   "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
   "node-tls",           # tls, https servers (rustls); implies node-net
 ] }
@@ -385,8 +386,76 @@ Forge's `extraResource` are not read yet.
 - Shells are Node's: `/bin/sh -c` on Unix, `cmd.exe /d /s /c` on Windows.
   `stdio: 'inherit'` means the app's own stdout / stderr (the terminal of
   `tauri dev`).
-- Not available: `fork()` and the `'ipc'` stdio channel (they need a
-  Node.js child), and streams or descriptors beyond 0–2 in `stdio`.
+- `fork()`, an `'ipc'` entry in `stdio` and `spawn(process.execPath, …)`
+  with `ELECTRON_RUN_AS_NODE` start a real Node.js; see the next section.
+- Not available: streams or descriptors beyond 0–2 (and `'ipc'`) in `stdio`.
+
+### `utilityProcess.fork` and `child_process.fork`
+
+Both run the module in a real Node.js child process, started by
+`tauri-plugin-electron`'s `node-child-process` feature (the same switch as
+`child_process`: forking runs arbitrary code too).
+
+- `child_process.fork(modulePath, args, { execArgv, env, cwd, silent, stdio, execPath })`
+  uses Node's own IPC channel (`NODE_CHANNEL_FD` on a socket pair, `json`
+  serialization): `child.send(message, callback)`, `'message'`,
+  `disconnect()`, `connected`, `'disconnect'`, `kill()`, `'exit'` /
+  `'close'`, `stdout` / `stderr` with `silent: true`. In the child,
+  `process.send` and `process.on('message')` are Node's.
+- `utilityProcess.fork(modulePath, args, { env, execArgv, cwd, stdio, serviceName })`
+  gives a `UtilityProcess` (`postMessage(message, [MessagePortMain])`,
+  `kill()`, `pid`, `stdout` / `stderr` with `stdio: 'pipe'`, `'spawn'`,
+  `'exit'`, `'message'`) and the child `process.parentPort`. Messages are
+  structured-clone-like, as everywhere in tauri-electron. Ports transferred
+  to the child are relayed by the main process, so one whose other end
+  lives in a window works too (VS Code's pattern: `MessageChannelMain`,
+  one port to a renderer, one to a utility process). In the child,
+  `require('electron')` / `import … from 'electron'` gives `net` (Node's
+  `fetch`); main-process modules throw a clear error, as they are absent in
+  Electron's utility processes. The process ends when the app quits.
+
+**Which Node.js.** In order: the `execPath` option of `fork`, the
+`TAURI_ELECTRON_NODE` environment variable, a sidecar next to the app's
+executable named `<Cargo package>-node` or `node`, and in debug builds `node`
+on `PATH` (so `tauri dev` works with the Node.js you develop with). A
+release build needs the sidecar. To set it up (copies the Node.js you run it
+with to `src-tauri/binaries/<package>-node-<target triple>` and adds it to
+`bundle.externalBin`):
+
+```bash
+npx github:AJayClauGermany/tauri-as-electron --node-sidecar
+```
+
+For other targets pass `--target <triple> --from <that platform's node binary>`
+(from nodejs.org). Without a runtime, `fork` fails with `spawn node ENOENT`
+and a message saying where it looked.
+
+**Which module.** The child's Node.js needs the module as a file. The
+bundler plugins find fork calls whose path is static —
+`path.join(__dirname, 'worker.js')`, `path.resolve(import.meta.dirname, …)`,
+`` `${__dirname}/worker.js` ``, `new URL('./worker.js', import.meta.url)`,
+`require.resolve('./worker')`, or a `const` holding one of those — and
+bundle each entry for Node (TypeScript and npm dependencies included, Node
+built-ins external) with a small bootstrap: into
+`node_modules/.tauri-electron/fork/` in development (rebuilt on change) and
+`src-tauri/electron-resources/fork/` in a build, shipped as `<resources>/fork/`
+by the same `"resources": { "electron-resources/": "" }` mapping as the app
+files. A `.js` path also finds a `.ts` source of that name. List entries the
+scan cannot see (paths built at runtime) with the plugin option
+`fork: ['src/worker.ts']`; `fork: false` turns this off. In the bundled
+child, `__dirname` is the app folder of the source file (the project in
+development, `<resources>/app/…` in a build), as for `fs` in the main
+process. A path that is not a bundled entry runs as it is (app-relative
+paths from the app folder).
+
+Limits: `serialization: 'advanced'` is not supported (the parent side has
+no V8 serializer), nor sending handles (sockets, servers) with `send()`;
+ports go to a utility process, not back from it; native addons (`.node`
+files) in a fork entry's dependencies are not bundled. Windows passes no
+socket to a child the way Node expects, so there the child connects back
+over loopback (a random token proves it is the right one) and the
+bootstrap provides `process.send` / `process.parentPort`: written for
+Windows, verified on Linux only.
 
 ### `os`
 

@@ -22,6 +22,8 @@ const HELP = `
 Usage:
   npx github:${REPO} <directory> [options]         new app from the template
   npx github:${REPO} --into <directory> [options]  add Tauri to an existing Electron project
+  npx github:${REPO} --node-sidecar [--from <node>] [--target <triple>]
+                                                   ship Node.js with the app in . (for utilityProcess / child_process.fork)
 
 Options:
   --name <name>           package and crate name           (default: the directory name)
@@ -571,7 +573,10 @@ const isMain = (() => {
     return false
   }
 })()
-if (isMain) {
+if (isMain && process.argv.includes('--node-sidecar')) {
+  // Its own options; see the script.
+  await import('../packages/tauri-electron/bundler/node-sidecar.mjs')
+} else if (isMain) {
   const { options, positional } = parseArgs(process.argv.slice(2))
   if (options.help) {
     console.log(HELP)

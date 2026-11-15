@@ -66,6 +66,8 @@ mod node_child_process;
 mod node_common;
 #[cfg(feature = "node-net")]
 mod node_dns;
+#[cfg(feature = "node-child-process")]
+mod node_fork;
 #[cfg(feature = "node-fs")]
 mod node_fs;
 #[cfg(feature = "node-fs")]
@@ -1103,10 +1105,20 @@ fn child_spawn<R: Runtime>(
     children(&webview)?;
     #[cfg(feature = "node-child-process")]
     {
-        let options: node_child_process::SpawnOptions = serde_json::from_value(options)
+        let mut options: node_child_process::SpawnOptions = serde_json::from_value(options)
             .map_err(|e| json!({ "code": "ERR_INVALID_ARG_VALUE", "message": e.to_string() }))?;
+        // fork(): the Node.js runtime (the execPath option, a sidecar, PATH in development).
+        if options.node {
+            let crate_name = webview.app_handle().package_info().crate_name;
+            options.file = node_fork::node_runtime(&options.file, crate_name)
+                .map_err(|e| json!(e))?
+                .to_string_lossy()
+                .into_owned();
+        }
         let table = webview.state::<SharedChildren>();
-        table.spawn(&options, on_event).map_err(|e| json!(e))
+        let mut result = table.spawn(&options, on_event).map_err(|e| json!(e))?;
+        result["file"] = json!(options.file);
+        Ok(result)
     }
     #[cfg(not(feature = "node-child-process"))]
     {
@@ -1164,6 +1176,39 @@ fn child_kill<R: Runtime>(webview: tauri::Webview<R>, id: u32, signal: i32) -> R
         let _ = (id, signal);
         Ok(false)
     }
+}
+
+/// A JSON line for a forked child's IPC channel (`subprocess.send`,
+/// `utilityProcess.postMessage`). False once the channel is closed.
+#[tauri::command]
+fn child_send<R: Runtime>(
+    webview: tauri::Webview<R>,
+    id: u32,
+    data: String,
+) -> Result<bool, Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    {
+        Ok(webview
+            .state::<SharedChildren>()
+            .send(id, data.into_bytes()))
+    }
+    #[cfg(not(feature = "node-child-process"))]
+    {
+        let _ = (id, data);
+        Ok(false)
+    }
+}
+
+/// `subprocess.disconnect()`: close the IPC channel after the queued messages.
+#[tauri::command]
+fn child_disconnect<R: Runtime>(webview: tauri::Webview<R>, id: u32) -> Result<(), Value> {
+    children(&webview)?;
+    #[cfg(feature = "node-child-process")]
+    webview.state::<SharedChildren>().disconnect(id);
+    #[cfg(not(feature = "node-child-process"))]
+    let _ = id;
+    Ok(())
 }
 
 /// `fs.promises.*` and the callback API: the same operations as the bridge's
@@ -1521,6 +1566,8 @@ impl Builder {
                 child_write,
                 child_end,
                 child_kill,
+                child_send,
+                child_disconnect,
                 node_net_commands::net_connect,
                 node_net_commands::net_listen,
                 node_net_commands::net_write,

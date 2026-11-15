@@ -68,6 +68,9 @@
     "./sqlite3": "./src/native/sqlite3.js",
     "./node-pty": "./src/native/node-pty.js"
   },
+  "bin": {
+    "tauri-electron-node-sidecar": "./bundler/node-sidecar.mjs"
+  },
   "files": [
     "src",
     "vite.js",
