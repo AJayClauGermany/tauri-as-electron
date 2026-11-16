@@ -182,6 +182,23 @@ describe('WebContentsView', () => {
     win.destroy()
   })
 
+  it('cleans up a view destroyed while its webview is being created', async () => {
+    const win = await makeWindow()
+    let finishCreate
+    state.onCommand = (command) => (command === 'view_create' ? new Promise((resolve) => (finishCreate = resolve)) : undefined)
+    const view = new WebContentsView()
+    win.contentView.addChildView(view)
+    await vi.waitFor(() => expect(commands('view_create')).toHaveLength(1))
+    const label = view.webContents._label
+    view.webContents.close()
+    finishCreate()
+    await flush()
+    expect(commands('view_close').at(-1).args).toEqual({ label })
+    expect(commands('set_window_config').filter((c) => c.args.label === label).at(-1).args.config).toBeNull()
+    state.onCommand = null
+    win.destroy()
+  })
+
   it('places nested views relative to their parents and in another window when moved', async () => {
     const win = await makeWindow()
     const other = await makeWindow()

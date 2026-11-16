@@ -243,7 +243,11 @@ class GuestHost {
           webRequest: this._session?.webRequest?._events?.() ?? [],
         },
       })
-      if (this._destroyed) return native('view_close', { label }).catch(() => {})
+      if (this._destroyed) {
+        // Destroyed while being created: destroy() found nothing native to clean up.
+        native('set_window_config', { label, config: null }).catch(() => {})
+        return native('view_close', { label }).catch(() => {})
+      }
       this._native = true
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
       // A placement that changed while the webview was being created.
