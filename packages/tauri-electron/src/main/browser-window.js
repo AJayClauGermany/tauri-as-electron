@@ -24,7 +24,7 @@ import { platform } from '../process.js'
 import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
-import { transferPorts, checkTransferList } from './message-ports.js'
+import { transferPorts, reservePorts } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
@@ -257,12 +257,14 @@ export class WebContents extends EventEmitter {
   }
 
   _post(message) {
-    if (message.transfer) {
-      // Transferred when sent, to the page's label at that time.
-      const { transfer, ...rest } = message
-      message = { ...rest, ports: transferPorts(transfer, this._label) }
-    }
-    return emitTo(this._label, TO_RENDERER, { ...message, to: this._label }).catch(report('webContents message'))
+    if (!message.transfer) return emitTo(this._label, TO_RENDERER, { ...message, to: this._label }).catch(report('webContents message'))
+    // Transferred when sent, to the page's label at that time; what reached
+    // the ports meanwhile goes after the message that creates them there.
+    const { transfer, ...rest } = message
+    const ports = transferPorts(transfer, this._label, { deferQueue: true })
+    const sent = emitTo(this._label, TO_RENDERER, { ...rest, ports, to: this._label }).catch(report('webContents message'))
+    sent.then(() => { for (const port of transfer) port._flushTransferred() })
+    return sent
   }
 
   _postWhenAlive(message) {
@@ -441,9 +443,12 @@ export class WebContents extends EventEmitter {
   postMessage(channel, message, transfer = []) {
     if (this.isDestroyed()) throw new Error('Object has been destroyed')
     const args = encode([message])
-    // Checked now (the message may wait for the page), transferred when sent.
-    if (transfer?.length) checkTransferList(transfer)
-    this._postWhenAlive({ type: 'send', channel: String(channel), args, ...(transfer?.length ? { transfer: [...transfer] } : {}) })
+    const queued = { type: 'send', channel: String(channel), args, ...(transfer?.length ? { transfer: [...transfer] } : {}) }
+    if (this._alive) return void this._post(queued)
+    // The message waits for the page: its ports are held for it (a second
+    // transfer throws now, as in Electron) and transferred when it is sent.
+    if (transfer?.length) reservePorts(transfer)
+    this._postWhenAlive(queued)
   }
 
   /** Runs `code` in the page and resolves with the (structured-cloneable) result. */

@@ -250,7 +250,7 @@ describe('WebContentsView', () => {
     }
   })
 
-  it('a loadURL() made while the webview is created navigates after it; the replaced page settles nothing', async () => {
+  it('a loadURL() made while the webview is created navigates after it', async () => {
     const win = await makeWindow()
     let finishCreate = null
     state.onCommand = (command) => (command === 'view_create' && !finishCreate ? new Promise((resolve) => (finishCreate = resolve)) : undefined)
@@ -260,15 +260,11 @@ describe('WebContentsView', () => {
     await vi.waitFor(() => expect(finishCreate).not.toBeNull())
     expect(commands('view_create').at(-1).args.options.url).toBe('https://a.test/')
     const later = view.webContents.loadURL('https://b.test/')
-    const settled = vi.fn()
-    later.then(settled, settled)
     finishCreate()
     await vi.waitFor(() => expect(commands('view_navigate').at(-1)?.args.url).toBe('https://b.test/'))
+    expect(view.webContents._url).toBe('https://b.test/')
+    // As for a BrowserWindow, the next finished load settles the waiting loadURL()s.
     const label = view.webContents._label
-    onPageLoad({ label, url: 'https://a.test/', event: 'started' })
-    onPageLoad({ label, url: 'https://a.test/', event: 'finished' })
-    await flush()
-    expect(settled).not.toHaveBeenCalled()
     onPageLoad({ label, url: 'https://b.test/', event: 'started' })
     onPageLoad({ label, url: 'https://b.test/', event: 'finished' })
     await later

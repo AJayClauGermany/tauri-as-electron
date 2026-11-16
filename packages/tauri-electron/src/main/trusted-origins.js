@@ -98,7 +98,7 @@ export function registerTrustedRenderer() {
       return (registered = ok)
     })
     .catch((error) => {
-      failed = true
+      if (!dev) failed = true
       report('trusted origins: renderer script')(error)
       return registered
     })

@@ -132,7 +132,6 @@ class GuestHost {
     this._window = null // the BrowserWindow the Tauri webview is in
     this._pendingUrl = null
     this._loadWaiters = []
-    this._supersededUrl = null // a page replaced right after creation (see _create)
     this._state = { title: '' }
     this._visible = true
     this._focused = false
@@ -215,8 +214,9 @@ class GuestHost {
     this._window = win
     this._placement = placement
     // The page: `_pendingUrl` (set by loadURL()), read when the webview is
-    // made and kept until it exists, so a creation that does not happen
-    // leaves it for the next one.
+    // made and kept until it exists: a creation abandoned (window gone) or
+    // retried in the window the view moved to keeps it; one that fails is
+    // reported to the waiting loadURL()s and drops it.
     let url = 'about:blank'
     this._creating = (async () => {
       await win._nativeReady.promise
@@ -261,14 +261,11 @@ class GuestHost {
         if (movedTo !== win) this._window = movedTo
         return
       }
-      // A loadURL() made while the webview was being created: the page just
-      // created is superseded, so its load does not settle that loadURL().
+      // A loadURL() made while the webview was being created. As for a
+      // BrowserWindow, the next finished load settles the waiting loadURL()s.
       const next = this._pendingUrl
       this._pendingUrl = null
-      if (next && next !== url) {
-        this._supersededUrl = url
-        this._navigate(next)
-      }
+      if (next && next !== url) this._navigate(next)
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
       // A placement that changed while the webview was being created.
       const latest = this._placement
@@ -405,10 +402,6 @@ class GuestHost {
   }
 
   _onDidFinishLoad(synthetic = false) {
-    // The load of a page replaced right after it was created settles nothing.
-    const superseded = this._supersededUrl
-    this._supersededUrl = null
-    if (superseded && this.webContents._url === superseded) return
     if (synthetic) {
       this.webContents._loading = false
       this.webContents.emit('dom-ready', createEvent())

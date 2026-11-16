@@ -132,6 +132,7 @@ export class MessagePortMain extends EventEmitter {
    */
   _transferTo(label, { deferQueue = false } = {}) {
     if (this._closed || this._transferred) throw cloneError('Port at index 0 is already neutered or closed')
+    this._reserved = false
     const id = `main:${nextPortId++}`
     // Pending until _flushTransferred(): messages (and a close) arriving
     // meanwhile wait, since the destination does not have the port yet.
@@ -192,10 +193,11 @@ export function onRendererPortMessage(message) {
  * Throw if a transfer list cannot be transferred, before any port is: so a
  * bad entry leaves the others usable.
  */
-export function checkTransferList(transfer) {
+export function checkTransferList(transfer, { reserved = false } = {}) {
   for (const [index, port] of transfer.entries()) {
     if (!(port instanceof MessagePortMain)) throw cloneError('Only MessagePortMain objects can be transferred')
-    if (port._closed || port._transferred || transfer.indexOf(port) !== index) {
+    // `reserved`: ports reserved for this very message (reservePorts) are fine.
+    if (port._closed || port._transferred || (port._reserved && !reserved) || transfer.indexOf(port) !== index) {
       throw cloneError(`Port at index ${index} is already neutered or closed`)
     }
   }
@@ -203,11 +205,17 @@ export function checkTransferList(transfer) {
 
 /**
  * Ports in a webContents.postMessage() transfer list → ids for the renderer.
- * `deferQueue`: the caller sends the message carrying them later and then
- * calls each port's `_flushTransferred()`.
+ * `deferQueue`: the caller sends the message carrying them, then calls each
+ * port's `_flushTransferred()` (what reached them meanwhile goes after it).
  */
 export function transferPorts(transfer, label, { deferQueue = false } = {}) {
   if (!transfer?.length) return undefined
-  checkTransferList(transfer)
+  checkTransferList(transfer, { reserved: true })
   return transfer.map((port) => port._transferTo(label, { deferQueue }))
+}
+
+/** Hold ports for a message that waits for its page: they cannot be transferred elsewhere meanwhile. */
+export function reservePorts(transfer) {
+  checkTransferList(transfer)
+  for (const port of transfer) port._reserved = true
 }

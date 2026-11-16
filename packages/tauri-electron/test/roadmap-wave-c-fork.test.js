@@ -411,16 +411,19 @@ describe('utilityProcess.fork', () => {
     const contents = Object.assign(Object.create(WebContents.prototype), { isDestroyed: () => false, _postWhenAlive: vi.fn(), _win: { _label: 'w-any' } })
     expect(() => contents.postMessage('ch', null, [closed])).toThrow(/index 0 is already neutered or closed/)
     expect(contents._postWhenAlive).not.toHaveBeenCalled()
-    // A message for a page that has not loaded keeps a copy of its transfer list; ports move when it is sent.
+    // A message that cannot be cloned leaves the ports alone.
     const queued = new MessageChannelMain().port1
+    expect(() => contents.postMessage('ch', { fn() {} }, [queued])).toThrow()
+    expect(queued._transferred).toBeNull()
+    // A message for a page that has not loaded keeps a copy of its transfer list and holds
+    // the ports (a second transfer throws now); they move when it is sent.
     const list = [queued]
     contents.postMessage('ch', null, list)
     list.length = 0
     expect(contents._postWhenAlive.mock.calls[0][0]).toMatchObject({ type: 'send', channel: 'ch', transfer: [queued] })
     expect(queued._transferred).toBeNull()
-    // A message that cannot be cloned leaves the ports alone.
-    expect(() => contents.postMessage('ch', { fn() {} }, [queued])).toThrow()
-    expect(queued._transferred).toBeNull()
+    expect(() => contents.postMessage('ch', null, [queued])).toThrow(/already neutered or closed/)
+    expect(transferPorts([queued], 'w-page')).toEqual([expect.stringMatching(/^main:/)])
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })
