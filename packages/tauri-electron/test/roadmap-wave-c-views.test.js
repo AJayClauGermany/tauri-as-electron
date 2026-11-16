@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   features: ['child-webviews'],
   posted: [],
   fetched: [],
+  trustedOrigins: [],
 }))
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }))
@@ -72,7 +73,7 @@ vi.mock('../src/internal/native.js', async (importOriginal) => {
     ...actual,
     hasNativePlugin: () => true,
     hasFeature: (name) => state.features.includes(name),
-    processInfo: () => ({ pid: 7, execPath: '/app', env: {} }),
+    processInfo: () => ({ pid: 7, execPath: '/app', env: {}, trustedOrigins: state.trustedOrigins }),
     bridgeUrl: (path) => `tauri-electron://localhost/${encodeURIComponent(path)}`,
     async native(command, args) {
       state.commands.push({ command, args })
@@ -106,6 +107,7 @@ beforeEach(() => {
   state.invoked = []
   state.features = ['child-webviews']
   state.posted = []
+  state.trustedOrigins = []
 })
 
 /** A BrowserWindow whose native window exists. */
@@ -234,6 +236,34 @@ describe('WebContentsView', () => {
     view.webContents.stop()
     await flush()
     expect(commands('view_eval').slice(-2).map((c) => c.args.script)).toEqual([expect.stringContaining('history.go(-1)'), expect.stringContaining('window.stop()')])
+    win.destroy()
+  })
+
+  it('treats pages of trusted origins as windows do, and tells Rust what its session.webRequest listens to', async () => {
+    const win = await makeWindow()
+    const partition = 'persist:trusted-view'
+    const { session } = await import('../src/main/session.js')
+    session.fromPartition(partition).webRequest.onBeforeSendHeaders(() => {})
+    const view = new WebContentsView({ webPreferences: { partition } })
+    win.contentView.addChildView(view)
+    await flush()
+    expect(commands('view_create').at(-1).args.extras.webRequest).toEqual(['onBeforeSendHeaders'])
+    state.commands = []
+    session.fromPartition(partition).webRequest.onCompleted(() => {})
+    expect(commands('web_request_listeners').at(-1).args).toEqual({ labels: [view.webContents._label], events: ['onBeforeSendHeaders', 'onCompleted'] })
+
+    // A view created with the trusted origins' renderer script: their pages
+    // run the bootstrap, which reports the load; other remote pages do not.
+    state.trustedOrigins = [{ origin: 'http://127.0.0.1:*', scheme: 'http', host: '127.0.0.1', port: null, node: false }]
+    view.webContents._win._trustedRenderer = true
+    const finished = vi.fn()
+    view.webContents.on('did-finish-load', finished)
+    onPageLoad({ label: view.webContents._label, url: 'http://127.0.0.1:6806/', event: 'finished' })
+    expect(finished).not.toHaveBeenCalled()
+    expect(view.webContents.isLoading()).toBe(true)
+    onPageLoad({ label: view.webContents._label, url: 'https://example.com/', event: 'finished' })
+    expect(finished).toHaveBeenCalledTimes(1)
+    expect(view.webContents.isLoading()).toBe(false)
     win.destroy()
   })
 

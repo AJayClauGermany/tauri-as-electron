@@ -63,7 +63,11 @@
     "./renderer-node": "./packages/tauri-electron/src/renderer/node.js",
     "./remote": "./packages/tauri-electron/src/remote/index.js",
     "./remote/renderer": "./packages/tauri-electron/src/remote/renderer.js",
-    "./remote/main": "./packages/tauri-electron/src/remote/main.js"
+    "./remote/main": "./packages/tauri-electron/src/remote/main.js",
+    "./keytar": "./packages/tauri-electron/src/native/keytar.js",
+    "./better-sqlite3": "./packages/tauri-electron/src/native/better-sqlite3.js",
+    "./sqlite3": "./packages/tauri-electron/src/native/sqlite3.js",
+    "./node-pty": "./packages/tauri-electron/src/native/node-pty.js"
   },
   "bin": {
     "create-tauri-electron-app": "./scripts/create-app.mjs"

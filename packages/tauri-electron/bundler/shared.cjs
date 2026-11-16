@@ -9,6 +9,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { forkEntriesInSource, mentionsFork } = require('./fork.cjs')
 
 /** Node built-ins that a webview cannot provide: `import fs from 'fs'` must not be a build error. */
 const NODE_BUILTINS = [
@@ -66,11 +67,24 @@ const NODE_SHIMS = {
   'dns/promises': 'tauri-electron/dns/promises',
 }
 
+/**
+ * npm packages with native code tauri-electron re-implements on
+ * tauri-plugin-electron's `keytar`, `sqlite` and `pty` features (part of
+ * PACKAGE_SHIMS). Their real builds cannot load in a webview.
+ */
+const NATIVE_MODULE_SHIMS = {
+  keytar: 'tauri-electron/keytar',
+  'better-sqlite3': 'tauri-electron/better-sqlite3',
+  sqlite3: 'tauri-electron/sqlite3',
+  'node-pty': 'tauri-electron/node-pty',
+}
+
 /** Electron helper packages tauri-electron replaces (aliased like `electron`). */
 const PACKAGE_SHIMS = {
   '@electron/remote': 'tauri-electron/remote',
   '@electron/remote/renderer': 'tauri-electron/remote/renderer',
   '@electron/remote/main': 'tauri-electron/remote/main',
+  ...NATIVE_MODULE_SHIMS,
 }
 
 /** Dev-server endpoint the hidden main window posts its console output to. */
@@ -88,17 +102,18 @@ const PATH_GLOBALS =
 
 // `require('x')` of a shimmed built-in, outside comments and strings.
 const BUILTIN_REQUIRE =
-  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|(?<![.$\w])require\(\s*(['"])((?:node:)?[a-z_/-]+)\2\s*\)/g
+  /((?<!:)\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|(?<![.$\w])require\(\s*(['"])((?:node:)?[a-z0-9_/-]+)\2\s*\)/g
 
 /**
  * In a Vite (rolldown) build, CommonJS code that `require()`s an ES module
  * gets its namespace object, so `require('assert')(x)`, `new (require('events'))()`
  * or `require('console').log` would fail. Every shim's default export is the
- * complete Node-shaped module (callable where Node's is), so take that.
+ * complete Node-shaped module (callable where Node's is), so take that; the
+ * same for the native-module shims (`new (require('better-sqlite3'))(file)`).
  */
 function rewriteBuiltinRequires(code) {
   return code.replace(BUILTIN_REQUIRE, (match, skipped, _quote, id) => {
-    if (skipped || !NODE_SHIMS[id.replace(/^node:/, '')]) return match
+    if (skipped || !(NODE_SHIMS[id.replace(/^node:/, '')] || NATIVE_MODULE_SHIMS[id])) return match
     return `((m) => (m && m.default) || m)(${match})`
   })
 }
@@ -108,11 +123,15 @@ function mentionsRequire(code) {
   return code.includes('require(')
 }
 
-/** Replace `__dirname` & co. in `code` with the given project-relative paths. */
-function rewritePathGlobals(code, dirname, filename) {
+/**
+ * Replace `__dirname` & co. in `code` with the given project-relative paths
+ * (`toCode` turns a path into the code that replaces them: a string literal,
+ * or an expression for code that runs in a forked Node.js).
+ */
+function rewritePathGlobals(code, dirname, filename, toCode = JSON.stringify) {
   return code.replace(PATH_GLOBALS, (match, skipped, legacy, meta) => {
     if (skipped) return match
-    return JSON.stringify((legacy ?? meta) === 'dirname' ? dirname : filename)
+    return toCode((legacy ?? meta) === 'dirname' ? dirname : filename)
   })
 }
 
@@ -376,7 +395,8 @@ function schemesInSource(code) {
  * `writeSchemes`, which walk only if they need to.
  */
 function scanSources(root) {
-  const result = { node: false, schemes: new Set() }
+  // forks: fork entry points (project path → source file), forkCalls: whether anything forks (bundler/fork.cjs).
+  const result = { node: false, schemes: new Set(), forks: new Map(), forkCalls: false }
   let seen = 0
   let dirs = 0
   const visit = (dir, depth) => {
@@ -402,6 +422,8 @@ function scanSources(root) {
           const code = fs.readFileSync(full, 'utf8')
           if (!result.node && SCANNED_SOURCE.test(entry.name) && NODE_WINDOW.test(code)) result.node = true
           for (const scheme of schemesInSource(code)) result.schemes.add(scheme)
+          if (mentionsFork(code)) result.forkCalls = true
+          for (const fork of forkEntriesInSource(code, full, root)) result.forks.set(fork.key, fork.file)
         } catch {
           /* unreadable: skip */
         }
@@ -467,6 +489,7 @@ module.exports = {
   NODE_BUILTINS,
   NODE_SHIMS,
   PACKAGE_SHIMS,
+  NATIVE_MODULE_SHIMS,
   LOG_ENDPOINT,
   STAGING_DIR,
   rewritePathGlobals,

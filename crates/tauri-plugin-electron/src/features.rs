@@ -39,7 +39,10 @@ pub fn enabled() -> Vec<&'static str> {
         "node-os",
         "node-child-process",
         "node-net",
-        "node-tls"
+        "node-tls",
+        "keytar",
+        "sqlite",
+        "pty"
     );
     // Desktop-only plugins are not built on mobile.
     if !cfg!(desktop) {
@@ -144,7 +147,7 @@ const MAIN_CORE: &[&str] = &[
 /// main process, zoom, `window.close()`, dragging `-webkit-app-region`
 /// areas, and the minimize / maximize / close buttons of `titleBarOverlay`. Sync IPC and window configuration use tauri-plugin-electron's URI
 /// scheme, which needs no permission.
-const RENDERER: &[&str] = &[
+pub(crate) const RENDERER: &[&str] = &[
     "core:event:default",
     "core:window:default",
     "core:webview:default",
@@ -230,6 +233,7 @@ fn main_permissions() -> Vec<Value> {
     if cfg!(feature = "node-net") {
         add(&[json!("electron:node-net")]);
     }
+    add(&crate::node_windows::native_module_permissions());
     permissions
 }
 

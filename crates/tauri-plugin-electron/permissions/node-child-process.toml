@@ -2,5 +2,5 @@
 
 [[set]]
 identifier = "node-child-process"
-description = "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows."
-permissions = ["allow-child-spawn", "allow-child-write", "allow-child-end", "allow-child-kill"]
+description = "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can (and a Node.js runtime for `child_process.fork` / `utilityProcess.fork`), and write to, read from, signal and message it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows."
+permissions = ["allow-child-spawn", "allow-child-write", "allow-child-end", "allow-child-kill", "allow-child-send", "allow-child-disconnect"]

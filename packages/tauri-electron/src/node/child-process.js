@@ -8,16 +8,23 @@
  *   `stderr` are Readable streams and `stdin` a Writable one; output and the
  *   exit arrive from Rust over a Tauri Channel.
  *
+ * - `fork` runs a module in a real Node.js (see ../internal/fork.js for how
+ *   it is found and how the module gets onto disk) with Node's own IPC
+ *   channel: `send()`, `'message'`, `disconnect()`, `connected`. So does
+ *   `spawn` with an `'ipc'` entry in `stdio`, and `spawn(process.execPath, …)`
+ *   with `ELECTRON_RUN_AS_NODE` set (Electron's way of running Node).
+ *
  * Shells are chosen as Node does: `/bin/sh -c` on Unix, `cmd.exe /d /s /c`
- * on Windows. Not supported: `fork()` (it starts another Node.js, and none is
- * shipped), the `'ipc'` stdio channel (`send()`), and streams or file
- * descriptors other than 0–2 as `stdio`.
+ * on Windows. Not supported: sending handles (sockets, servers) over the
+ * IPC channel, `serialization: 'advanced'`, and streams or file descriptors
+ * other than 0–2 (and `'ipc'`) as `stdio`.
  */
 import { Channel } from '@tauri-apps/api/core'
 import { EventEmitter } from '../internal/emitter.js'
 import { native, hasFeature, featureError } from '../internal/native.js'
 import { nodeCallSync, noTauri, parseJson, nodeFailure } from '../internal/node-bridge.js'
 import { inTauri, explainError, NotImplementedError } from '../internal/runtime.js'
+import { LineQueue, bootstrapFile, channelClosed, childEnv, isOwnExecutable, jsonLine, nodeArgs, parseLine, resolveModule } from '../internal/fork.js'
 import { signalNumber, signalName } from '../internal/signals.js'
 import { platform } from '../process.js'
 import { fileURLToPath } from '../url.js'
@@ -73,14 +80,34 @@ function normalizeStdio(stdio, api) {
     if (entry === 'overlapped') return 'pipe'
     if (STDIO.has(entry)) return entry
     throw new NotImplementedError(`${api} with stdio ${typeof entry === 'string' ? `'${entry}'` : typeof entry}`, {
-      reason: entry === 'ipc' ? 'unsupported' : 'unimplemented',
-      hint: entry === 'ipc' ? 'The IPC channel needs a Node.js child; none is shipped.' : "Use 'pipe', 'inherit' or 'ignore', and pipe the child's streams yourself.",
+      reason: 'unimplemented',
+      hint: entry === 'ipc' ? "Put 'ipc' after the three standard streams (descriptor 3 or higher)." : "Use 'pipe', 'inherit' or 'ignore', and pipe the child's streams yourself.",
     })
   })
 }
 
+function nodeError(message, code, Type = Error) {
+  const error = new Type(message)
+  error.code = code
+  return error
+}
+
+/** The `'ipc'` entry of `stdio` (descriptor 3 or higher), as Rust's `ipc` option. */
+function ipcOption(stdio, api, sync, serialization) {
+  const index = Array.isArray(stdio) ? stdio.indexOf('ipc') : -1
+  if (index === -1) return null
+  if (sync) throw nodeError('Forked processes must not have an IPC pipe', 'ERR_IPC_SYNC_FORK')
+  if (stdio.indexOf('ipc', index + 1) !== -1) throw nodeError('Child process can have only one IPC pipe', 'ERR_IPC_ONE_PIPE')
+  if (serialization !== undefined && serialization !== 'json') {
+    throw new NotImplementedError(`${api} with serialization '${serialization}'`, { reason: 'unimplemented', hint: "Only 'json' serialization is supported: the parent side runs in a webview, which has no V8 serializer." })
+  }
+  // An index below 3 is refused by normalizeStdio, with an explanation.
+  return { kind: 'node', fd: index, tcp: isWindows }
+}
+
 /** What Rust's `SpawnOptions` takes, from Node's spawn arguments. */
 function spawnOptions(file, args, options, api, { sync = false } = {}) {
+  const ipc = ipcOption(options.stdio, api, sync, options.serialization)
   let command = { file, args, verbatim: Boolean(options.windowsVerbatimArguments) }
   if (options.shell) command = shellFor([file, ...args].join(' '), options.shell)
   const cwd = options.cwd instanceof URL ? fileURLToPath(options.cwd) : options.cwd
@@ -101,11 +128,14 @@ function spawnOptions(file, args, options, api, { sync = false } = {}) {
     gid: options.gid ?? null,
     windowsHide: Boolean(options.windowsHide),
     windowsVerbatimArguments: command.verbatim,
+    ipc,
+    node: false,
   }
 }
 
 function spawnError({ code, errno, syscall, path, message }, spawnargs) {
-  const error = new Error(`${syscall} ${code}${code === 'ENOENT' && message?.startsWith('cwd') ? ` (${message})` : ''}`)
+  const explained = code === 'ENOENT' && (message?.startsWith('cwd') || message?.startsWith('no Node.js'))
+  const error = new Error(`${syscall} ${code}${explained ? ` (${message})` : ''}`)
   Object.assign(error, { errno, code, syscall, path, spawnargs })
   return error
 }
@@ -228,12 +258,6 @@ export class ChildProcess extends EventEmitter {
     return true
   }
 
-  send() {
-    throw new NotImplementedError('subprocess.send', { reason: 'unsupported', hint: 'There is no IPC channel: the child is not a Node.js process.' })
-  }
-
-  disconnect() {}
-
   ref() {}
 
   unref() {}
@@ -243,9 +267,97 @@ export class ChildProcess extends EventEmitter {
   }
 }
 
-function start(api, file, args, options) {
+/**
+ * The IPC channel of a child started with one: Node's `send()` /
+ * `'message'` / `disconnect()` for `kind: 'node'`; `utilityProcess` reads
+ * the raw lines (`onLine`) itself.
+ */
+function attachChannel(child, kind) {
+  const queue = new LineQueue((data) => child._ready.then(() => native('child_send', { id: child._id, data })))
+  const ipc = {
+    kind,
+    ended: false,
+    onLine: null,
+    onEnd: null,
+    write: (line, callback) => queue.push(line, callback),
+    close: () => queue.push(null, null, () => child._ready.then(() => native('child_disconnect', { id: child._id }))),
+  }
+  child._ipc = ipc
+  if (kind !== 'node') return ipc
+  child.connected = true
+  child.channel = { ref() {}, unref() {}, hasRef: () => true }
+  child.send = function send(message, handle, options, callback) {
+    if (typeof handle === 'function') {
+      callback = handle
+      handle = undefined
+    } else if (typeof options === 'function') {
+      callback = options
+    }
+    const line = jsonLine(message)
+    if (handle !== undefined && handle !== null) {
+      throw new NotImplementedError('subprocess.send with a handle', { reason: 'unsupported', hint: 'Sockets and servers cannot be passed to the child: the parent side runs in a webview.' })
+    }
+    if (!this.connected) {
+      const error = channelClosed()
+      if (typeof callback === 'function') setTimeout(() => callback(error), 0)
+      else setTimeout(() => this.emit('error', error), 0)
+      return false
+    }
+    ipc.write(line, (error) => {
+      if (typeof callback === 'function') callback(error)
+      // A child that failed to start has reported that already ('error').
+      else if (error && this.pid !== undefined && error.code !== 'ERR_IPC_CHANNEL_CLOSED') this.emit('error', explainError('subprocess.send', error))
+    })
+    return true
+  }
+  child.disconnect = function disconnect() {
+    if (!this.connected) {
+      this.emit('error', nodeError('IPC channel is already disconnected', 'ERR_IPC_DISCONNECTED'))
+      return
+    }
+    this.connected = false
+    ipc.close()
+  }
+  ipc.onLine = (line) => {
+    const parsed = parseLine(line)
+    if (!parsed.ok) return
+    const message = parsed.value
+    // Node keeps its own messages (NODE_HANDLE & co.) apart.
+    if (message && typeof message === 'object' && typeof message.cmd === 'string' && message.cmd.startsWith('NODE_')) child.emit('internalMessage', message)
+    else child.emit('message', message, undefined)
+  }
+  ipc.onEnd = () => {
+    child.connected = false
+    child.channel = null
+    child.emit('disconnect')
+  }
+  return ipc
+}
+
+/**
+ * Start a child: `spawn` and friends, and with `extra.node` the Node.js
+ * runtime (`file` is the `execPath` option or empty) and with `extra.ipc`
+ * the IPC channel of `fork` / `utilityProcess`.
+ */
+function start(api, file, args, options, extra = {}) {
   checkAvailable(api)
   const request = spawnOptions(file, args, options, api)
+  if (extra.ipc) request.ipc = { tcp: isWindows, ...request.ipc, ...extra.ipc }
+  if (extra.node) request.node = true
+  if (request.ipc?.tcp) {
+    // Windows: the child connects back over loopback; tauri-electron's
+    // bootstrap does that for any Node.js child, through NODE_OPTIONS.
+    const bootstrap = bootstrapFile()
+    if (!bootstrap) {
+      throw new NotImplementedError(`${api} on Windows`, {
+        reason: 'unimplemented',
+        hint: "The child's IPC channel is set up by tauri-electron's fork bootstrap, which the bundler plugins build only when they find a fork entry point (or the `fork` option lists one).",
+      })
+    }
+    const env = request.env ?? Object.fromEntries(Object.entries(globalThis.process?.env ?? {}).map(([k, v]) => [k, String(v)]))
+    const quoted = `"${bootstrap.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+    request.env = { ...env, NODE_OPTIONS: [env.NODE_OPTIONS, `--require ${quoted}`].filter(Boolean).join(' ') }
+  }
   const child = new ChildProcess()
   child.spawnfile = request.file
   child.spawnargs = [request.file, ...request.args]
@@ -278,6 +390,16 @@ function start(api, file, args, options) {
   child.stdio = [child.stdin, child.stdout, child.stderr]
 
   const pending = new Set([stdoutMode === 'pipe' ? 1 : null, stderrMode === 'pipe' ? 2 : null].filter(Boolean))
+  // Like Node, 'close' also waits for the IPC channel.
+  const ipc = request.ipc ? attachChannel(child, request.ipc.kind) : null
+  if (ipc) pending.add('ipc')
+  const endIpc = () => {
+    if (!ipc || ipc.ended) return
+    ipc.ended = true
+    ipc.onEnd?.()
+    pending.delete('ipc')
+    maybeClose()
+  }
   let exit = null
   const streamFor = (fd) => (fd === 1 ? child.stdout : child.stderr)
 
@@ -310,13 +432,21 @@ function start(api, file, args, options) {
       child.signalCode = exit.signal
       child.emit('exit', exit.code, exit.signal)
       maybeClose()
+    } else if (event.type === 'ipc') {
+      for (const line of event.lines ?? []) ipc?.onLine?.(line)
+    } else if (event.type === 'ipc-end') {
+      endIpc()
     }
   }
 
   native('child_spawn', { options: request, onEvent: events }).then(
-    ({ id, pid }) => {
+    ({ id, pid, file: spawned }) => {
       child._id = id
       child.pid = pid
+      if (request.node && spawned) {
+        child.spawnfile = spawned
+        child.spawnargs = [spawned, ...request.args]
+      }
       resolveReady()
       child.emit('spawn')
     },
@@ -331,6 +461,10 @@ function start(api, file, args, options) {
       child.stdin?.destroy()
       child.stdout?.push(null)
       child.stderr?.push(null)
+      if (ipc) {
+        ipc.ended = true
+        child.connected = false
+      }
       child.emit('error', failure)
       child.emit('close', typeof failure.errno === 'number' ? failure.errno : -1, null)
     },
@@ -342,6 +476,13 @@ function start(api, file, args, options) {
 /** `child_process.spawn(command, [args], [options])`. */
 export function spawn(command, ...rest) {
   const { file, args, options } = splitArguments(command, rest)
+  // Electron runs itself as Node with ELECTRON_RUN_AS_NODE: run the Node.js runtime instead.
+  const env = options.env ?? globalThis.process?.env ?? {}
+  if (isOwnExecutable(file) && env.ELECTRON_RUN_AS_NODE && !options.shell) {
+    const script = args.findIndex((arg) => !arg.startsWith('-'))
+    const nodeArgs = script === -1 ? args : args.map((arg, i) => (i === script ? resolveModule(arg).file : arg))
+    return start('child_process.spawn', '', nodeArgs, { ...options, env: childEnv(env) }, { node: true })
+  }
   return start('child_process.spawn', file, args, options)
 }
 
@@ -430,12 +571,44 @@ export function execFile(file, ...rest) {
 }
 execFile[customPromisify] = promisified(execFile)
 
-/** Not available: it starts another Node.js process. */
-export function fork(modulePath) {
-  throw new NotImplementedError('child_process.fork', {
-    reason: 'unsupported',
-    hint: `fork('${modulePath}') starts another Node.js process, and no Node.js is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable.`,
-  })
+/**
+ * For `utilityProcess.fork`: the Node.js runtime with `args`, and a channel
+ * of `kind` whose raw lines the caller reads (`child._ipc.onLine`).
+ */
+export function startNodeChild(api, args, options, kind) {
+  return start(api, '', args, { ...options, stdio: [...options.stdio.slice(0, 3), 'ipc'], shell: false }, { node: true, ipc: { kind } })
+}
+
+/** Node's stdio for fork: `silent` pipes, otherwise inherits; always with 'ipc'. */
+function forkStdio(options) {
+  const stdio = options.stdio ?? (options.silent ? 'pipe' : 'inherit')
+  if (typeof stdio === 'string') return [stdio, stdio, stdio, 'ipc']
+  if (!Array.isArray(stdio) || !stdio.includes('ipc')) {
+    throw nodeError('Forked processes must have an IPC channel, missing value \'ipc\' in options.stdio', 'ERR_CHILD_PROCESS_IPC_REQUIRED')
+  }
+  return stdio
+}
+
+/**
+ * `child_process.fork(modulePath, [args], [options])`: `modulePath` in a
+ * Node.js child with an IPC channel (`send()`, `'message'`). The runtime is
+ * `options.execPath`, the app's bundled Node.js sidecar or, in development,
+ * `node` on PATH.
+ */
+export function fork(modulePath, ...rest) {
+  if (typeof modulePath !== 'string' && !(modulePath instanceof URL)) throw invalidArgType('modulePath', 'of type string or an instance of URL', modulePath)
+  let args = []
+  let options = {}
+  if (Array.isArray(rest[0])) args = rest.shift()
+  else if (rest[0] === null || rest[0] === undefined) rest.shift()
+  if (rest[0] && typeof rest[0] === 'object') options = rest[0]
+  else if (rest[0] !== undefined && rest[0] !== null) throw invalidArgType('options', 'of type object', rest[0])
+  checkAvailable('child_process.fork')
+  const { file } = resolveModule(modulePath)
+  const execPath = options.execPath && !isOwnExecutable(options.execPath) ? String(options.execPath) : ''
+  const execArgv = options.execArgv ?? globalThis.process?.execArgv ?? []
+  const forkOptions = { ...options, stdio: forkStdio(options), env: childEnv(options.env), shell: false }
+  return start('child_process.fork', execPath, nodeArgs(file, args.map(String), execArgv), forkOptions, { node: true })
 }
 
 const childProcess = { ChildProcess, spawn, spawnSync, exec, execSync, execFile, execFileSync, fork }

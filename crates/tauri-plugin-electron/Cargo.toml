@@ -93,6 +93,19 @@ node-net = ["dep:tokio", "dep:socket2", "dep:hickory-resolver"]
 # tls (and https servers): TLS over node-net's sockets, with rustls.
 node-tls = ["node-net", "dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:rustls-pki-types"]
 
+# --- npm packages with native code, aliased by the bundler plugins ---------------------
+# Opt-in like the node-* features, for the same reason: each gives the main process
+# (and nodeIntegration windows) native access an app should list explicitly. The
+# scaffolder (`--into`) enables those whose npm package the app depends on.
+# keytar: passwords in the OS keychain (Keychain, Credential Manager, Secret Service),
+# stored where keytar stores them, so an app's existing entries are found.
+keytar = ["dep:keyring", "dep:dbus-secret-service", "dep:security-framework", "dep:windows-sys"]
+# better-sqlite3 and sqlite3: SQLite compiled into the app (rusqlite's `bundled`;
+# no system library, but a C compiler at build time). Reads and writes any file.
+sqlite = ["dep:rusqlite"]
+# node-pty: pseudo-terminals (portable-pty). Runs arbitrary programs, like child_process.
+pty = ["dep:portable-pty"]
+
 [build-dependencies]
 tauri-plugin = { version = "2", features = ["build"] }
 
@@ -125,6 +138,10 @@ notify = { version = "8", optional = true }
 # safeStorage (feature safe-storage).
 aes-gcm = { version = "0.10", optional = true }
 sysinfo = { version = "0.40", optional = true, default-features = false, features = ["system", "network"] }
+# better-sqlite3 / sqlite3 (feature sqlite): SQLite built from source.
+rusqlite = { version = "0.43", optional = true, default-features = false, features = ["bundled", "cache", "backup", "column_decltype", "column_metadata", "functions", "serialize"] }
+# node-pty (feature pty).
+portable-pty = { version = "0.9", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # access(2) and errno constants for the Node `fs` error codes (feature node-fs).
@@ -136,6 +153,14 @@ libc = "0.2"
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
 # Views laid over a window's webview (feature child-webviews); the version Tauri uses.
 gtk = { version = "0.18", optional = true }
+
+# WebView2 webviews of BrowserWindows: session.webRequest, certificate errors
+# and HTTP authentication (the versions wry uses, so nothing more is built).
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"] }
+# keytar's findCredentials on Windows (feature keytar): CredEnumerateW, which keyring lacks.
+windows-sys = { version = "0.60", optional = true, features = ["Win32_Foundation", "Win32_Security_Credentials"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 trash = "5"
@@ -152,3 +177,10 @@ keyring = { version = "3.6", optional = true, features = ["apple-native", "windo
 # already in the build through tauri-plugin-notification and keepawake.
 [target.'cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))'.dependencies]
 zbus = { version = "5", optional = true }
+# keytar's Secret Service items (feature keytar): the crate keyring is built on,
+# used directly for keytar's attributes and for findCredentials.
+dbus-secret-service = { version = "4.1", optional = true, features = ["crypto-rust"] }
+
+# keytar's findCredentials on macOS (feature keytar): a keychain search, which keyring lacks.
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", optional = true }

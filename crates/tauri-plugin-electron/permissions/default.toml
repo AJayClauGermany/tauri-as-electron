@@ -37,4 +37,8 @@ permissions = [
   "allow-view-navigate",
   "allow-view-eval",
   "allow-view-close",
+  "allow-web-request-listeners",
+  "allow-web-request-respond",
+  "allow-tls-auth-respond",
+  "allow-set-trusted-renderer",
 ]

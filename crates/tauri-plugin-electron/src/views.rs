@@ -74,6 +74,8 @@ pub struct Extras {
     /// A `<webview>` guest: the embedder page's label and the element's id there.
     pub embedder: Option<String>,
     pub instance: Option<String>,
+    /// The session.webRequest events the view's session listens to.
+    pub web_request: Vec<String>,
 }
 
 /// `view_update`: what changes, in this order.
@@ -388,7 +390,12 @@ mod imp {
             );
             views.absolute(&label).unwrap_or(rect)
         };
-        let builder = WebviewBuilder::from_config(&options);
+        let mut builder = WebviewBuilder::from_config(&options);
+        // The bootstrap and preload for pages of trusted origins, as windows
+        // get them (trusted_origins.rs).
+        if let Some(script) = crate::trusted_origins::script(app) {
+            builder = builder.initialization_script(script.to_string());
+        }
         #[cfg(not(any(
             target_os = "linux",
             target_os = "dragonfly",
@@ -411,6 +418,8 @@ mod imp {
             }
         };
         watch(app, &host);
+        crate::web_request::attach(app, &view, &label, &extras.web_request);
+        crate::tls_auth::attach(app, &view, &label);
         let shown = visible && !absolute.is_empty();
         #[cfg(any(
             target_os = "linux",

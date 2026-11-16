@@ -31,6 +31,7 @@ import { encode, decodeArgs } from '../internal/serialize.js'
 import { BrowserWindow, WebContents, guests, fileToUrl, fileUrlToAppUrl } from './browser-window.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
+import { registerTrustedRenderer, trustedRendererRegistered } from './trusted-origins.js'
 
 const FEATURE = 'child-webviews'
 
@@ -135,7 +136,13 @@ class GuestHost {
     this._visible = true
     this._focused = false
     this._placement = null // { bounds, visible } last sent to Rust
+    this._trustedRenderer = false // created with the trusted origins' renderer script
     this.webContents = null
+  }
+
+  /** Whether a page at `url` runs the renderer bootstrap: app pages and, as in windows, trusted origins. */
+  _hasBootstrap(url) {
+    return BrowserWindow.prototype._hasBootstrap.call(this, url)
   }
 
   isDestroyed() {
@@ -209,7 +216,9 @@ class GuestHost {
       guests.register(this.webContents, label)
       this.webContents._url = url
       this.webContents._alive = false
-      await native('set_window_config', { label, config: this._rendererConfig() })
+      await Promise.all([native('set_window_config', { label, config: this._rendererConfig() }), registerTrustedRenderer()])
+      // Created with the trusted origins' renderer script (an initialization script).
+      this._trustedRenderer = trustedRendererRegistered()
       const { bounds, visible } = this._placement
       await native('view_create', {
         window: win._label,
@@ -220,6 +229,7 @@ class GuestHost {
           visible,
           permissionHandler: typeof this._session?._handlers?.permissionRequest === 'function',
           proxyConfigured: Boolean(this._session?._proxyConfigured),
+          webRequest: this._session?.webRequest?._events?.() ?? [],
         },
       })
       if (this._destroyed) return native('view_close', { label }).catch(() => {})
@@ -385,7 +395,7 @@ export class GuestWebContents extends WebContents {
 
   /** Pages without the bootstrap get bootstrap commands as script. */
   _command(name, data = {}) {
-    if (this._alive || !this._win._native || guests.isAppUrl(this._url)) return super._command(name, data)
+    if (this._alive || !this._win._native || this._win._hasBootstrap(this._url)) return super._command(name, data)
     const script = SCRIPT_COMMANDS[name]?.(data)
     if (script) evaluateInView(this, script).catch(report(`webContents ${name}`))
   }
@@ -393,14 +403,14 @@ export class GuestWebContents extends WebContents {
   async executeJavaScript(code, userGesture) {
     if (this.isDestroyed()) throw new Error('Object has been destroyed')
     await this._win._creating
-    // App pages run it through their bootstrap (structured-clone results).
-    if (this._alive || !this._win._native || guests.isAppUrl(this._url)) return super.executeJavaScript(code, userGesture)
+    // Pages with the bootstrap run it there (structured-clone results).
+    if (this._alive || !this._win._native || this._win._hasBootstrap(this._url)) return super.executeJavaScript(code, userGesture)
     return evaluateInView(this, code)
   }
 
-  /** Remote pages never report through the bootstrap: their loads come from Rust only. */
+  /** Pages without the bootstrap never report through it: their loads come from Rust only. */
   isLoading() {
-    return this._loading || (!this._alive && guests.isAppUrl(this._url))
+    return this._loading || (!this._alive && this._win._hasBootstrap(this._url))
   }
 
   reload() {
