@@ -195,17 +195,19 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `<webview>` (the core of Ferdium, Zulip, Wire, Rocket.Chat,
   Responsively) and 6 use views (the core of Mattermost). One feature
   behind five chat apps.* Effort L.
-- [ ] **C2. `worker_threads`** on Web Workers that load the Node layer
+- [x] **C2. `worker_threads`** on Web Workers that load the Node layer
   (`Worker`, `parentPort`, `workerData`, `MessageChannel`, `isMainThread`).
   Needs the bridge to accept workers. *Apps 8.* Effort L.
+  *Done: a worker is a dedicated Web Worker of its window (main process or a nodeIntegration window) running one worker bundle per app (`bundler/worker-entry.js`): a dependency-free bootstrap receives the window's init message (`workerData`, env, argv, environment data, transferred ports), then the Node layer and the script load as lazy chunks. The bridge needed no change: WebKitGTK attributes a worker's synchronous requests to its window, so Rust's checks apply as for the window (a sandboxed window's worker gets 403); Tauri commands and their Channels are relayed by the window. The bundler plugins bundle the scripts found in `new Worker(...)` calls (static `__dirname` / `import.meta.url` / `require.resolve` paths) plus option `workers`; `eval: true` works. Node's `MessagePort` semantics, `process.exit`, uncaught errors, and an automatic exit once nothing tracked is pending. No SharedArrayBuffer / `Atomics.wait`, `resourceLimits` or `stdin`. Verified on Linux; Windows / macOS routing of worker requests unverified.*
 - [x] **C3. `utilityProcess.fork` and `child_process.fork`.** A Node
   sidecar (bundled runtime via `plugin-shell`), `MessagePortMain` bridged
   over stdio, `'ipc'` stdio for `fork`. *Apps 5 + 5 (VS Code, AFFiNE,
   Trilium, Beekeeper, Insomnia, Joplin, Logseq).* Effort L.
   *Done: the child is a real Node.js started through `child_process`'s spawn path (`node-child-process` feature) rather than `plugin-shell`, whose sidecar API cannot hand a child a socket: the `execPath` option, `$TAURI_ELECTRON_NODE`, a `<crate>-node` / `node` sidecar next to the executable (`bundle.externalBin`; `npx github:AJayClauGermany/tauri-as-electron --node-sidecar` sets it up) or, in debug builds, `node` on PATH. `child_process.fork` (also `spawn` with `'ipc'`, and `spawn(process.execPath)` with `ELECTRON_RUN_AS_NODE`) gets Node's own channel (`NODE_CHANNEL_FD` on a socketpair, `json` serialization); `utilityProcess` gets `process.parentPort` and `MessagePortMain`s (relayed by the main process, so main- and renderer-held ports both work) from a bootstrap loaded with `--require`, over a socket of the same kind. The bundler plugins find fork entries with static paths (option `fork` for others), bundle them for Node with `electron` mapped to a child module (`net`) and ship them in `<resources>/fork`. Not supported: `serialization: 'advanced'`, handles over `send()`, ports from the child back to the main process, native addons in bundled entries. Windows connects the child back over loopback TCP with a token (written, tested on Linux only); macOS not verified.*
-- [ ] **C4. `vm`** contexts on iframe realms (feasibility verified in
+- [x] **C4. `vm`** contexts on iframe realms (feasibility verified in
   [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)): `runInNewContext`,
   `createContext`, `Script`. *Apps 10.* Effort M–L.
+  *Done: each context is a hidden same-origin iframe; the object's properties are live accessors on its global and created globals are copied back after each run; top-level `let` / `const` / `class` persist between runs like a Script's. `Script`, `runInThisContext`, `compileFunction` (`contextExtensions`, `parsingContext`), `isContext`, `DONT_CONTEXTIFY`. `timeout` / `breakOnSigint` are ignored (synchronous code cannot be interrupted), contexts also have the browser's globals, no contexts in worker threads, needs `'unsafe-eval'` under a CSP; vm modules unsupported.*
 - [x] **C5. Shims for common native modules** through the bundler's
   module aliases: `keytar` (on B3's keyring code; 6 apps), `better-sqlite3`
   / `sqlite3` (rusqlite; 5 apps), `node-pty` (portable-pty; 4 apps:

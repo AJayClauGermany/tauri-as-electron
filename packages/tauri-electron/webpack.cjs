@@ -55,7 +55,7 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, NATIVE_MODULE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, NATIVE_MODULE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan, workerThreads } = require('./bundler/shared.cjs')
 const forkShared = require('./bundler/fork.cjs')
 const { forkWebpackConfig, runForkBuild } = require('./bundler/fork-webpack.cjs')
 const { TRUSTED_URL, wantsTrustedRenderer, trustedPreloads, addWebpackTrustedRenderer } = require('./bundler/trusted.cjs')
@@ -72,9 +72,12 @@ const MODULES = {
   mainEntry: path.join(BUNDLER, 'main-entry.js'),
   mainNode: path.join(BUNDLER, 'main-node.js'),
   rendererNode: path.join(BUNDLER, 'renderer-node.js'),
+  rendererWorkers: path.join(BUNDLER, 'renderer-workers.js'),
   consoleForwarder: path.join(BUNDLER, 'console-forwarder.js'),
   nodeBuiltin: path.join(BUNDLER, 'node-builtin.cjs'),
   pathGlobalsLoader: path.join(BUNDLER, 'path-globals-loader.cjs'),
+  workerEntries: path.join(BUNDLER, 'worker-entries.js'),
+  workerEntriesLoader: path.join(BUNDLER, 'worker-entries-loader.cjs'),
 }
 const SHIM_FILES = {
   'tauri-electron/path': path.join(SRC, 'path.js'),
@@ -121,6 +124,8 @@ const SHIM_FILES = {
   'tauri-electron/dgram': path.join(SRC, 'node', 'dgram.js'),
   'tauri-electron/dns': path.join(SRC, 'node', 'dns.js'),
   'tauri-electron/dns/promises': path.join(SRC, 'node', 'dns-promises.js'),
+  'tauri-electron/vm': path.join(SRC, 'node', 'vm.js'),
+  'tauri-electron/worker_threads': path.join(SRC, 'node', 'worker-threads.js'),
   'tauri-electron/remote': path.join(SRC, 'remote', 'index.js'),
   'tauri-electron/remote/renderer': path.join(SRC, 'remote', 'renderer.js'),
   'tauri-electron/remote/main': path.join(SRC, 'remote', 'main.js'),
@@ -231,6 +236,7 @@ class TauriElectronPlugin {
    * @param {false|string[]} [options.schemes] Extra custom schemes for src-tauri/electron-schemes.json (see the Vite plugin).
    * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
    * @param {boolean|'auto'} [options.rendererNode='auto'] Node built-ins for nodeIntegration windows (see the Vite plugin).
+   * @param {boolean|string[]} [options.workers] worker_threads scripts besides those found in the sources (see the Vite plugin).
    * @param {false|string[]} [options.fork] Extra fork entry points, or `false` for none (see the Vite plugin).
    * @param {boolean|'auto'} [options.trustedOrigins='auto'] Build the renderer script for pages of trusted origins (see the Vite plugin).
    * @param {string|string[]|false} [options.trustedPreload] Their preload(s). Default: `preload` when it applies to every entry.
@@ -266,7 +272,7 @@ class TauriElectronPlugin {
     // rejects `node:` requests on web targets.
     const userResolved = userResolvedNames(config.resolve)
     const aliasPath = options.aliasPath
-    const replacement = () => new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?|(?:better-)?sqlite3)$/, (resource) => {
+    const replacement = () => new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z0-9_/-]+|@electron\/remote(?:\/(?:main|renderer))?|(?:better-)?sqlite3)$/, (resource) => {
       if (typeof resource.request !== 'string') return
       const target = redirect(resource.request, { aliasPath, userResolved })
       if (target) resource.request = target
@@ -300,7 +306,8 @@ class TauriElectronPlugin {
     const rendererPrefix = (name, page) => [
       ...(withRequire ? [MODULES.require] : []),
       MODULES.bootstrap,
-      ...(withRendererNode ? [MODULES.rendererNode] : []),
+      // worker_threads in nodeIntegration windows (left out by DefinePlugin when the app has no workers).
+      ...(withRendererNode ? [MODULES.rendererNode, MODULES.rendererWorkers] : []),
       ...libraryPreloads.map((preload) => preload.id),
       ...preloadsFor(name, page),
     ]
@@ -367,6 +374,15 @@ class TauriElectronPlugin {
       appConfig.trustedRenderer = TRUSTED_URL
     }
     const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appConfig) }
+    // worker_threads: bundler/worker-registry.js starts bundler/worker-entry.js as a Web Worker,
+    // and the loader lists the worker scripts in its bundle (lazy chunks).
+    const workers = workerThreads(context, options.workers, scan)
+    definitions.__TAURI_ELECTRON_WORKERS__ = workers ? JSON.stringify({ entries: workers.entries.map((e) => e.path), aliases: workers.aliases, dev: false }) : 'false'
+    config.module.rules.push({
+      test: new RegExp(`^${MODULES.workerEntries.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+      loader: MODULES.workerEntriesLoader,
+      options: { entries: workers?.entries ?? [] },
+    })
     const pageFile = (page) => page.filename ?? `${page.name}/index.html`
     for (const page of pages) {
       if (options.forgeGlobals !== false) {
