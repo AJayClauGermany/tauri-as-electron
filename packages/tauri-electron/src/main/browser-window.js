@@ -29,6 +29,7 @@ import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
 import { downloadURL } from './downloads.js'
+import { trustedOriginOf, registerTrustedRenderer, trustedRendererRegistered } from './trusted-origins.js'
 
 const windows = new Map()
 
@@ -75,7 +76,10 @@ export function fileUrlToAppUrl(url) {
   return fileToUrl(decodeURIComponent(parsed.pathname)) + parsed.search + parsed.hash
 }
 
-/** URLs served by our own frontend get the renderer bootstrap; remote pages do not. */
+/**
+ * URLs served by our own frontend get the renderer bootstrap; remote pages do
+ * not, except those of trusted origins (see `BrowserWindow#_hasBootstrap`).
+ */
 function isAppUrl(url) {
   if (!SCHEME.test(url)) return true
   return typeof location !== 'undefined' && url.startsWith(location.origin)
@@ -366,7 +370,12 @@ export class WebContents extends EventEmitter {
     this._url = url
     this.navigationHistory._onNavigate(url, this._title)
     this.emit('did-navigate', createEvent({ url }), url, 200, 'OK')
-    if (!isAppUrl(url) || url === 'about:blank') this._win._onDidFinishLoad(true)
+    if (!this._win._hasBootstrap(url)) {
+      // Nothing to talk to on this page (the last one's `unload` can be lost
+      // while it goes away): loadURL() replaces the window instead.
+      this._alive = false
+      this._win._onDidFinishLoad(true)
+    }
     this.emit('did-stop-loading', createEvent())
   }
 
@@ -943,8 +952,10 @@ export class BrowserWindow extends EventEmitter {
     url = toNativeSchemeUrl(url)
     this.webContents._url = url
     this.webContents._alive = false
+    // With trusted origins, the renderer script for their pages is handed to
+    // tauri-plugin-electron before the first window is created.
     const configured = hasNativePlugin()
-      ? native('set_window_config', { label, config: this._rendererConfig() }).catch(report('window config'))
+      ? Promise.all([native('set_window_config', { label, config: this._rendererConfig() }).catch(report('window config')), registerTrustedRenderer()])
       : Promise.resolve()
     configured.then(() => {
       if (this._destroyed || this._label !== label) return
@@ -953,6 +964,8 @@ export class BrowserWindow extends EventEmitter {
   }
 
   _spawnNative(label, url) {
+    // Created with the trusted origins' renderer script (an initialization script).
+    this._trustedRenderer = trustedRendererRegistered()
     const native = createWebviewWindow(label, this._nativeOptions(url), {
       permissionHandler: typeof this._session?._handlers?.permissionRequest === 'function',
       // The session chose its proxy (setProxy), so a window without one goes direct.
@@ -978,7 +991,7 @@ export class BrowserWindow extends EventEmitter {
       if (this.webContents._zoomFactor !== 1) native.setZoom(this.webContents._zoomFactor).catch(report('setZoom'))
       if (this._options.icon) this.setIcon(this._options.icon)
       if (!this._state.menuBarVisible) this._applyMenuBarVisibility()
-      if (!isAppUrl(url) || url === 'about:blank') {
+      if (!this._hasBootstrap(url)) {
         // No bootstrap in remote/blank pages: tauri-plugin-electron reports
         // the load; synthesize it if that does not happen in time.
         this._syntheticLoad = setTimeout(() => isCurrent() && this._onDidFinishLoad(true), hasNativePlugin() ? 3000 : 300)
@@ -1088,6 +1101,16 @@ export class BrowserWindow extends EventEmitter {
     }
   }
 
+  /**
+   * Whether a page at `url` runs the renderer bootstrap (and reports its
+   * lifecycle): the app's own pages, and pages of trusted origins in a window
+   * created with their renderer script.
+   */
+  _hasBootstrap(url) {
+    if (url === 'about:blank') return false
+    return isAppUrl(url) || (Boolean(this._trustedRenderer) && trustedOriginOf(url) !== null)
+  }
+
   _onDidFinishLoad(synthetic = false) {
     clearTimeout(this._syntheticLoad)
     if (synthetic) {
@@ -1118,7 +1141,7 @@ export class BrowserWindow extends EventEmitter {
     this._loadWaiters.push({ resolve, reject })
     if (!this._native && !this._creating) {
       this._createNative(url)
-    } else if (this.webContents._alive && isAppUrl(url)) {
+    } else if (this.webContents._alive && this._hasBootstrap(url)) {
       this.webContents._alive = false
       this.webContents._post({ type: 'command', name: 'navigate', url: absoluteAppUrl(url) })
     } else {

@@ -895,6 +895,18 @@
           "markdownDescription": "Denies the set_menu_visible command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_trusted_renderer command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-trusted-renderer",
+          "markdownDescription": "Enables the set_trusted_renderer command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_trusted_renderer command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-trusted-renderer",
+          "markdownDescription": "Denies the set_trusted_renderer command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_window_config command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-window-config",
@@ -1015,10 +1027,10 @@
           "markdownDescription": "Denies the web_request_respond command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-web-request-listeners`\n- `allow-web-request-respond`\n- `allow-tls-auth-respond`",
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-web-request-listeners`\n- `allow-web-request-respond`\n- `allow-tls-auth-respond`\n- `allow-set-trusted-renderer`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-web-request-listeners`\n- `allow-web-request-respond`\n- `allow-tls-auth-respond`"
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-web-request-listeners`\n- `allow-web-request-respond`\n- `allow-tls-auth-respond`\n- `allow-set-trusted-renderer`"
         },
         {
           "description": "The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-keytar`",

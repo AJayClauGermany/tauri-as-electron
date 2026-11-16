@@ -36,6 +36,7 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-web-request-listeners`
 - `allow-web-request-respond`
 - `allow-tls-auth-respond`
+- `allow-set-trusted-renderer`
 
 ## Permission Table
 
@@ -1342,6 +1343,32 @@ Enables the set_menu_visible command without any pre-configured scope.
 <td>
 
 Denies the set_menu_visible command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-set-trusted-renderer`
+
+</td>
+<td>
+
+Enables the set_trusted_renderer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-set-trusted-renderer`
+
+</td>
+<td>
+
+Denies the set_trusted_renderer command without any pre-configured scope.
 
 </td>
 </tr>

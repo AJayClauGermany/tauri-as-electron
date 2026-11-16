@@ -2663,6 +2663,7 @@ dependencies = [
 name = "kitchen-sink"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-electron",
@@ -5249,6 +5250,7 @@ dependencies = [
 name = "tauri-electron-app"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-electron",

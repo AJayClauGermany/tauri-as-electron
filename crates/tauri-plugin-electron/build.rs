@@ -59,6 +59,7 @@ const COMMANDS: &[&str] = &[
     "web_request_listeners",
     "web_request_respond",
     "tls_auth_respond",
+    "set_trusted_renderer",
 ];
 
 fn main() {

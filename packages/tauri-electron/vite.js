@@ -34,6 +34,10 @@
  *  - makes `process.env` read the real environment (the main process gets it
  *    from tauri-plugin-electron) instead of Vite's empty object,
  *  - adds every root-level *.html file to the build inputs,
+ *  - when the app trusts origins it does not serve (tauri.conf.json
+ *    `plugins.electron.trustedOrigins`, e.g. a server it starts on loopback),
+ *    builds the same renderer modules into one classic script that
+ *    tauri-plugin-electron runs in those pages (`__tauri-electron/trusted-renderer.js`),
  *  - writes the custom schemes the app passes to `protocol.handle()` (and
  *    `registerSchemesAsPrivileged`) to `src-tauri/electron-schemes.json`,
  *    where `tauri_plugin_electron::bundled_schemes!()` reads them at build time,
@@ -49,8 +53,11 @@ import path from 'node:path'
 import shared from './bundler/shared.cjs'
 import forkShared from './bundler/fork.cjs'
 import { buildForks } from './bundler/fork-vite.js'
+import trusted from './bundler/trusted.cjs'
+import { buildTrustedRenderer } from './bundler/trusted-vite.js'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
+const { TRUSTED_FILE, TRUSTED_URL, wantsTrustedRenderer, trustedPreloads } = trusted
 const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
@@ -84,6 +91,7 @@ const VIRTUAL = {
   main: 'virtual:tauri-electron/main', // Node built-ins, app files and require() for the main process
   renderer: 'virtual:tauri-electron/renderer', // require(), bootstrap, preload(s)
   rendererNode: 'virtual:tauri-electron/renderer-node', // Node built-ins for nodeIntegration windows
+  trusted: 'virtual:tauri-electron/trusted-renderer', // the renderer modules for pages of trusted origins
 }
 const RESOLVED = '\0'
 
@@ -142,6 +150,12 @@ function virtualSrc(id, isDev) {
  * @param {false|string[]} [options.fork] Modules started with `utilityProcess.fork()` /
  *   `child_process.fork()` that the source scan cannot find (project-relative files), or
  *   `false` to build none. Found: `fork(path.join(__dirname, 'worker.js'))` and similar static paths.
+ * @param {boolean|'auto'} [options.trustedOrigins='auto'] Build the renderer script that
+ *   tauri-plugin-electron runs in pages of the trusted origins (`plugins.electron.trustedOrigins`
+ *   in src-tauri/tauri.conf.json): `require()`, the bootstrap and the preloads as one classic
+ *   script. `'auto'`: when the Tauri configuration declares trusted origins.
+ * @param {string|string[]|false} [options.trustedPreload] The preload(s) of pages of trusted
+ *   origins, relative to the Vite root. Default: `preload`.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -159,6 +173,12 @@ export default function tauriElectron(options = {}) {
   let forkPlan = { entries: [], needed: false }
   let forkDir = null
   let forkWatcher = null
+  // The trusted-origins renderer script: built here (`withTrusted`), or this
+  // instance is the separate build of that script (`nested`).
+  const nested = options.__trustedRenderer ?? null
+  let withTrusted = false
+  let resolvedConfig = null
+  const trustedOptions = () => ({ plugin: tauriElectron, options: { ...options, rendererNode: withRendererNode }, entry: VIRTUAL.trusted, resolved: resolvedConfig, dev: isDev })
 
   return {
     name: 'tauri-electron',
@@ -186,7 +206,8 @@ export default function tauriElectron(options = {}) {
         build: {
           target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
           minify: !process.env.TAURI_ENV_DEBUG,
-          sourcemap: Boolean(process.env.TAURI_ENV_DEBUG),
+          // The trusted-origins script is one file: its map inline in development, none in a build.
+          sourcemap: nested ? (nested.dev ? 'inline' : false) : Boolean(process.env.TAURI_ENV_DEBUG),
         },
       }
 
@@ -211,6 +232,9 @@ export default function tauriElectron(options = {}) {
       withRendererNode = rendererNode(root, options.rendererNode, scan)
       isDev = resolved.command === 'serve'
       outDir = resolved.build?.outDir ?? 'dist'
+      resolvedConfig = resolved
+      if (nested) return
+      withTrusted = wantsTrustedRenderer(root, options.trustedOrigins)
       // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
       const schemes = writeSchemes(root, options.schemes, scan)
       if (schemes?.length) resolved.logger?.info?.(`tauri-electron: custom schemes ${schemes.join(', ')} (src-tauri/electron-schemes.json)`)
@@ -223,7 +247,7 @@ export default function tauriElectron(options = {}) {
     },
 
     async buildStart() {
-      if (isDev) return
+      if (isDev || nested) return
       const staged = stageAppFiles(root, { resources: options.resources, exclude: [outDir] })
       if (staged !== null) this.info?.(`staged ${staged} app file(s) for fs in src-tauri/electron-resources/app`)
       if (forkDir) {
@@ -237,6 +261,29 @@ export default function tauriElectron(options = {}) {
       if (forkDir && !forkWatcher) {
         forkWatcher = await buildForks({ root, plan: forkPlan, outDir: forkDir, dev: true, watch: true })
         server.httpServer?.once('close', () => forkWatcher?.close())
+      }
+      if (withTrusted) {
+        // Built on request (the main process asks once it starts), again after a source change.
+        let pending = null
+        server.watcher?.on('change', (file) => {
+          if (!file.includes('node_modules')) pending = null
+        })
+        server.middlewares.use(TRUSTED_URL, (req, res) => {
+          pending ??= buildTrustedRenderer(trustedOptions())
+          pending.then(
+            (code) => {
+              res.setHeader('Content-Type', 'text/javascript')
+              res.setHeader('Cache-Control', 'no-store')
+              res.end(code)
+            },
+            (error) => {
+              pending = null
+              server.config.logger.error(`tauri-electron: trusted-origins renderer script: ${error?.stack ?? error}`)
+              res.statusCode = 500
+              res.end(String(error?.message ?? error))
+            },
+          )
+        })
       }
       if (options.forwardMainConsole === false) return
       const colors = { error: '\x1b[31m', warn: '\x1b[33m' }
@@ -286,14 +333,20 @@ export default function tauriElectron(options = {}) {
       if (name === VIRTUAL.main) {
         lines.push(`import 'tauri-electron/node'`)
         if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
+        const config = appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads })
         const fork = forkShared.forkManifest(forkPlan, { dev: isDev, outDir: forkDir })
-        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify({ ...appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }), ...(fork ? { fork } : {}) })}`)
+        if (fork) config.fork = fork
+        // Where the main process fetches the trusted-origins renderer script.
+        if (withTrusted) config.trustedRenderer = TRUSTED_URL
+        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(config)}`)
       }
       if (name === VIRTUAL.rendererNode) {
         lines.push(`import { hasNode } from 'tauri-electron/renderer-node'`)
-        lines.push(`if (hasNode && !globalThis.__TAURI_ELECTRON_APP__) globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
+        lines.push(`if (hasNode && !globalThis.__TAURI_ELECTRON_APP__) globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: nested ? nested.dev : isDev, sessionPreloads: libraryPreloads }))}`)
       }
-      if (name === VIRTUAL.renderer) {
+      if (name === VIRTUAL.renderer || name === VIRTUAL.trusted) {
+        // The trusted-origins script starts like a renderer page, with its own preloads.
+        const pagePreloads = name === VIRTUAL.trusted ? trustedPreloads(options.trustedPreload, preloads) : preloads
         if (withRequire) lines.push(`import 'tauri-electron/require'`)
         lines.push(`import 'tauri-electron/renderer-bootstrap'`)
         // Before the preloads, which may require('fs') at the top.
@@ -303,7 +356,7 @@ export default function tauriElectron(options = {}) {
           const id = preload.file ? (isDev ? `/@fs/${toPosix(preload.id).replace(/^\/+/, '')}` : toPosix(preload.id)) : preload.id
           lines.push(`import ${JSON.stringify(id)}`)
         }
-        for (const preload of preloads) lines.push(`import ${JSON.stringify('/' + toPosix(preload).replace(/^\/+/, ''))}`)
+        for (const preload of pagePreloads) lines.push(`import ${JSON.stringify('/' + toPosix(preload).replace(/^\/+/, ''))}`)
       }
       return lines.join('\n') + '\n'
     },
@@ -322,6 +375,12 @@ export default function tauriElectron(options = {}) {
         result = rewritePathGlobals(result, path.posix.dirname(relative), relative)
       }
       return result === code ? null : { code: result, map: null }
+    },
+
+    async generateBundle() {
+      if (!withTrusted || isDev) return
+      const code = await buildTrustedRenderer(trustedOptions())
+      this.emitFile({ type: 'asset', fileName: TRUSTED_FILE, source: code })
     },
 
     transformIndexHtml: {

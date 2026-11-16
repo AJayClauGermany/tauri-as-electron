@@ -45,6 +45,8 @@ pub async fn create_window<R: Runtime>(
     ))]
     linux_proxy::before_create(&app, &options, extras.proxy_configured);
     let builder = WebviewWindowBuilder::from_config(&app, &options).map_err(|e| e.to_string())?;
+    // The bootstrap and preload for pages of trusted origins (trusted_origins.rs).
+    let builder = crate::trusted_origins::initialization_script(&app, builder);
     #[cfg(not(any(
         target_os = "linux",
         target_os = "dragonfly",

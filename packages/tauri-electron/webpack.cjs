@@ -34,6 +34,10 @@
  *  - tells `fs` where the app's own files are and, in production builds,
  *    stages them in `src-tauri/electron-resources/app/` when that folder
  *    exists (see the Vite plugin),
+ *  - when the app trusts origins it does not serve (tauri.conf.json
+ *    `plugins.electron.trustedOrigins`), builds the renderer modules and the
+ *    preloads into one classic script for those pages, in a child compilation
+ *    (`__tauri-electron/trusted-renderer.js`, see the Vite plugin),
  *  - rewrites `__dirname`, `__filename`, `import.meta.dirname|filename` and
  *    `fileURLToPath(import.meta.url)` in your source to project-relative paths,
  *  - bundles the modules started with `utilityProcess.fork()` /
@@ -54,6 +58,7 @@ const { pathToFileURL } = require('node:url')
 const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, NATIVE_MODULE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
 const forkShared = require('./bundler/fork.cjs')
 const { forkWebpackConfig, runForkBuild } = require('./bundler/fork-webpack.cjs')
+const { TRUSTED_URL, wantsTrustedRenderer, trustedPreloads, addWebpackTrustedRenderer } = require('./bundler/trusted.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -227,6 +232,8 @@ class TauriElectronPlugin {
    * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
    * @param {boolean|'auto'} [options.rendererNode='auto'] Node built-ins for nodeIntegration windows (see the Vite plugin).
    * @param {false|string[]} [options.fork] Extra fork entry points, or `false` for none (see the Vite plugin).
+   * @param {boolean|'auto'} [options.trustedOrigins='auto'] Build the renderer script for pages of trusted origins (see the Vite plugin).
+   * @param {string|string[]|false} [options.trustedPreload] Their preload(s). Default: `preload` when it applies to every entry.
    */
   constructor(options = {}) {
     if (!options.main) throw new Error(`${NAME}: the \`main\` option (your Electron main script) is required`)
@@ -259,11 +266,12 @@ class TauriElectronPlugin {
     // rejects `node:` requests on web targets.
     const userResolved = userResolvedNames(config.resolve)
     const aliasPath = options.aliasPath
-    new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?|(?:better-)?sqlite3)$/, (resource) => {
+    const replacement = () => new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?|(?:better-)?sqlite3)$/, (resource) => {
       if (typeof resource.request !== 'string') return
       const target = redirect(resource.request, { aliasPath, userResolved })
       if (target) resource.request = target
-    }).apply(compiler)
+    })
+    replacement().apply(compiler)
 
     // --- __dirname & co. in project source ------------------------------------------------------
     config.module ??= {}
@@ -342,7 +350,23 @@ class TauriElectronPlugin {
 
     // --- renderer pages from `pages` (Electron Forge entry points) ---------------------------
     // Where the app's own files are, for fs (read by bundler/main-node.js), and the fork entries.
-    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify({ ...appFilesConfig(context, { dev, sessionPreloads: libraryPreloads }), ...(forkManifest ? { fork: forkManifest } : {}) }) }
+    const appConfig = appFilesConfig(context, { dev, sessionPreloads: libraryPreloads })
+    if (forkManifest) appConfig.fork = forkManifest
+    // --- the renderer script for pages of trusted origins (bundler/trusted.cjs) ------------------
+    if (wantsTrustedRenderer(context, options.trustedOrigins)) {
+      const common = options.preload && typeof options.preload === 'object' && !Array.isArray(options.preload) ? [] : toArray(options.preload)
+      const imports = [
+        ...(withRequire ? [MODULES.require] : []),
+        MODULES.bootstrap,
+        ...(withRendererNode ? [MODULES.rendererNode] : []),
+        ...libraryPreloads.map((preload) => preload.id),
+        ...trustedPreloads(options.trustedPreload, common).map(fromContext),
+      ]
+      // rspack's child compilations do not inherit these from the build; webpack's do.
+      addWebpackTrustedRenderer(compiler, bundler, imports, () => (compiler.rspack ? [replacement(), new bundler.DefinePlugin(definitions)] : []))
+      appConfig.trustedRenderer = TRUSTED_URL
+    }
+    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appConfig) }
     const pageFile = (page) => page.filename ?? `${page.name}/index.html`
     for (const page of pages) {
       if (options.forgeGlobals !== false) {

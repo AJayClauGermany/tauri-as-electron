@@ -35,4 +35,5 @@ permissions = [
   "allow-web-request-listeners",
   "allow-web-request-respond",
   "allow-tls-auth-respond",
+  "allow-set-trusted-renderer",
 ]
