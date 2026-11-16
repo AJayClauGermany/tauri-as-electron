@@ -272,6 +272,23 @@ describe('WebContentsView', () => {
     win.destroy()
   })
 
+  it("fails executeJavaScript() queued for a view whose window went away, and does not run it later", async () => {
+    const win = await makeWindow()
+    const view = new WebContentsView()
+    view.webContents.loadURL('index.html')
+    win.contentView.addChildView(view)
+    await flush()
+    // A page with the bootstrap that has not loaded yet: the command waits for it.
+    view._hasBootstrap = () => true
+    const result = view.webContents.executeJavaScript('1')
+    await flush()
+    expect(view.webContents._queue.some((m) => m.name === 'execute')).toBe(true)
+    win.destroy()
+    await expect(result).rejects.toThrow('The page was unloaded')
+    expect(view.webContents._queue.some((m) => m.name === 'execute')).toBe(false)
+    expect(view.webContents.isDestroyed()).toBe(false)
+  })
+
   it('drops the window config of a view whose webview could not be created', async () => {
     const win = await makeWindow()
     state.onCommand = (command) => {

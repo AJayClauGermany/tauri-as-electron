@@ -218,6 +218,7 @@ export class WebContents extends EventEmitter {
     this._loading = false
     this._queue = []
     this._pending = new Map()
+    this._page = 0 // counts the pages that ended (_pageEnded)
     this._nextRequest = 1
     this._css = new Map()
     this._windowOpenHandler = null
@@ -259,6 +260,7 @@ export class WebContents extends EventEmitter {
   _post(message) {
     const { transferred, ...rest } = message
     const label = this._label
+    const page = this._page
     if (transferred) rest.ports = transferred.map((port) => port._transferred.id)
     const sent = emitTo(label, TO_RENDERER, { ...rest, to: label })
     if (!transferred) return sent.catch(report('webContents message'))
@@ -266,31 +268,37 @@ export class WebContents extends EventEmitter {
     // them meanwhile goes after this message, which creates them there.
     return sent.then(
       () => {
-        // The page went away while the message was on its way: the ports went with it.
-        const gone = this.isDestroyed() || this._label !== label
-        for (const port of transferred) gone ? port._destinationGone() : port._flushTransferred(label)
+        // The page ended while the message was on its way: the ports went with it.
+        const gone = this.isDestroyed() || this._page !== page
+        for (const port of transferred) gone ? port._destinationGone(label) : port._flushTransferred(label)
       },
       (error) => {
         report('webContents message')(error)
-        for (const port of transferred) port._destinationGone()
+        for (const port of transferred) port._destinationGone(label)
       },
     )
   }
 
   /**
-   * The page is gone (`label` its last one): messages still waiting for it
-   * drop, the ports they carried and the ports that lived there close, and
-   * executeJavaScript() calls still waiting fail.
+   * The page at `label` ended: the webContents was destroyed, the page
+   * unloaded, its native window was replaced, or a view's window went away.
+   * The one place that cleans up after a page: ports that lived there or
+   * were on their way close, executeJavaScript() calls waiting for it fail
+   * (and their queued commands go). Other queued messages drop with a
+   * destroyed webContents and otherwise wait for the next page (`keepQueue`).
    */
-  _pageGone(label = this._label) {
-    for (const message of this._queue.splice(0)) for (const port of message.transferred ?? []) port._destinationGone()
+  _pageEnded(label = this._label, { keepQueue = false } = {}) {
+    this._page++
+    const kept = []
+    for (const message of this._queue.splice(0)) {
+      const execute = message.type === 'command' && message.name === 'execute'
+      if (keepQueue && !execute) kept.push(message)
+      else for (const port of message.transferred ?? []) port._destinationGone(label)
+    }
+    this._queue.push(...kept)
     closePortsAt(label)
-    this._failPending()
-  }
-
-  /** executeJavaScript() calls waiting for a page that is gone fail. */
-  _failPending() {
-    for (const { reject } of this._pending.values()) reject(new Error('Object has been destroyed'))
+    const reason = this.isDestroyed() ? 'Object has been destroyed' : 'The page was unloaded'
+    for (const { reject } of this._pending.values()) reject(new Error(reason))
     this._pending.clear()
   }
 
@@ -336,6 +344,7 @@ export class WebContents extends EventEmitter {
       }
       case 'unload':
         this._alive = false
+        this._pageEnded(this._label, { keepQueue: true })
         break
       case 'exec-result': {
         const pending = this._pending.get(data.id)
@@ -1014,6 +1023,8 @@ export class BrowserWindow extends EventEmitter {
   _createNative(url) {
     const generation = ++this._generation
     const label = `electron-window-${this.id}${generation > 1 ? `-${generation}` : ''}`
+    // Replacing the native window (a page without the bootstrap): its page ends.
+    if (this._label) this.webContents._pageEnded(this._label, { keepQueue: true })
     this._label = label
     this._creating = true
     contentsByLabel.set(label, this.webContents)
@@ -1108,7 +1119,7 @@ export class BrowserWindow extends EventEmitter {
     if (this._destroyed) return
     this._destroyed = true
     clearTimeout(this._syntheticLoad)
-    this.webContents._pageGone()
+    this.webContents._pageEnded()
     windows.delete(this.id)
     contentsById.delete(this.id)
     contentsByLabel.delete(this._label)

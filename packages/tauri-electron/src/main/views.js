@@ -32,7 +32,6 @@ import { BrowserWindow, WebContents, guests, fileToUrl, fileUrlToAppUrl } from '
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { registerTrustedRenderer, trustedRendererRegistered } from './trusted-origins.js'
-import { closePortsAt } from './message-ports.js'
 
 const FEATURE = 'child-webviews'
 
@@ -366,10 +365,9 @@ class GuestHost {
   _onWindowGone() {
     if (!this._native) return
     this._native = false
-    // Its page is gone; what is sent now waits for the page in the next window.
+    // Its page ended; what is sent now waits for the page in the next window.
     this.webContents._alive = false
-    closePortsAt(this._label)
-    this.webContents._failPending()
+    this.webContents._pageEnded(this._label, { keepQueue: true })
     guests.forgetLabel(this._label)
     native('set_window_config', { label: this._label, config: null }).catch(() => {})
     // A view can be put into another window: it reloads its page there.
@@ -435,7 +433,7 @@ class GuestHost {
       native('set_window_config', { label, config: null }).catch(() => {})
     }
     guests.unregister(this.webContents, label)
-    this.webContents._pageGone(label)
+    this.webContents._pageEnded(label)
     for (const waiter of this._loadWaiters.splice(0)) waiter.reject(new Error('The webContents was destroyed'))
     this.webContents.emit('destroyed', createEvent())
   }

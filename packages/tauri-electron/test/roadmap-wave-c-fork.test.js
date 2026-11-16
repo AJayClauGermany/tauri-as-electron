@@ -429,10 +429,10 @@ describe('utilityProcess.fork', () => {
     contents._pending = new Map([[1, { resolve: vi.fn(), reject: vi.fn() }]])
     const waiting = contents._pending.get(1)
     const peerClosed = once(pair.port2, 'close')
-    contents._pageGone()
+    contents._pageEnded()
     await peerClosed
     // executeJavaScript() calls still waiting fail.
-    expect(waiting.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'Object has been destroyed' }))
+    expect(waiting.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'The page was unloaded' }))
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })

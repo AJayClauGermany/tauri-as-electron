@@ -157,13 +157,13 @@ export class MessagePortMain extends EventEmitter {
    * The page this port was transferred to is gone, or the message carrying
    * it was never delivered: the port is gone, so its other end closes.
    */
-  _destinationGone() {
+  _destinationGone(goneLabel = this._transferred?.label) {
     if (!this._transferred || this._closed) return
     this._closed = true
     this._queue.length = 0
     if (this._entangled) this._entangled._onPeerClosed()
     // Not to the page that is gone itself.
-    if (this._remote && this._remote.label !== this._transferred.label) post(this._remote.label, { type: 'port-close', port: this._remote.id })
+    if (this._remote && this._remote.label !== goneLabel) post(this._remote.label, { type: 'port-close', port: this._remote.id })
     this._forget()
     this.emit('close')
   }
