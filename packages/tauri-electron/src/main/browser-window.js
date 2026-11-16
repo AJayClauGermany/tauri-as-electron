@@ -218,7 +218,7 @@ export class WebContents extends EventEmitter {
     this._loading = false
     this._queue = []
     this._pending = new Map()
-    this._page = 0 // counts the pages that ended (_pageEnded)
+    this._page = 0 // counts the pages gone for good (_pageEnded: destroyed, a view's window gone); not navigations
     this._nextRequest = 1
     this._css = new Map()
     this._windowOpenHandler = null
@@ -274,8 +274,9 @@ export class WebContents extends EventEmitter {
       },
       (error) => {
         report('webContents message')(error)
-        // Not sent: the page may still be there, so a port it gave us is told too.
-        for (const port of transferred) port._destinationGone(null)
+        // Not sent: unless the webContents is gone, its page may still be there, so a port it gave us is told too.
+        const goneLabel = this.isDestroyed() ? label : null
+        for (const port of transferred) port._destinationGone(goneLabel)
       },
     )
   }
@@ -292,8 +293,8 @@ export class WebContents extends EventEmitter {
   _pageEnded(label = this._label, { keepQueue = false } = {}) {
     this._page++
     this._alive = false
-    // Everything this page owned is taken first: listeners of the events
-    // below may send or execute again, for the next page.
+    // Everything this page owned is taken before any event below is emitted
+    // (their listeners may send or execute again, for the next page).
     const dropped = []
     const kept = []
     for (const message of this._queue.splice(0)) {
@@ -303,7 +304,7 @@ export class WebContents extends EventEmitter {
     }
     const pending = [...this._pending.values()]
     this._pending.clear()
-    this._queue.unshift(...kept)
+    this._queue.push(...kept)
     const reason = this.isDestroyed() ? 'Object has been destroyed' : 'The page was unloaded'
     for (const { reject } of pending) reject(new Error(reason))
     for (const message of dropped) for (const port of message.transferred ?? []) port._destinationGone(label)
@@ -312,6 +313,8 @@ export class WebContents extends EventEmitter {
 
   _postWhenAlive(message) {
     if (this._alive) this._post(message)
+    // Nothing will be sent for a destroyed webContents: its ports close.
+    else if (this.isDestroyed()) for (const port of message.transferred ?? []) port._destinationGone()
     else this._queue.push(message)
   }
 
