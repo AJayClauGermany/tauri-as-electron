@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{
     webview::cookie::{time::OffsetDateTime, Cookie, Expiration, SameSite},
-    Runtime, Url, WebviewWindow as Webview,
+    Runtime, Url, Webview,
 };
 
 /// A cookie as Electron reports it.

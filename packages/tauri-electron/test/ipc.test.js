@@ -96,6 +96,71 @@ describe('MessageChannelMain', () => {
     expect(() => transferPorts([port2], 'x')).toThrow()
   })
 
+  it('holds messages and a close for a transferred port until the message carrying it is sent', async () => {
+    emitted.length = 0
+    const { port1, port2 } = new MessageChannelMain()
+    const [id] = transferPorts([port2], 'electron-window-2', { deferQueue: true })
+    expect(() => transferPorts([port2], 'x')).toThrow(/neutered/)
+    port1.postMessage('waits')
+    await new Promise((r) => setTimeout(r, 5))
+    port1.close()
+    await new Promise((r) => setTimeout(r, 5))
+    expect(emitted.filter((e) => e.payload.port === id)).toEqual([])
+    port2._flushTransferred()
+    await new Promise((r) => setTimeout(r, 5))
+    const sent = emitted.filter((e) => e.payload.port === id).map((e) => e.payload.type)
+    expect(sent).toEqual(['port-message', 'port-close'])
+  })
+
+  it('webContents.postMessage before the page loads: ports go to the label the page has when the message is sent', async () => {
+    const { WebContents } = await import('../src/main/browser-window.js')
+    const win = { _label: 'electron-window-early' }
+    const contents = Object.assign(Object.create(WebContents.prototype), { _win: win, _queue: [], _alive: false, isDestroyed: () => false })
+    const { port1, port2 } = new MessageChannelMain()
+    contents.postMessage('port', 'hello', [port2])
+    port1.postMessage('waited')
+    await new Promise((r) => setTimeout(r, 5))
+    emitted.length = 0
+    // The page shows up under a new label (a replaced window), then the queued message goes.
+    win._label = 'electron-window-later'
+    await contents._post(contents._queue.shift())
+    await new Promise((r) => setTimeout(r, 5))
+    const kinds = emitted.map((e) => [e.label, e.payload.type])
+    expect(kinds).toEqual([['electron-window-later', 'send'], ['electron-window-later', 'port-message']])
+    expect(decode(emitted[1].payload.data)).toBe('waited')
+  })
+
+  it('closes the other end of a port whose message could not be sent, or whose page went away', async () => {
+    const { emitTo } = await import('@tauri-apps/api/event')
+    const { WebContents } = await import('../src/main/browser-window.js')
+    const { closePortsAt } = await import('../src/main/message-ports.js')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const contents = Object.assign(Object.create(WebContents.prototype), { _win: { _label: 'electron-window-gone' }, _queue: [], _alive: true, isDestroyed: () => false })
+    const failed = new MessageChannelMain()
+    emitTo.mockRejectedValueOnce(new Error('no such window'))
+    const closedAfterFailure = new Promise((resolve) => failed.port1.once('close', resolve))
+    contents.postMessage('port', null, [failed.port2])
+    await closedAfterFailure
+    // Delivered, then the page goes away: closePortsAt(label) closes the other end.
+    const delivered = new MessageChannelMain()
+    contents.postMessage('port', null, [delivered.port2])
+    await new Promise((r) => setTimeout(r, 5))
+    const closed = new Promise((resolve) => delivered.port1.once('close', resolve))
+    closePortsAt('electron-window-gone')
+    await closed
+    // On its way when the page ends (a view's window gone): closed, not counted as delivered.
+    Object.assign(contents, { _pending: new Map(), _page: 0 })
+    let release
+    emitTo.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+    const onTheWay = new MessageChannelMain()
+    contents.postMessage('port', null, [onTheWay.port2])
+    const closedOnTheWay = new Promise((resolve) => onTheWay.port1.once('close', resolve))
+    contents._pageEnded('electron-window-gone', { keepQueue: true })
+    release()
+    await closedOnTheWay
+    error.mockRestore()
+  })
+
   it('keeps port messages that reach the renderer before the port itself', async () => {
     const { ipcRenderer, onMessage } = await import('../src/renderer/ipc-renderer.js')
     const received = new Promise((resolve) => {

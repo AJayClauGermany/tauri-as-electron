@@ -8,6 +8,9 @@
 //   npm run smoke -- --electron   # run the same app on real Electron instead
 //                                 # (uses $ELECTRON_PATH or `npx electron`)
 //
+// $KITCHEN_SMOKE_BINARY runs that kitchen-sink binary instead of the one in
+// Cargo's target directory (with --no-build: a copy kept from an earlier build).
+//
 // Exit code is 1 if any check *failed*; "unsupported" checks are expected.
 // On Linux without a display it uses `xvfb-run` when available.
 import { spawn, execFileSync } from 'node:child_process'
@@ -32,6 +35,7 @@ function run(command, commandArgs, options = {}) {
 }
 
 function binaryPath() {
+  if (process.env.KITCHEN_SMOKE_BINARY) return path.resolve(process.env.KITCHEN_SMOKE_BINARY)
   const metadata = JSON.parse(execFileSync('cargo', ['metadata', '--format-version', '1', '--no-deps'], { cwd: path.join(root, 'src-tauri') }))
   const exe = process.platform === 'win32' ? 'kitchen-sink.exe' : 'kitchen-sink'
   return path.join(metadata.target_directory, 'debug', exe)
@@ -87,10 +91,13 @@ if (electron) {
 const useXvfb = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && hasCommand('xvfb-run')
 const [command, commandArgs] = useXvfb ? ['xvfb-run', ['-a', ...launch.flat()]] : launch
 console.log(`\n> ${command} ${commandArgs.join(' ')}`)
+// WebKitGTK's mock screens and cameras (tauri-plugin-electron): the screen-sharing
+// checks need no desktop portal and open no picker.
+const mockCapture = { TAURI_ELECTRON_MOCK_CAPTURE: process.env.TAURI_ELECTRON_MOCK_CAPTURE ?? '1' }
 const app = spawn(command, commandArgs, {
   cwd: root,
   stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, KITCHEN_SMOKE_URL: smokeUrl },
+  env: { ...process.env, ...mockCapture, KITCHEN_SMOKE_URL: smokeUrl },
 })
 // GTK prints a warning per menu accelerator it cannot bind on Xvfb; drop
 // that noise (and blank lines) so real errors stay visible.
@@ -108,7 +115,7 @@ const timeout = setTimeout(() => {
   console.error('Timed out waiting for the kitchen sink report')
   app.kill()
   process.exit(2)
-}, 360_000)
+}, 1_200_000) // well after the kitchen sink's own 900 s limit (src/main.js), which names the check
 
 const data = await report
 clearTimeout(timeout)

@@ -186,7 +186,7 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
 
 ## Wave C: structural, several sessions each
 
-- [ ] **C1. `<webview>` and `WebContentsView` / `BrowserView`** on Tauri
+- [x] **C1. `<webview>` and `WebContentsView` / `BrowserView`** on Tauri
   child webviews (`Window::add_child`, behind tauri's `unstable` feature):
   a `<webview>` custom element that keeps a child webview positioned over
   its box, a `webContents` for each child (IPC, `executeJavaScript`,
@@ -195,45 +195,55 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   `<webview>` (the core of Ferdium, Zulip, Wire, Rocket.Chat,
   Responsively) and 6 use views (the core of Mattermost). One feature
   behind five chat apps.* Effort L.
-- [ ] **C2. `worker_threads`** on Web Workers that load the Node layer
+  *Done (Linux verified; Windows / macOS compile-checked only): feature `child-webviews`, opt-in because it turns on Tauri's `unstable` (every window then uses Tauri's multi-webview mode). `View`, `WebContentsView`, `BrowserView`, `contentView` / `setContentView`, `setBrowserView` & co. are child webviews with a full webContents each (IPC, `executeJavaScript`, navigation events, partitions, downloads, permissions, `fromId` / `getAllWebContents`), created when a view joins a window's tree; Linux lays them in a `GtkOverlay` over the window's webview, as WebKitGTK multi-webview windows ignore bounds. `<webview>` (with `webviewTag`): an element upgraded by hand (`webview` is not a valid custom element name) whose guest the main process attaches (`will-attach-webview` with Electron's webPreferences rules, `did-attach-webview`) and the page keeps over the element's box through the bridge; methods, events, `ipc-message` from `sendToHost`. Remote pages are driven from Rust (`executeJavaScript` with JSON results, `reload`, history). Limits: views are native webviews over the page (page content cannot cover them, scrolling containers do not clip them, the embedder's zoom is ignored); stacking order changes apply on Linux only; `preload` attributes are ignored; remote guests get the preload and IPC only on trusted origins (C6, applied to views as to windows), so Ferdium's recipes, which run on any service's site, still lack them; no `did-fail-load` for network errors.*
+- [x] **C2. `worker_threads`** on Web Workers that load the Node layer
   (`Worker`, `parentPort`, `workerData`, `MessageChannel`, `isMainThread`).
   Needs the bridge to accept workers. *Apps 8.* Effort L.
-- [ ] **C3. `utilityProcess.fork` and `child_process.fork`.** A Node
+  *Done: a worker is a dedicated Web Worker of its window (main process or a nodeIntegration window) running one worker bundle per app (`bundler/worker-entry.js`): a dependency-free bootstrap receives the window's init message (`workerData`, env, argv, environment data, transferred ports), then the Node layer and the script load as lazy chunks. The bridge needed no change: WebKitGTK attributes a worker's synchronous requests to its window, so Rust's checks apply as for the window (a sandboxed window's worker gets 403); Tauri commands and their Channels are relayed by the window. The bundler plugins bundle the scripts found in `new Worker(...)` calls (static `__dirname` / `import.meta.url` / `require.resolve` paths) plus option `workers`; `eval: true` works. Node's `MessagePort` semantics, `process.exit`, uncaught errors, and an automatic exit once nothing tracked is pending. No SharedArrayBuffer / `Atomics.wait`, `resourceLimits` or `stdin`. Verified on Linux; Windows / macOS routing of worker requests unverified.*
+- [x] **C3. `utilityProcess.fork` and `child_process.fork`.** A Node
   sidecar (bundled runtime via `plugin-shell`), `MessagePortMain` bridged
   over stdio, `'ipc'` stdio for `fork`. *Apps 5 + 5 (VS Code, AFFiNE,
   Trilium, Beekeeper, Insomnia, Joplin, Logseq).* Effort L.
-- [ ] **C4. `vm`** contexts on iframe realms (feasibility verified in
+  *Done: the child is a real Node.js started through `child_process`'s spawn path (`node-child-process` feature) rather than `plugin-shell`, whose sidecar API cannot hand a child a socket: the `execPath` option, `$TAURI_ELECTRON_NODE`, a `<crate>-node` / `node` sidecar next to the executable (`bundle.externalBin`; `npx github:AJayClauGermany/tauri-as-electron --node-sidecar` sets it up) or, in debug builds, `node` on PATH. `child_process.fork` (also `spawn` with `'ipc'`, and `spawn(process.execPath)` with `ELECTRON_RUN_AS_NODE`) gets Node's own channel (`NODE_CHANNEL_FD` on a socketpair, `json` serialization); `utilityProcess` gets `process.parentPort` and `MessagePortMain`s (relayed by the main process, so main- and renderer-held ports both work) from a bootstrap loaded with `--require`, over a socket of the same kind. The bundler plugins find fork entries with static paths (option `fork` for others), bundle them for Node with `electron` mapped to a child module (`net`) and ship them in `<resources>/fork`. Not supported: `serialization: 'advanced'`, handles over `send()`, ports from the child back to the main process, native addons in bundled entries. Windows connects the child back over loopback TCP with a token (written, tested on Linux only); macOS not verified.*
+- [x] **C4. `vm`** contexts on iframe realms (feasibility verified in
   [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)): `runInNewContext`,
   `createContext`, `Script`. *Apps 10.* Effort M–L.
-- [ ] **C5. Shims for common native modules** through the bundler's
+  *Done: each context is a hidden same-origin iframe; the object's properties are live accessors on its global and created globals are copied back after each run; top-level `let` / `const` / `class` persist between runs like a Script's. `Script`, `runInThisContext`, `compileFunction` (`contextExtensions`, `parsingContext`), `isContext`, `DONT_CONTEXTIFY`. `timeout` / `breakOnSigint` are ignored (synchronous code cannot be interrupted), contexts also have the browser's globals, no contexts in worker threads, needs `'unsafe-eval'` under a CSP; vm modules unsupported.*
+- [x] **C5. Shims for common native modules** through the bundler's
   module aliases: `keytar` (on B3's keyring code; 6 apps), `better-sqlite3`
   / `sqlite3` (rusqlite; 5 apps), `node-pty` (portable-pty; 4 apps:
   Hyper, Tabby, VS Code, Bruno). Each M–L; `keytar` is S once B3 exists.
-- [ ] **C6. IPC and preloads for local-server pages.** Apps that start a
+  *Done: `tauri-electron/keytar`, `/better-sqlite3`, `/sqlite3`, `/node-pty`, aliased by both bundler plugins and `require()`, each behind an opt-in Cargo feature (`keytar`, `sqlite`, `pty`; listed commented out by the template, enabled by `--into` for the app's dependencies), for the main process and `nodeIntegration` windows. keytar stores entries where keytar does (Keychain generic passwords, Windows credentials `<service>/<account>`, Secret Service items with keytar's attributes, read through dbus-secret-service), so existing ones are found; `findCredentials` searches the keychain on each platform; without a Secret Service it rejects like keytar. better-sqlite3 is synchronous over the bridge on a rusqlite handle table (statements re-run through the statement cache, `iterate()` reads all rows first); `db.function()` is answered from a memo between runs of the statement (deterministic functions only), `aggregate` / `table` / `loadExtension` throw. sqlite3's callback API runs on the same table through a command, one operation at a time per database (no `'change'` event). node-pty spawns over the bridge (`pid` at once) and streams over a Channel; spawn failures throw. Databases and terminals close with the page that opened them. Verified on Linux (keytar only without a Secret Service); keytar and pty compile-checked for Windows, keytar for macOS (SQLite's C build was not cross-compiled).*
+- [x] **C6. IPC and preloads for local-server pages.** Apps that start a
   server and load `http://127.0.0.1:<port>` in their main window (SiYuan's
   kernel) get no IPC today ("remote pages have no IPC"). Allow an
   app-declared list of origins to receive the preload and the renderer
   capability. Effort M.
+  *Done: `plugins.electron.trustedOrigins` in tauri.conf.json (or `Builder::trusted_origin`), checked at startup: `http` and `*` ports on loopback hosts only, `https` on any host; `node: true` (loopback only) keeps a `nodeIntegration` window's Node built-ins there. The bundler plugins build the renderer modules and preloads as one classic script (`trustedOrigins` / `trustedPreload` options), which every window runs as an initialization script on those origins only, checked on every page load; Tauri grants them the renderer capability (`remote.urls`) and the synchronous bridge now answers only the app's own pages, its custom schemes and the trusted origins. The app's `src-tauri/Cargo.toml` needs `serde_json` once tauri.conf.json has a `plugins` section. Main frame only; Linux verified (Windows / macOS initialization scripts unverified); rspack development builds keep `eval` source maps in the script.*
 - [ ] **C7. `session.webRequest` applied.** Header and request rewriting
   for http(s) has no hook on WKWebView or WebKitGTK; WebView2 has
   `WebResourceRequested`. Options: Windows-only support, or rewriting only
   for custom schemes and `net.fetch`. Mostly used to relax CSP / CORS or
   set headers for remote pages. *Apps 18 (FreeTube depends on it to talk
   to YouTube).* Effort L, partial at best.
-- [ ] **C8. `printToPDF` and `capturePage`** per platform through
+  *Partly done: listeners apply wherever tauri-electron sees the request. `net.fetch` / `net.request` / `session.fetch`: every event (cancel, redirect, request and response header and `statusLine` rewrites; redirects are followed in JavaScript so onBeforeRedirect fires and each hop goes through onBeforeRequest; onCompleted when the body has been read). `protocol.handle()` schemes: every event around the handler (a redirect is served in place, a cancelled request gets an empty 403). http(s) requests of pages: Windows holds them in WebView2's `WebResourceRequested` (cancel, redirect, request headers; onResponseStarted / onCompleted reported; onHeadersReceived cannot apply); Linux only reports them (onSendHeaders, onBeforeRedirect, onResponseStarted, onCompleted, onErrorOccurred: WebKitGTK cannot change a request from the UI process); macOS reports nothing. A listener that could change a request is only called where its answer applies. So FreeTube's header rewrites of page requests work on Windows only (not verified there).*
+- [x] **C8. `printToPDF` and `capturePage`** per platform through
   `with_webview` (WKWebView `createPDF` / `takeSnapshot`, WebView2
   `PrintToPdf` / `CapturePreview`, WebKitGTK print operation to a file /
   `get_snapshot`). *Apps 7 and 5 (draw.io, Joplin, Zettlr, MarkText,
   SiYuan export PDFs).* Effort M–L.
-- [ ] **C9. Screen capture.** `desktopCapturer.getSources` and
+  *Done: `print_to_pdf` / `capture_page` commands (`src/capture.rs`), started on the main thread and finished in the webview's completion callback. Linux: a WebKitGTK print operation without a dialog to GTK's "Print to File" printer (paper size, `landscape`, margins, `scale`, `pageRanges`, `printBackground`) and a snapshot of the visible page (empty for a hidden window); Windows: `PrintToPdf` with `ICoreWebView2PrintSettings` (every option; `displayHeaderFooter` prints WebView2's own header and footer) and `CapturePreview`; macOS: `createPDF`, one page as tall as the content (no paper size, margins, orientation, scale or page ranges), and `takeSnapshot`. `headerTemplate` / `footerTemplate`, `preferCSSPageSize`, tagged PDFs and outlines are ignored (warned once); Electron < 21's microns, `marginsType` and `{ from, to }` page ranges are accepted. No new crates (the gtk, cairo, png, webview2-com, windows and objc2 versions Tauri already builds). Linux verified; Windows / macOS compile-checked only.*
+- [x] **C9. Screen capture.** `desktopCapturer.getSources` and
   `setDisplayMediaRequestHandler` for screen sharing; depends on each
   webview's `getDisplayMedia` support. *Apps 8 (the chat apps).* Effort L.
-- [ ] **C10. TLS and auth events.** `certificate-error`,
+  *Done, with the webviews' limits: `getSources` (feature `desktop-capturer`, on by default; `src/desktop_capturer.rs`) lists screens and windows with thumbnails and window icons through X11 on Linux (x11rb; under Wayland screens only, without thumbnails), GDI on Windows and CoreGraphics on macOS (no window icons). No webview lets the app pick the captured source: `getUserMedia({ chromeMediaSource: 'desktop' })` becomes `getDisplayMedia()` in app pages, so the webview's picker appears (the desktop portal with PipeWire on Linux, WebView2's on Windows, the system's on macOS), and that request is answered by the permission request handler (`'media'`). A page's `getDisplayMedia()` calls `setDisplayMediaRequestHandler` (Linux: WebKitGTK's display-device permission request; Windows: WebView2 `ScreenCaptureStarting` where the runtime has it, else WebView2 asks the user itself); without a handler it is denied, as in Electron; `callback({ video })` grants, the named source is not applied, `useSystemPicker` grants without the handler. macOS reports no screen-capture request (WebKit asks the user itself). BrowserWindows on Linux now have WebKitGTK's media-stream and WebRTC settings on (getUserMedia, getDisplayMedia, RTCPeerConnection), like every Electron page. `getMediaSourceId` stays unsupported; xcap was not used (it needs libpipewire to build). Linux verified with WebKit's mock capture devices (`TAURI_ELECTRON_MOCK_CAPTURE=1`, set by the smoke); a real capture needs a desktop portal. Windows / macOS compile-checked only.*
+- [x] **C10. TLS and auth events.** `certificate-error`,
   `setCertificateVerifyProc`, `select-client-certificate`, `login`
   (WebView2 `ServerCertificateErrorDetected` / `BasicAuthenticationRequested`,
   WebKitGTK `load-failed-with-tls-errors` / `authenticate`; WKWebView's
   navigation delegate belongs to wry). Mostly used to accept self-signed
   servers. *Apps 12 and 7.* Effort L.
+  *Done for Linux and Windows: `certificate-error` (webContents, then app; the session's `setCertificateVerifyProc` is asked first, but only about certificates the webview rejected), `login` (webContents, then app; cancelled without `preventDefault()`, as in Electron) and `select-client-certificate` (Windows only; the first certificate without `preventDefault()`). Linux: WebKitGTK `load-failed-with-tls-errors` (main frames; a trusted certificate is allowed for its host and the page loaded again) and `authenticate` (Basic, Digest, NTLM, Negotiate); Windows: WebView2 `ServerCertificateErrorDetected`, `BasicAuthenticationRequested`, `ClientCertificateRequested` (not verified). An untrusted certificate fails the load with `did-fail-load` (-202 & co.) and `loadURL()` rejects. macOS emits none of them (wry owns the WKNavigationDelegate). `net.request` emits `login` for Basic challenges; `net.fetch` does not consult `setCertificateVerifyProc`.*
 
 ## Leave as they are
 
@@ -253,6 +263,7 @@ or there is no Tauri equivalent:
 
 ## Already done
 
-Everything [TARGET-APPS.md](TARGET-APPS.md) lists as ✅, and Node layers 1–4
-([NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)). Of the 118 Electron APIs that
-at least 10 of the 30 apps use, 106 work today.
+Everything [TARGET-APPS.md](TARGET-APPS.md) lists as ✅, Node layers 1–4
+([NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)), and waves A, B and C above
+(C7 in part). Of the 118 Electron APIs that at least 10 of the 30 apps use,
+106 worked before wave C.

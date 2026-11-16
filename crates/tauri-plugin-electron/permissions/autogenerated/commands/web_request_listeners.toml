@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-web-request-listeners"
+description = "Enables the web_request_listeners command without any pre-configured scope."
+commands.allow = ["web_request_listeners"]
+
+[[permission]]
+identifier = "deny-web-request-listeners"
+description = "Denies the web_request_listeners command without any pre-configured scope."
+commands.deny = ["web_request_listeners"]

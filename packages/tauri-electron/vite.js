@@ -7,6 +7,8 @@
  * It
  *  - aliases `electron` (and `electron/main|renderer|common`) to tauri-electron,
  *    and `@electron/remote` (`/main`, `/renderer`) to its remote-module shim,
+ *    `keytar`, `better-sqlite3`, `sqlite3` and `node-pty` to versions on
+ *    tauri-plugin-electron's `keytar` / `sqlite` / `pty` features,
  *    and `path` / `node:path` to a browser-safe implementation,
  *  - aliases the Node built-ins it implements (`path`, `process`, `events`,
  *    `url`, `buffer`, `util`, `stream`, `crypto`, `http`, `zlib`, …, and `fs`,
@@ -32,18 +34,35 @@
  *  - makes `process.env` read the real environment (the main process gets it
  *    from tauri-plugin-electron) instead of Vite's empty object,
  *  - adds every root-level *.html file to the build inputs,
+ *  - when the app trusts origins it does not serve (tauri.conf.json
+ *    `plugins.electron.trustedOrigins`, e.g. a server it starts on loopback),
+ *    builds the same renderer modules into one classic script that
+ *    tauri-plugin-electron runs in those pages (`__tauri-electron/trusted-renderer.js`),
  *  - writes the custom schemes the app passes to `protocol.handle()` (and
  *    `registerSchemesAsPrivileged`) to `src-tauri/electron-schemes.json`,
  *    where `tauri_plugin_electron::bundled_schemes!()` reads them at build time,
+ *  - bundles the modules the app starts with `utilityProcess.fork()` /
+ *    `child_process.fork()` for Node.js (bundler/fork.cjs), with the child
+ *    bootstrap, into `node_modules/.tauri-electron/fork` (dev, rebuilt on
+ *    change) or `src-tauri/electron-resources/fork` (build),
  *  - in dev, forwards the hidden main window's console to the terminal (the
- *    window has no visible devtools; Electron devs expect main logs there).
+ *    window has no visible devtools; Electron devs expect main logs there),
+ *  - bundles `worker_threads` worker scripts (those it finds in
+ *    `new Worker(...)` calls and its `workers` option) into a Web Worker
+ *    that loads the Node layer first (bundler/worker-entry.js).
  */
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import shared from './bundler/shared.cjs'
+import forkShared from './bundler/fork.cjs'
+import { buildForks } from './bundler/fork-vite.js'
+import trusted from './bundler/trusted.cjs'
+import { buildTrustedRenderer } from './bundler/trusted-vite.js'
 
 // Shared with the webpack / rspack plugin (webpack.cjs).
-const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = shared
+const { TRUSTED_FILE, TRUSTED_URL, wantsTrustedRenderer, trustedPreloads } = trusted
+const { LOG_ENDPOINT, NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, rewritePathGlobals, mentionsPathGlobals, rewriteBuiltinRequires, mentionsRequire, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan, workerThreads, workerEntriesSource, rewriteWorkerUrls, mentionsWorkerThreads } = shared
 export { NODE_BUILTINS, NODE_SHIMS, rewritePathGlobals, rewriteBuiltinRequires }
 
 // Runs first in electron-main.html during dev. Kept dependency-free so it
@@ -76,12 +95,25 @@ const VIRTUAL = {
   main: 'virtual:tauri-electron/main', // Node built-ins, app files and require() for the main process
   renderer: 'virtual:tauri-electron/renderer', // require(), bootstrap, preload(s)
   rendererNode: 'virtual:tauri-electron/renderer-node', // Node built-ins for nodeIntegration windows
+  workers: 'virtual:tauri-electron/workers', // where worker_threads workers come from (bundler/worker-entry.js)
+  trusted: 'virtual:tauri-electron/trusted-renderer', // the renderer modules for pages of trusted origins
 }
 const RESOLVED = '\0'
 
 const NODE_BUILTIN_PREFIX = '\0tauri-electron:node:'
 
 const SOURCE_FILE = /\.(m?[jt]sx?|cjs|cts)$/
+
+// The worker_threads worker bundle and the module listing its scripts (see bundler/worker-entry.js).
+const BUNDLER_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'bundler')
+const WORKER_ENTRY = path.join(BUNDLER_DIR, 'worker-entry.js')
+const WORKER_ENTRIES = path.join(BUNDLER_DIR, 'worker-entries.js')
+
+/** bundler/worker-entries.js in dev: the dev server serves every project file, so import it by URL. */
+const DEV_WORKER_ENTRIES = `export default function loadEntry(path) {
+  return import(/* @vite-ignore */ new URL(path, self.location.origin).href)
+}
+`
 
 /**
  * Electron renderer pages load their scripts with plain `<script src>`; Vite
@@ -131,6 +163,19 @@ function virtualSrc(id, isDev) {
  * @param {boolean|'auto'} [options.rendererNode='auto'] Load the Node layer in renderer pages, for
  *   windows created with `nodeIntegration: true` or `sandbox: false` (installed only in those).
  *   `'auto'`: when the app depends on Electron < 20 or its sources mention either option.
+ * @param {boolean|string[]} [options.workers] worker_threads scripts to bundle besides those found
+ *   in `new Worker(...)` calls of the app's sources (project-relative paths); `true` builds the worker
+ *   runtime even when no source imports worker_threads (`eval: true` workers of dependencies);
+ *   `false`: no worker threads.
+ * @param {false|string[]} [options.fork] Modules started with `utilityProcess.fork()` /
+ *   `child_process.fork()` that the source scan cannot find (project-relative files), or
+ *   `false` to build none. Found: `fork(path.join(__dirname, 'worker.js'))` and similar static paths.
+ * @param {boolean|'auto'} [options.trustedOrigins='auto'] Build the renderer script that
+ *   tauri-plugin-electron runs in pages of the trusted origins (`plugins.electron.trustedOrigins`
+ *   in src-tauri/tauri.conf.json): `require()`, the bootstrap and the preloads as one classic
+ *   script. `'auto'`: when the Tauri configuration declares trusted origins.
+ * @param {string|string[]|false} [options.trustedPreload] The preload(s) of pages of trusted
+ *   origins, relative to the Vite root. Default: `preload`.
  * @param {false|string[]} [options.resources] App files `fs` can read in a build (staged in
  *   src-tauri/electron-resources/app/): `false` for none, or project-relative files and folders.
  *   Default: every project file except dependencies, src-tauri, build output, dot-files and
@@ -145,8 +190,24 @@ export default function tauriElectron(options = {}) {
   let outDir = 'dist'
   let libraryPreloads = []
   let withRendererNode = false
+  let workers = null // workerThreads(): { entries, aliases } when the app uses worker_threads
+  let workerType = 'classic'
+  let forkPlan = { entries: [], needed: false }
+  let forkDir = null
+  let forkWatcher = null
+  // The trusted-origins renderer script: built here (`withTrusted`), or this
+  // instance is the separate build of that script (`nested`).
+  const nested = options.__trustedRenderer ?? null
+  let withTrusted = false
+  let resolvedConfig = null
+  const trustedOptions = () => ({ plugin: tauriElectron, options: { ...options, rendererNode: withRendererNode }, entry: VIRTUAL.trusted, resolved: resolvedConfig, dev: isDev })
 
-  return {
+  /** The hooks worker bundles need (Vite builds them with their own plugin list). */
+  function workerPlugin() {
+    return { name: 'tauri-electron:worker', enforce: 'pre', resolveId: plugin.resolveId, load: plugin.load, transform: plugin.transform }
+  }
+
+  const plugin = {
     name: 'tauri-electron',
     enforce: 'pre',
 
@@ -163,6 +224,8 @@ export default function tauriElectron(options = {}) {
 
       const config = {
         resolve: { alias },
+        // Worker bundles run their own plugin pipeline: give them the hooks that resolve and load ours.
+        worker: { plugins: () => [workerPlugin()] },
         // Vite replaces a bare `process.env` with `{}`; Electron code expects
         // the real environment (filled in by tauri-electron's process shim).
         define: userConfig.define?.['process.env'] ? {} : { 'process.env': '(globalThis.process?.env ?? {})' },
@@ -172,7 +235,8 @@ export default function tauriElectron(options = {}) {
         build: {
           target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
           minify: !process.env.TAURI_ENV_DEBUG,
-          sourcemap: Boolean(process.env.TAURI_ENV_DEBUG),
+          // The trusted-origins script is one file: its map inline in development, none in a build.
+          sourcemap: nested ? (nested.dev ? 'inline' : false) : Boolean(process.env.TAURI_ENV_DEBUG),
         },
       }
 
@@ -196,19 +260,63 @@ export default function tauriElectron(options = {}) {
       const scan = lazySourceScan(root)
       withRendererNode = rendererNode(root, options.rendererNode, scan)
       isDev = resolved.command === 'serve'
+      // Not in the trusted-origins script: its pages are not on the app's origin, which serves the worker bundle.
+      workers = nested ? null : workerThreads(root, options.workers, scan)
+      workerType = isDev || resolved.worker?.format === 'es' ? 'module' : 'classic'
       outDir = resolved.build?.outDir ?? 'dist'
+      resolvedConfig = resolved
+      if (nested) return
+      withTrusted = wantsTrustedRenderer(root, options.trustedOrigins)
       // Custom schemes for tauri-plugin-electron, written before Cargo builds the app.
       const schemes = writeSchemes(root, options.schemes, scan)
       if (schemes?.length) resolved.logger?.info?.(`tauri-electron: custom schemes ${schemes.join(', ')} (src-tauri/electron-schemes.json)`)
+      // Fork entry points, bundled for Node.
+      forkPlan = forkShared.forkPlan(root, options.fork, scan)
+      forkDir = forkPlan.needed ? forkShared.forkOutDir(root, isDev) : null
+      if (forkPlan.needed && !forkDir) {
+        resolved.logger?.warn?.('tauri-electron: the app forks Node.js children, but src-tauri/electron-resources/ (mapped in tauri.conf.json "bundle.resources") is missing, so their modules are not shipped')
+      }
     },
 
-    buildStart() {
-      if (isDev) return
+    async buildStart() {
+      if (isDev || nested) return
       const staged = stageAppFiles(root, { resources: options.resources, exclude: [outDir] })
       if (staged !== null) this.info?.(`staged ${staged} app file(s) for fs in src-tauri/electron-resources/app`)
+      if (forkDir) {
+        await buildForks({ root, plan: forkPlan, outDir: forkDir, dev: false })
+        this.info?.(`built ${forkPlan.entries.length} fork entr${forkPlan.entries.length === 1 ? 'y' : 'ies'} for Node.js in ${path.relative(root, forkDir)}`)
+      }
     },
 
-    configureServer(server) {
+    async configureServer(server) {
+      // Fork entries are rebuilt on change; the first build is there before the app starts.
+      if (forkDir && !forkWatcher) {
+        forkWatcher = await buildForks({ root, plan: forkPlan, outDir: forkDir, dev: true, watch: true })
+        server.httpServer?.once('close', () => forkWatcher?.close())
+      }
+      if (withTrusted) {
+        // Built on request (the main process asks once it starts), again after a source change.
+        let pending = null
+        server.watcher?.on('change', (file) => {
+          if (!file.includes('node_modules')) pending = null
+        })
+        server.middlewares.use(TRUSTED_URL, (req, res) => {
+          pending ??= buildTrustedRenderer(trustedOptions())
+          pending.then(
+            (code) => {
+              res.setHeader('Content-Type', 'text/javascript')
+              res.setHeader('Cache-Control', 'no-store')
+              res.end(code)
+            },
+            (error) => {
+              pending = null
+              server.config.logger.error(`tauri-electron: trusted-origins renderer script: ${error?.stack ?? error}`)
+              res.statusCode = 500
+              res.end(String(error?.message ?? error))
+            },
+          )
+        })
+      }
       if (options.forwardMainConsole === false) return
       const colors = { error: '\x1b[31m', warn: '\x1b[33m' }
       server.middlewares.use(LOG_ENDPOINT, (req, res) => {
@@ -240,6 +348,8 @@ export default function tauriElectron(options = {}) {
     },
 
     load(id) {
+      // The worker bundle's list of worker scripts (bundler/worker-entry.js imports it).
+      if (toPosix(id.split('?')[0]) === toPosix(WORKER_ENTRIES)) return isDev ? DEV_WORKER_ENTRIES : workerEntriesSource(workers?.entries ?? [])
       if (id.startsWith(NODE_BUILTIN_PREFIX)) {
         const name = JSON.stringify(id.slice(NODE_BUILTIN_PREFIX.length))
         // Build: a CommonJS module, so `require('fs')`, `import fs from 'fs'`
@@ -254,16 +364,33 @@ export default function tauriElectron(options = {}) {
       if (!Object.values(VIRTUAL).includes(name)) return null
       const lines = []
       if (name === VIRTUAL.console) lines.push(CONSOLE_FORWARDER)
+      if (name === VIRTUAL.workers) {
+        // Vite bundles bundler/worker-entry.js as a Web Worker and gives its URL.
+        const entry = isDev ? `/@fs/${toPosix(WORKER_ENTRY).replace(/^\/+/, '')}` : toPosix(WORKER_ENTRY)
+        const registry = { type: workerType, entries: isDev ? null : (workers?.entries ?? []).map((e) => e.path), aliases: workers?.aliases ?? {}, dev: isDev }
+        lines.push(`import url from ${JSON.stringify(`${entry}?worker&url`)}`)
+        lines.push(`const registry = ${JSON.stringify(registry)}`)
+        lines.push(`if (!globalThis.__TAURI_ELECTRON_WORKERS__) globalThis.__TAURI_ELECTRON_WORKERS__ = { ...registry, url, create: (options) => new Worker(url, { ...options, type: registry.type }) }`)
+      }
       if (name === VIRTUAL.main) {
+        if (workers) lines.push(`import ${JSON.stringify(VIRTUAL.workers)}`)
         lines.push(`import 'tauri-electron/node'`)
         if (withRequire) lines.push(`import { installRequire } from 'tauri-electron/require'`, `installRequire({ moduleGlobals: true })`)
-        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
+        const config = appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads })
+        const fork = forkShared.forkManifest(forkPlan, { dev: isDev, outDir: forkDir })
+        if (fork) config.fork = fork
+        // Where the main process fetches the trusted-origins renderer script.
+        if (withTrusted) config.trustedRenderer = TRUSTED_URL
+        lines.push(`globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(config)}`)
       }
       if (name === VIRTUAL.rendererNode) {
+        if (workers) lines.push(`import ${JSON.stringify(VIRTUAL.workers)}`)
         lines.push(`import { hasNode } from 'tauri-electron/renderer-node'`)
-        lines.push(`if (hasNode && !globalThis.__TAURI_ELECTRON_APP__) globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: isDev, sessionPreloads: libraryPreloads }))}`)
+        lines.push(`if (hasNode && !globalThis.__TAURI_ELECTRON_APP__) globalThis.__TAURI_ELECTRON_APP__ = ${JSON.stringify(appFilesConfig(root, { dev: nested ? nested.dev : isDev, sessionPreloads: libraryPreloads }))}`)
       }
-      if (name === VIRTUAL.renderer) {
+      if (name === VIRTUAL.renderer || name === VIRTUAL.trusted) {
+        // The trusted-origins script starts like a renderer page, with its own preloads.
+        const pagePreloads = name === VIRTUAL.trusted ? trustedPreloads(options.trustedPreload, preloads) : preloads
         if (withRequire) lines.push(`import 'tauri-electron/require'`)
         lines.push(`import 'tauri-electron/renderer-bootstrap'`)
         // Before the preloads, which may require('fs') at the top.
@@ -273,7 +400,7 @@ export default function tauriElectron(options = {}) {
           const id = preload.file ? (isDev ? `/@fs/${toPosix(preload.id).replace(/^\/+/, '')}` : toPosix(preload.id)) : preload.id
           lines.push(`import ${JSON.stringify(id)}`)
         }
-        for (const preload of preloads) lines.push(`import ${JSON.stringify('/' + toPosix(preload).replace(/^\/+/, ''))}`)
+        for (const preload of pagePreloads) lines.push(`import ${JSON.stringify('/' + toPosix(preload).replace(/^\/+/, ''))}`)
       }
       return lines.join('\n') + '\n'
     },
@@ -287,11 +414,21 @@ export default function tauriElectron(options = {}) {
       if (!isDev && mentionsRequire(result) && !file.includes('/tauri-electron/') && !file.includes('/packages/tauri-electron/')) {
         result = rewriteBuiltinRequires(result)
       }
+      // new Worker(new URL('./w.js', import.meta.url)) → the script's project path (before Vite makes it a Web Worker).
+      if (!file.includes('/node_modules/') && file.startsWith(root) && mentionsWorkerThreads(result)) {
+        result = rewriteWorkerUrls(result, file, root)
+      }
       if (!file.includes('/node_modules/') && file.startsWith(root) && mentionsPathGlobals(result)) {
         const relative = '/' + toPosix(path.relative(root, file))
         result = rewritePathGlobals(result, path.posix.dirname(relative), relative)
       }
       return result === code ? null : { code: result, map: null }
+    },
+
+    async generateBundle() {
+      if (!withTrusted || isDev) return
+      const code = await buildTrustedRenderer(trustedOptions())
+      this.emitFile({ type: 'asset', fileName: TRUSTED_FILE, source: code })
     },
 
     transformIndexHtml: {
@@ -310,4 +447,5 @@ export default function tauriElectron(options = {}) {
       },
     },
   }
+  return plugin
 }

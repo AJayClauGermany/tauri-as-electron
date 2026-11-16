@@ -271,14 +271,14 @@ and Tauri commands (async variants). "Plugin" means an official Tauri plugin.
 | `crypto` | JS first, Rust if needed | `randomBytes`, `randomUUID`, `getRandomValues`, `webcrypto`, `subtle` from Web Crypto. `createHash` / `createHmac` are synchronous and Web Crypto is async, so use a pure-JS hash library (`@noble/hashes`). Ciphers, `pbkdf2Sync`, `scryptSync`, key pairs: Rust later, on demand. |
 | `os` | Rust (+ `plugin-os`, already a dependency) | Fetch once at startup next to `process_info` and serve synchronously from the cache: `platform`, `arch`, `type`, `release`, `version`, `hostname`, `homedir`, `tmpdir`, `EOL`, `endianness`, `userInfo`. `cpus`, `totalmem`, `freemem`, `networkInterfaces`, `loadavg`, `uptime` need a Rust command (`sysinfo` crate) or stay unsupported at first. |
 | `fs`, `fs/promises` | Rust | The proof of concept. Section 6. Do not build it on `@tauri-apps/plugin-fs`: that plugin is async-only and scope-restricted, and one Rust implementation behind both the sync and async variants keeps their behaviour and errors identical. |
-| `child_process` | Rust | `execSync`, `spawnSync`, `execFileSync` over the bridge on a worker thread. `spawn` / `exec` / `execFile` over a command plus a Tauri `Channel` for stdout / stderr / exit. Do not build it on `plugin-shell`: its scope model requires every command to be declared ahead of time. `fork()` stays unsupported (it needs Node). |
+| `child_process` | Rust | `execSync`, `spawnSync`, `execFileSync` over the bridge on a worker thread. `spawn` / `exec` / `execFile` over a command plus a Tauri `Channel` for stdout / stderr / exit. Do not build it on `plugin-shell`: its scope model requires every command to be declared ahead of time. `fork()` runs on a Node.js sidecar the app ships (roadmap C3). |
 | `http`, `https` (client) | JS over `plugin-http` | `net.request` in `src/main/net.js` already implements `ClientRequest` / `IncomingMessage`; `http.request` / `http.get` can wrap it. |
 | `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust sockets, JS protocols | No official plugin. One handle table with event channels in Rust; the HTTP server is JavaScript on top of `net` (done in layer 4). |
 | `readline` | JS, partial | Only `createInterface({ input: stream })` line splitting. No terminal. |
-| `worker_threads` | JS, partial, late | A partial adapter over Web Workers (section 4.2). Different semantics: no shared `require`, no worker script loaded from a real file path. Until then keep the stub with its hint. |
+| `worker_threads` | JS, partial (done: roadmap C2) | An adapter over Web Workers (section 4.2). Different semantics: no shared `require`, worker scripts are bundled ahead of time. See API-COVERAGE.md. |
 | `module` | JS, partial | `createRequire` returning `requireShim`, `builtinModules`. |
 | `constants` | JS | Static tables (`fs.constants`, `os.constants`). |
-| `vm` | JS, partial, late | A hidden iframe as the separate context (section 4.2). |
+| `vm` | JS, partial (done: roadmap C4) | A hidden iframe as the separate context (section 4.2). See API-COVERAGE.md. |
 | `v8` | JS, partial, late | Small stubs for commonly called functions (`getHeapStatistics`, `serialize` / `deserialize` via structured clone). |
 | `wasi` | JS, late | The webview runs WebAssembly; a JS WASI layer on top of `fs`. Low priority. |
 | `cluster`, `repl`, `inspector`, `trace_events` | Unsupported | Need Node or the engine itself (section 4.2). Keep the stubs. |
@@ -361,7 +361,7 @@ relevant layer lands:
 | Electron APIs marked unavailable only because there is no `fs` (`protocol.registerFileProtocol`, `registerStreamProtocol`, `webContents.downloadURL`, `session` downloads; see [API-COVERAGE.md](API-COVERAGE.md)) | Become implementable after layer 1. Separate, Electron-side work; update API-COVERAGE when done. |
 | `original-fs` (Electron's `fs` without asar patching) | Alias it to the `fs` shim in `NODE_SHIMS` and `requireShim`. Do this with layer 1. |
 | Transparent reads inside `app.asar` | Covered by the resource mapping in section 8.1. |
-| `child_process.fork()`, `utilityProcess.fork()` | Both start another Node process from Electron's binary. Stay unsupported without an embedded runtime (section 4.2). |
+| `child_process.fork()`, `utilityProcess.fork()` | Both start another Node process from Electron's binary. Done in roadmap C3 as the opt-in of section 4.2: they run on a Node.js the app ships as a sidecar (`node` on PATH in development); tauri-electron itself still bundles none. |
 | Renderers created with `nodeIntegration: true` | Native-backed modules need an explicit per-window grant recorded in Rust (section 8.5). The wiring is not designed yet. |
 | `process` extras Electron adds (`resourcesPath`, `type`, `versions`) | Already provided by the `process` shim. |
 

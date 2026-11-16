@@ -117,7 +117,7 @@ app.whenReady().then(() => {
       const last = lastProgress ? ` (last: ${lastProgress.status} ${lastProgress.id})` : ''
       await postSmoke({ error: `timed out waiting for the renderer report${last}` })
       app.exit(1)
-    }, 300_000)
+    }, 900_000) // CI runners take ~5 s per check that opens a window
   }
 })
 

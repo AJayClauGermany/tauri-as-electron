@@ -24,11 +24,13 @@ import { platform } from '../process.js'
 import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
-import { transferPorts } from './message-ports.js'
+import { transferPorts, closePortsAt } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
 import { downloadURL } from './downloads.js'
+import { printToPDF, capturePage } from './capture.js'
+import { trustedOriginOf, registerTrustedRenderer, trustedRendererRegistered } from './trusted-origins.js'
 
 const windows = new Map()
 
@@ -75,7 +77,10 @@ export function fileUrlToAppUrl(url) {
   return fileToUrl(decodeURIComponent(parsed.pathname)) + parsed.search + parsed.hash
 }
 
-/** URLs served by our own frontend get the renderer bootstrap; remote pages do not. */
+/**
+ * URLs served by our own frontend get the renderer bootstrap; remote pages do
+ * not, except those of trusted origins (see `BrowserWindow#_hasBootstrap`).
+ */
 function isAppUrl(url) {
   if (!SCHEME.test(url)) return true
   return typeof location !== 'undefined' && url.startsWith(location.origin)
@@ -213,6 +218,7 @@ export class WebContents extends EventEmitter {
     this._loading = false
     this._queue = []
     this._pending = new Map()
+    this._page = 0 // counts the pages gone for good (_pageEnded: destroyed, a view's window gone); not navigations
     this._nextRequest = 1
     this._css = new Map()
     this._windowOpenHandler = null
@@ -252,15 +258,63 @@ export class WebContents extends EventEmitter {
   }
 
   _post(message) {
-    if (message.transfer) {
-      const { transfer, ...rest } = message
-      message = { ...rest, ports: transferPorts(transfer, this._label) }
+    const { transferred, ...rest } = message
+    const label = this._label
+    const page = this._page
+    if (transferred) rest.ports = transferred.map((port) => port._transferred.id)
+    const sent = emitTo(label, TO_RENDERER, { ...rest, to: label })
+    if (!transferred) return sent.catch(report('webContents message'))
+    // The ports postMessage() transferred live at `label` now; what reached
+    // them meanwhile goes after this message, which creates them there.
+    return sent.then(
+      () => {
+        // The page ended while the message was on its way: the ports went with it.
+        const gone = this.isDestroyed() || this._page !== page
+        for (const port of transferred) gone ? port._destinationGone(label) : port._flushTransferred(label)
+      },
+      (error) => {
+        report('webContents message')(error)
+        // Not sent: unless the webContents is gone, its page may still be there, so a port it gave us is told too.
+        const goneLabel = this.isDestroyed() ? label : null
+        for (const port of transferred) port._destinationGone(goneLabel)
+      },
+    )
+  }
+
+  /**
+   * The page at `label` is gone for good: the webContents was destroyed, or
+   * a view's window went away (the view gets a new page in its next window).
+   * Ports that lived there or were on their way close, executeJavaScript()
+   * calls waiting for it fail and their queued commands go. Other queued
+   * messages drop with a destroyed webContents, and otherwise
+   * (`keepQueue`) wait for the next page. (Navigations and reloads keep
+   * their behaviour: what was sent for the next page waits for it.)
+   */
+  _pageEnded(label = this._label, { keepQueue = false } = {}) {
+    this._page++
+    this._alive = false
+    // Everything this page owned is taken before any event below is emitted
+    // (their listeners may send or execute again, for the next page).
+    const dropped = []
+    const kept = []
+    for (const message of this._queue.splice(0)) {
+      const execute = message.type === 'command' && message.name === 'execute'
+      if (keepQueue && !execute) kept.push(message)
+      else dropped.push(message)
     }
-    return emitTo(this._label, TO_RENDERER, { ...message, to: this._label }).catch(report('webContents message'))
+    const pending = [...this._pending.values()]
+    this._pending.clear()
+    this._queue.push(...kept)
+    const reason = this.isDestroyed() ? 'Object has been destroyed' : 'The page was unloaded'
+    for (const { reject } of pending) reject(new Error(reason))
+    for (const message of dropped) for (const port of message.transferred ?? []) port._destinationGone(label)
+    closePortsAt(label)
   }
 
   _postWhenAlive(message) {
     if (this._alive) this._post(message)
+    // Nothing will be sent for a destroyed webContents: its ports close.
+    else if (this.isDestroyed()) for (const port of message.transferred ?? []) port._destinationGone()
     else this._queue.push(message)
   }
 
@@ -350,6 +404,13 @@ export class WebContents extends EventEmitter {
       case 'drop-files':
         // Files dropped on the page (paths from Tauri's drag & drop event).
         break
+      case 'webview-attach':
+      case 'webview-detach':
+      case 'webview-call':
+      case 'guest-close':
+        // <webview> elements of this page, window.close() in a guest (./views.js).
+        bus.emit('guest-lifecycle', this, name, data)
+        break
     }
   }
 
@@ -366,7 +427,12 @@ export class WebContents extends EventEmitter {
     this._url = url
     this.navigationHistory._onNavigate(url, this._title)
     this.emit('did-navigate', createEvent({ url }), url, 200, 'OK')
-    if (!isAppUrl(url) || url === 'about:blank') this._win._onDidFinishLoad(true)
+    if (!this._win._hasBootstrap(url)) {
+      // Nothing to talk to on this page (the last one's `unload` can be lost
+      // while it goes away): loadURL() replaces the window instead.
+      this._alive = false
+      this._win._onDidFinishLoad(true)
+    }
     this.emit('did-stop-loading', createEvent())
   }
 
@@ -415,11 +481,16 @@ export class WebContents extends EventEmitter {
   /** Transfers MessagePortMain objects; the page receives DOM MessagePorts in event.ports. */
   postMessage(channel, message, transfer = []) {
     if (this.isDestroyed()) throw new Error('Object has been destroyed')
-    this._postWhenAlive({ type: 'send', channel: String(channel), args: encode([message]), transfer })
+    const args = encode([message])
+    // Transferred (neutered) now, as in Electron, even if the message waits
+    // for the page; the label is the page's when the message is sent.
+    const ports = transferPorts(transfer, null, { deferQueue: true })
+    this._postWhenAlive({ type: 'send', channel: String(channel), args, ...(ports ? { transferred: [...transfer] } : {}) })
   }
 
   /** Runs `code` in the page and resolves with the (structured-cloneable) result. */
   executeJavaScript(code, _userGesture) {
+    if (this.isDestroyed()) return Promise.reject(new Error('Object has been destroyed'))
     const id = this._nextRequest++
     const { promise, resolve, reject } = deferred()
     this._pending.set(id, { resolve, reject })
@@ -698,7 +769,7 @@ export class WebContents extends EventEmitter {
   startDrag() { warnOnce('startDrag', 'webContents.startDrag() is a no-op in tauri-electron.') }
   beginFrameSubscription() { throw new NotImplementedError('webContents.beginFrameSubscription', { reason: 'unsupported' }) }
   endFrameSubscription() {}
-  getMediaSourceId() { throw new NotImplementedError('webContents.getMediaSourceId', { reason: 'unsupported', hint: 'There is no desktopCapturer.' }) }
+  getMediaSourceId() { throw new NotImplementedError('webContents.getMediaSourceId', { reason: 'unsupported', hint: 'Sources cannot be chosen by the app: getUserMedia({ chromeMediaSource: \'desktop\' }) opens the webview\'s screen picker.' }) }
 
   /** Single native process: the app's pid (from tauri-plugin-electron). */
   getOSProcessId() {
@@ -709,12 +780,14 @@ export class WebContents extends EventEmitter {
     return this.id
   }
 
-  capturePage() {
-    return Promise.reject(new NotImplementedError('webContents.capturePage', { reason: 'unsupported', hint: 'Tauri exposes no page capture; render to a canvas inside the page instead.' }))
+  /** The visible page as a NativeImage (./capture.js). */
+  capturePage(rect, opts) {
+    return capturePage(this, rect, opts)
   }
 
-  printToPDF() {
-    return Promise.reject(new NotImplementedError('webContents.printToPDF', { reason: 'unsupported', hint: 'Use webContents.print(); the system print dialog can save a PDF.' }))
+  /** A PDF of the page (./capture.js). */
+  printToPDF(options) {
+    return printToPDF(this, options)
   }
 
   savePage() {
@@ -741,6 +814,27 @@ export const webContents = {
 
 export function webContentsFromLabel(label) {
   return contentsByLabel.get(label)
+}
+
+/**
+ * For ./views.js: the webContents of views and `<webview>` guests share the
+ * ids, IPC routing (by webview label) and page-load events of windows.
+ */
+export const guests = {
+  nextId: () => nextId++,
+  all: () => [...contentsById.values()],
+  register(contents, label) {
+    contentsById.set(contents.id, contents)
+    contentsByLabel.set(label, contents)
+  },
+  forgetLabel(label) {
+    contentsByLabel.delete(label)
+  },
+  unregister(contents, label) {
+    contentsById.delete(contents.id)
+    if (label && contentsByLabel.get(label) === contents) contentsByLabel.delete(label)
+  },
+  absoluteAppUrl: (url) => absoluteAppUrl(url),
 }
 
 /** webFrameMain module: only main frames exist in tauri-electron. */
@@ -918,6 +1012,8 @@ export class BrowserWindow extends EventEmitter {
       node,
       zoomFactor: this.webContents._zoomFactor,
       titleBarOverlay: this._titleBarOverlayConfig(),
+      // The page may use <webview> (./views.js, ../renderer/webview-tag.js).
+      webviewTag: Boolean(prefs.webviewTag),
     }
   }
 
@@ -943,8 +1039,10 @@ export class BrowserWindow extends EventEmitter {
     url = toNativeSchemeUrl(url)
     this.webContents._url = url
     this.webContents._alive = false
+    // With trusted origins, the renderer script for their pages is handed to
+    // tauri-plugin-electron before the first window is created.
     const configured = hasNativePlugin()
-      ? native('set_window_config', { label, config: this._rendererConfig() }).catch(report('window config'))
+      ? Promise.all([native('set_window_config', { label, config: this._rendererConfig() }).catch(report('window config')), registerTrustedRenderer()])
       : Promise.resolve()
     configured.then(() => {
       if (this._destroyed || this._label !== label) return
@@ -953,10 +1051,14 @@ export class BrowserWindow extends EventEmitter {
   }
 
   _spawnNative(label, url) {
+    // Created with the trusted origins' renderer script (an initialization script).
+    this._trustedRenderer = trustedRendererRegistered()
     const native = createWebviewWindow(label, this._nativeOptions(url), {
       permissionHandler: typeof this._session?._handlers?.permissionRequest === 'function',
       // The session chose its proxy (setProxy), so a window without one goes direct.
       proxyConfigured: Boolean(this._session?._proxyConfigured),
+      // The session.webRequest events with a listener (http(s) requests of the page).
+      webRequest: this._session?.webRequest?._events?.() ?? [],
     })
     const previous = this._native
     this._native = native
@@ -976,7 +1078,7 @@ export class BrowserWindow extends EventEmitter {
       if (this.webContents._zoomFactor !== 1) native.setZoom(this.webContents._zoomFactor).catch(report('setZoom'))
       if (this._options.icon) this.setIcon(this._options.icon)
       if (!this._state.menuBarVisible) this._applyMenuBarVisibility()
-      if (!isAppUrl(url) || url === 'about:blank') {
+      if (!this._hasBootstrap(url)) {
         // No bootstrap in remote/blank pages: tauri-plugin-electron reports
         // the load; synthesize it if that does not happen in time.
         this._syntheticLoad = setTimeout(() => isCurrent() && this._onDidFinishLoad(true), hasNativePlugin() ? 3000 : 300)
@@ -1025,6 +1127,7 @@ export class BrowserWindow extends EventEmitter {
     if (this._destroyed) return
     this._destroyed = true
     clearTimeout(this._syntheticLoad)
+    this.webContents._pageEnded()
     windows.delete(this.id)
     contentsById.delete(this.id)
     contentsByLabel.delete(this._label)
@@ -1086,6 +1189,16 @@ export class BrowserWindow extends EventEmitter {
     }
   }
 
+  /**
+   * Whether a page at `url` runs the renderer bootstrap (and reports its
+   * lifecycle): the app's own pages, and pages of trusted origins in a window
+   * created with their renderer script.
+   */
+  _hasBootstrap(url) {
+    if (url === 'about:blank') return false
+    return isAppUrl(url) || (Boolean(this._trustedRenderer) && trustedOriginOf(url) !== null)
+  }
+
   _onDidFinishLoad(synthetic = false) {
     clearTimeout(this._syntheticLoad)
     if (synthetic) {
@@ -1116,9 +1229,15 @@ export class BrowserWindow extends EventEmitter {
     this._loadWaiters.push({ resolve, reject })
     if (!this._native && !this._creating) {
       this._createNative(url)
-    } else if (this.webContents._alive && isAppUrl(url)) {
+    } else if (this.webContents._alive && this._hasBootstrap(url)) {
       this.webContents._alive = false
       this.webContents._post({ type: 'command', name: 'navigate', url: absoluteAppUrl(url) })
+    } else if (this._hasViews?.()) {
+      // Child views live in this native window (./views.js): navigate it in place.
+      this.webContents._alive = false
+      native('view_navigate', { label: this._label, url: absoluteAppUrl(toNativeSchemeUrl(url)) }).catch((error) => {
+        for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
+      })
     } else {
       // The current page has no bootstrap (blank or remote), so it cannot
       // navigate itself: replace the native window, keeping its geometry.
@@ -1581,7 +1700,7 @@ export class BrowserWindow extends EventEmitter {
   invalidateShadow() {}
   setAccentColor() {}
   getAccentColor() { return '' }
-  getMediaSourceId() { throw new NotImplementedError('BrowserWindow.getMediaSourceId', { reason: 'unsupported', hint: 'There is no desktopCapturer.' }) }
+  getMediaSourceId() { throw new NotImplementedError('BrowserWindow.getMediaSourceId', { reason: 'unsupported', hint: 'Sources cannot be chosen by the app: getUserMedia({ chromeMediaSource: \'desktop\' }) opens the webview\'s screen picker.' }) }
 
   // --- menus ---------------------------------------------------------------------------
 
@@ -1662,8 +1781,8 @@ export class BrowserWindow extends EventEmitter {
     throw new NotImplementedError('BrowserWindow.getNativeWindowHandle', { reason: 'unsupported', hint: 'Native handles exist only in Rust (tauri::Window::hwnd / ns_window / gtk_window).' })
   }
 
-  capturePage() {
-    return this.webContents.capturePage()
+  capturePage(rect, opts) {
+    return this.webContents.capturePage(rect, opts)
   }
 
   // --- statics ------------------------------------------------------------------------------
@@ -1684,6 +1803,8 @@ export class BrowserWindow extends EventEmitter {
     return contents?._win ?? null
   }
 
+  // contentView, setBrowserView & co. come from ./views.js, which also
+  // extends fromWebContents and fromBrowserView to views.
   static fromBrowserView() {
     return null
   }

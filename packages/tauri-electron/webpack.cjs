@@ -28,12 +28,21 @@
  *    tauri-electron, the Node built-ins it implements (`path`, `fs`, `os`,
  *    `child_process`, `util`, `stream`, `crypto`, `http`, …) to its shims and
  *    other Node built-ins to stubs that throw a NotImplementedError naming the
- *    Tauri replacement when used (with or without `node:`),
+ *    Tauri replacement when used (with or without `node:`), and `keytar`,
+ *    `better-sqlite3`, `sqlite3`, `node-pty` to versions on
+ *    tauri-plugin-electron's `keytar` / `sqlite` / `pty` features,
  *  - tells `fs` where the app's own files are and, in production builds,
  *    stages them in `src-tauri/electron-resources/app/` when that folder
  *    exists (see the Vite plugin),
+ *  - when the app trusts origins it does not serve (tauri.conf.json
+ *    `plugins.electron.trustedOrigins`), builds the renderer modules and the
+ *    preloads into one classic script for those pages, in a child compilation
+ *    (`__tauri-electron/trusted-renderer.js`, see the Vite plugin),
  *  - rewrites `__dirname`, `__filename`, `import.meta.dirname|filename` and
  *    `fileURLToPath(import.meta.url)` in your source to project-relative paths,
+ *  - bundles the modules started with `utilityProcess.fork()` /
+ *    `child_process.fork()` for Node.js with a second compiler
+ *    (bundler/fork-webpack.cjs; see the Vite plugin),
  *  - in development (watch mode), prints the hidden main window's console in
  *    the terminal running the dev server.
  *
@@ -46,7 +55,10 @@ const fs = require('node:fs')
 const http = require('node:http')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
-const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan } = require('./bundler/shared.cjs')
+const { NODE_BUILTINS, NODE_SHIMS, PACKAGE_SHIMS, NATIVE_MODULE_SHIMS, LOG_ENDPOINT, appFilesConfig, stageAppFiles, sessionPreloads, writeSchemes, rendererNode, lazySourceScan, workerThreads } = require('./bundler/shared.cjs')
+const forkShared = require('./bundler/fork.cjs')
+const { forkWebpackConfig, runForkBuild } = require('./bundler/fork-webpack.cjs')
+const { TRUSTED_URL, wantsTrustedRenderer, trustedPreloads, addWebpackTrustedRenderer } = require('./bundler/trusted.cjs')
 
 const NAME = 'TauriElectronPlugin'
 const SRC = path.join(__dirname, 'src')
@@ -60,9 +72,12 @@ const MODULES = {
   mainEntry: path.join(BUNDLER, 'main-entry.js'),
   mainNode: path.join(BUNDLER, 'main-node.js'),
   rendererNode: path.join(BUNDLER, 'renderer-node.js'),
+  rendererWorkers: path.join(BUNDLER, 'renderer-workers.js'),
   consoleForwarder: path.join(BUNDLER, 'console-forwarder.js'),
   nodeBuiltin: path.join(BUNDLER, 'node-builtin.cjs'),
   pathGlobalsLoader: path.join(BUNDLER, 'path-globals-loader.cjs'),
+  workerEntries: path.join(BUNDLER, 'worker-entries.js'),
+  workerEntriesLoader: path.join(BUNDLER, 'worker-entries-loader.cjs'),
 }
 const SHIM_FILES = {
   'tauri-electron/path': path.join(SRC, 'path.js'),
@@ -109,9 +124,16 @@ const SHIM_FILES = {
   'tauri-electron/dgram': path.join(SRC, 'node', 'dgram.js'),
   'tauri-electron/dns': path.join(SRC, 'node', 'dns.js'),
   'tauri-electron/dns/promises': path.join(SRC, 'node', 'dns-promises.js'),
+  'tauri-electron/vm': path.join(SRC, 'node', 'vm.js'),
+  'tauri-electron/worker_threads': path.join(SRC, 'node', 'worker-threads.js'),
   'tauri-electron/remote': path.join(SRC, 'remote', 'index.js'),
   'tauri-electron/remote/renderer': path.join(SRC, 'remote', 'renderer.js'),
   'tauri-electron/remote/main': path.join(SRC, 'remote', 'main.js'),
+  // npm packages with native code (tauri-plugin-electron's keytar / sqlite / pty features).
+  'tauri-electron/keytar': path.join(SRC, 'native', 'keytar.js'),
+  'tauri-electron/better-sqlite3': path.join(BUNDLER, 'better-sqlite3.cjs'),
+  'tauri-electron/sqlite3': path.join(BUNDLER, 'sqlite3.cjs'),
+  'tauri-electron/node-pty': path.join(SRC, 'native', 'node-pty.js'),
 }
 
 const SOURCE_FILE = /\.(m?[jt]sx?|c[jt]s)$/
@@ -150,6 +172,8 @@ function requireFromProject(id, context) {
 function redirect(request, { aliasPath, userResolved }) {
   if (ELECTRON_REQUEST.test(request)) return MODULES.electron
   if (request === 'electron-updater' && !userResolved.has(request)) return MODULES.electronUpdater
+  // A project's own alias for a native module (a wasm SQLite, say) wins, as for electron-updater.
+  if (NATIVE_MODULE_SHIMS[request] && userResolved.has(request)) return null
   if (PACKAGE_SHIMS[request]) return SHIM_FILES[PACKAGE_SHIMS[request]]
   const bare = request.replace(/^node:/, '')
   if (userResolved.has(bare) || userResolved.has(request)) return null
@@ -212,6 +236,10 @@ class TauriElectronPlugin {
    * @param {false|string[]} [options.schemes] Extra custom schemes for src-tauri/electron-schemes.json (see the Vite plugin).
    * @param {false|string[]} [options.sessionPreloads] Library preloads registered at runtime (see the Vite plugin).
    * @param {boolean|'auto'} [options.rendererNode='auto'] Node built-ins for nodeIntegration windows (see the Vite plugin).
+   * @param {boolean|string[]} [options.workers] worker_threads scripts besides those found in the sources (see the Vite plugin).
+   * @param {false|string[]} [options.fork] Extra fork entry points, or `false` for none (see the Vite plugin).
+   * @param {boolean|'auto'} [options.trustedOrigins='auto'] Build the renderer script for pages of trusted origins (see the Vite plugin).
+   * @param {string|string[]|false} [options.trustedPreload] Their preload(s). Default: `preload` when it applies to every entry.
    */
   constructor(options = {}) {
     if (!options.main) throw new Error(`${NAME}: the \`main\` option (your Electron main script) is required`)
@@ -244,11 +272,12 @@ class TauriElectronPlugin {
     // rejects `node:` requests on web targets.
     const userResolved = userResolvedNames(config.resolve)
     const aliasPath = options.aliasPath
-    new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z_/-]+|@electron\/remote(?:\/(?:main|renderer))?)$/, (resource) => {
+    const replacement = () => new bundler.NormalModuleReplacementPlugin(/^(?:(node:)?[a-z0-9_/-]+|@electron\/remote(?:\/(?:main|renderer))?|(?:better-)?sqlite3)$/, (resource) => {
       if (typeof resource.request !== 'string') return
       const target = redirect(resource.request, { aliasPath, userResolved })
       if (target) resource.request = target
-    }).apply(compiler)
+    })
+    replacement().apply(compiler)
 
     // --- __dirname & co. in project source ------------------------------------------------------
     config.module ??= {}
@@ -277,7 +306,8 @@ class TauriElectronPlugin {
     const rendererPrefix = (name, page) => [
       ...(withRequire ? [MODULES.require] : []),
       MODULES.bootstrap,
-      ...(withRendererNode ? [MODULES.rendererNode] : []),
+      // worker_threads in nodeIntegration windows (left out by DefinePlugin when the app has no workers).
+      ...(withRendererNode ? [MODULES.rendererNode, MODULES.rendererWorkers] : []),
       ...libraryPreloads.map((preload) => preload.id),
       ...preloadsFor(name, page),
     ]
@@ -309,9 +339,50 @@ class TauriElectronPlugin {
     const entry = config.entry
     config.entry = typeof entry === 'function' ? async () => rewriteEntries(await entry()) : rewriteEntries(entry ?? {})
 
+    // --- fork entry points, bundled for Node by a second compiler ------------------------------
+    const forkPlan = forkShared.forkPlan(context, options.fork, scan)
+    const forkDir = forkPlan.needed ? forkShared.forkOutDir(context, dev) : null
+    const forkManifest = forkShared.forkManifest(forkPlan, { dev, outDir: forkDir })
+    if (forkDir) {
+      const forkConfig = (watching) => forkWebpackConfig({ context, plan: forkPlan, outDir: forkDir, dev: dev || watching, config, skipLoaders: [MODULES.pathGlobalsLoader] })
+      compiler.hooks.beforeRun.tapPromise(NAME, () => runForkBuild(bundler, forkConfig(false)))
+      let forkWatching = null
+      compiler.hooks.watchRun.tapPromise(NAME, async () => {
+        forkWatching ??= await runForkBuild(bundler, forkConfig(true), { watch: true })
+      })
+      compiler.hooks.watchClose.tap(NAME, () => forkWatching?.close(() => {}))
+    } else if (forkPlan.needed) {
+      console.warn(`${NAME}: the app forks Node.js children, but src-tauri/electron-resources/ (mapped in tauri.conf.json "bundle.resources") is missing, so their modules are not shipped`)
+    }
+
     // --- renderer pages from `pages` (Electron Forge entry points) ---------------------------
-    // Where the app's own files are, for fs (read by bundler/main-node.js).
-    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appFilesConfig(context, { dev, sessionPreloads: libraryPreloads })) }
+    // Where the app's own files are, for fs (read by bundler/main-node.js), and the fork entries.
+    const appConfig = appFilesConfig(context, { dev, sessionPreloads: libraryPreloads })
+    if (forkManifest) appConfig.fork = forkManifest
+    // --- the renderer script for pages of trusted origins (bundler/trusted.cjs) ------------------
+    if (wantsTrustedRenderer(context, options.trustedOrigins)) {
+      const common = options.preload && typeof options.preload === 'object' && !Array.isArray(options.preload) ? [] : toArray(options.preload)
+      const imports = [
+        ...(withRequire ? [MODULES.require] : []),
+        MODULES.bootstrap,
+        ...(withRendererNode ? [MODULES.rendererNode] : []),
+        ...libraryPreloads.map((preload) => preload.id),
+        ...trustedPreloads(options.trustedPreload, common).map(fromContext),
+      ]
+      // rspack's child compilations do not inherit these from the build; webpack's do.
+      addWebpackTrustedRenderer(compiler, bundler, imports, () => (compiler.rspack ? [replacement(), new bundler.DefinePlugin(definitions)] : []))
+      appConfig.trustedRenderer = TRUSTED_URL
+    }
+    const definitions = { __TAURI_ELECTRON_APP__: JSON.stringify(appConfig) }
+    // worker_threads: bundler/worker-registry.js starts bundler/worker-entry.js as a Web Worker,
+    // and the loader lists the worker scripts in its bundle (lazy chunks).
+    const workers = workerThreads(context, options.workers, scan)
+    definitions.__TAURI_ELECTRON_WORKERS__ = workers ? JSON.stringify({ entries: workers.entries.map((e) => e.path), aliases: workers.aliases, dev: false }) : 'false'
+    config.module.rules.push({
+      test: new RegExp(`^${MODULES.workerEntries.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`),
+      loader: MODULES.workerEntriesLoader,
+      options: { entries: workers?.entries ?? [] },
+    })
     const pageFile = (page) => page.filename ?? `${page.name}/index.html`
     for (const page of pages) {
       if (options.forgeGlobals !== false) {

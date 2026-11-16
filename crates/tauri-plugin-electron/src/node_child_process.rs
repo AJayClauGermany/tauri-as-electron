@@ -9,6 +9,11 @@
 //!   through a Tauri `Channel`; `child_write`, `child_end` and `child_kill`
 //!   act on the running process by id.
 //!
+//! - `fork` / `utilityProcess.fork` / an `'ipc'` stdio entry: the same
+//!   `spawn` with an IPC channel (`ipc`, see `node_fork.rs`), and `node: true`
+//!   to run the Node.js runtime; `child_send` / `child_disconnect` use the
+//!   channel.
+//!
 //! Shells are chosen by JavaScript (`/bin/sh -c`, `cmd.exe /d /s /c`), as
 //! Node does: Rust runs exactly the file and arguments it is given.
 
@@ -33,6 +38,7 @@ use serde_json::{json, Value};
 use tauri::ipc::Channel;
 
 use crate::node_common::NodeError;
+use crate::node_fork;
 
 const SIGTERM: i32 = 15;
 
@@ -57,6 +63,11 @@ pub struct SpawnOptions {
     pub gid: Option<u32>,
     pub windows_hide: bool,
     pub windows_verbatim_arguments: bool,
+    /// An IPC channel to the child (`fork`, `'ipc'` in `stdio`; async spawns only).
+    pub ipc: Option<node_fork::IpcOptions>,
+    /// `file` is the Node.js runtime (`execPath`, or empty for the default):
+    /// resolved with `node_fork::node_runtime` before spawning.
+    pub node: bool,
 }
 
 impl SpawnOptions {
@@ -347,6 +358,7 @@ struct Running {
     pid: u32,
     child: Mutex<Child>,
     stdin: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    ipc: Option<Arc<node_fork::Ipc>>,
 }
 
 /// The running children of `spawn`, by id. Managed as plugin state.
@@ -359,17 +371,30 @@ pub struct Children {
 impl Children {
     /// Start a child and stream its output and exit to `events`:
     /// `{ type: 'data', fd, data }` (base64), `{ type: 'end', fd }`,
-    /// `{ type: 'exit', code, signal }`. Returns `{ id, pid }`.
+    /// `{ type: 'exit', code, signal }`, and with `ipc` the channel's
+    /// `{ type: 'ipc', lines }` / `{ type: 'ipc-end' }`. Returns `{ id, pid }`.
     pub fn spawn(
         self: &Arc<Self>,
         options: &SpawnOptions,
         events: Channel<Value>,
     ) -> Result<Value, NodeError> {
-        let mut child = options
-            .command()
+        let mut command = options.command();
+        let pending = options
+            .ipc
+            .as_ref()
+            .map(|ipc| node_fork::prepare(&mut command, ipc))
+            .transpose()
+            .map_err(|e| options.spawn_error(&e, false))?;
+        let mut child = command
             .spawn()
             .map_err(|e| options.spawn_error(&e, false))?;
         let pid = child.id();
+        let ipc = pending.map(|pending| {
+            let events = events.clone();
+            pending.start(Arc::new(move |event| {
+                let _ = events.send(event);
+            }))
+        });
         let id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
 
         // stdin: writes are queued, so the command that delivers them never blocks.
@@ -422,6 +447,7 @@ impl Children {
             pid,
             child: Mutex::new(child),
             stdin: Mutex::new(stdin),
+            ipc,
         });
         self.table.lock().unwrap().insert(id, running.clone());
         let children = self.clone();
@@ -431,11 +457,20 @@ impl Children {
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
                 Ok(Some(status)) => {
                     let (code, signal) = exit_of(status);
+                    // The child's last messages before its exit, then the
+                    // channel is closed (a grandchild may still hold it).
+                    if let Some(ipc) = &running.ipc {
+                        ipc.wait_closed(Duration::from_millis(250));
+                        ipc.child_exited();
+                    }
                     children.table.lock().unwrap().remove(&id);
                     let _ = events.send(json!({ "type": "exit", "code": code, "signal": signal }));
                     break;
                 }
                 Err(_) => {
+                    if let Some(ipc) = &running.ipc {
+                        ipc.child_exited();
+                    }
                     children.table.lock().unwrap().remove(&id);
                     let _ = events.send(
                         json!({ "type": "exit", "code": Value::Null, "signal": Value::Null }),
@@ -469,6 +504,20 @@ impl Children {
     pub fn end(&self, id: u32) {
         if let Some(running) = self.get(id) {
             running.stdin.lock().unwrap().take();
+        }
+    }
+
+    /// Queue a JSON line for the child's IPC channel. False once it is closed.
+    pub fn send(&self, id: u32, data: Vec<u8>) -> bool {
+        self.get(id)
+            .and_then(|running| running.ipc.as_ref().map(|ipc| ipc.send(data)))
+            .unwrap_or(false)
+    }
+
+    /// `subprocess.disconnect()`: close the IPC channel after queued messages.
+    pub fn disconnect(&self, id: u32) {
+        if let Some(ipc) = self.get(id).and_then(|running| running.ipc.clone()) {
+            ipc.disconnect();
         }
     }
 

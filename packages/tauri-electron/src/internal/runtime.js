@@ -21,8 +21,16 @@ export function currentLabel() {
     window.__TAURI_INTERNALS__.metadata?.currentWindow?.label ?? null
 }
 
-export const isMainProcess = currentLabel() === MAIN_LABEL
-export const isRenderer = inTauri && !isMainProcess
+/**
+ * A `worker_threads` worker (a dedicated Web Worker with the Node layer): it
+ * runs Node code for its window but is neither the main process nor a
+ * renderer, so Electron's modules stay inert there, as in Electron's workers.
+ */
+export const inWorker =
+  typeof WorkerGlobalScope !== 'undefined' && typeof self !== 'undefined' && self instanceof WorkerGlobalScope
+
+export const isMainProcess = !inWorker && currentLabel() === MAIN_LABEL
+export const isRenderer = inTauri && !inWorker && !isMainProcess
 
 export function deferred() {
   let resolve
@@ -134,5 +142,6 @@ export function deserializeError(data) {
 /** Whether the app is running from a production bundle (not the dev server). */
 export function isPackagedBuild() {
   if (typeof location === 'undefined') return false
-  return location.protocol === 'tauri:' || location.hostname === 'tauri.localhost'
+  // tauri://localhost, or http(s)://tauri.localhost on Windows (never with a port).
+  return location.protocol === 'tauri:' || (location.hostname === 'tauri.localhost' && !location.port)
 }
