@@ -130,6 +130,27 @@ describe('MessageChannelMain', () => {
     expect(decode(emitted[1].payload.data)).toBe('waited')
   })
 
+  it('closes the other end of a port whose message could not be sent, or whose page went away', async () => {
+    const { emitTo } = await import('@tauri-apps/api/event')
+    const { WebContents } = await import('../src/main/browser-window.js')
+    const { closePortsAt } = await import('../src/main/message-ports.js')
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const contents = Object.assign(Object.create(WebContents.prototype), { _win: { _label: 'electron-window-gone' }, _queue: [], _alive: true, isDestroyed: () => false })
+    const failed = new MessageChannelMain()
+    emitTo.mockRejectedValueOnce(new Error('no such window'))
+    const closedAfterFailure = new Promise((resolve) => failed.port1.once('close', resolve))
+    contents.postMessage('port', null, [failed.port2])
+    await closedAfterFailure
+    // Delivered, then the page goes away: closePortsAt(label) closes the other end.
+    const delivered = new MessageChannelMain()
+    contents.postMessage('port', null, [delivered.port2])
+    await new Promise((r) => setTimeout(r, 5))
+    const closed = new Promise((resolve) => delivered.port1.once('close', resolve))
+    closePortsAt('electron-window-gone')
+    await closed
+    error.mockRestore()
+  })
+
   it('keeps port messages that reach the renderer before the port itself', async () => {
     const { ipcRenderer, onMessage } = await import('../src/renderer/ipc-renderer.js')
     const received = new Promise((resolve) => {

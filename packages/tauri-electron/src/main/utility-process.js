@@ -29,7 +29,7 @@ import { encode, decode } from '../internal/serialize.js'
 import { signalNumber } from '../internal/signals.js'
 import { bootstrapFile, childEnv, nodeArgs, parseLine, resolveModule } from '../internal/fork.js'
 import { startNodeChild } from '../node/child-process.js'
-import { checkTransferList, onRendererPortMessage, registerPortSink } from './message-ports.js'
+import { checkTransferList, transferPorts, onRendererPortMessage, registerPortSink } from './message-ports.js'
 
 const STDIO = new Set(['pipe', 'ignore', 'inherit'])
 let nextLabel = 1
@@ -131,7 +131,7 @@ export class UtilityProcess extends EventEmitter {
     const data = encode(message)
     if (this._exited) return
     // The 'm' line creates the ports in the child, so it goes before their queued messages.
-    const ids = transfer.map((port) => port._transferTo(this._label, { deferQueue: true }))
+    const ids = transferPorts(transfer, this._label, { deferQueue: true }) ?? []
     for (const id of ids) this._ports.add(id)
     this._write({ t: 'm', d: data, p: ids })
     for (const port of transfer) port._flushTransferred()

@@ -24,7 +24,7 @@ import { platform } from '../process.js'
 import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
-import { transferPorts } from './message-ports.js'
+import { transferPorts, closePortsAt } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
@@ -259,6 +259,7 @@ export class WebContents extends EventEmitter {
   _post(message) {
     const { transferred, ...rest } = message
     const label = this._label
+    if (transferred) rest.ports = transferred.map((port) => port._transferred.id)
     const sent = emitTo(label, TO_RENDERER, { ...rest, to: label })
     if (!transferred) return sent.catch(report('webContents message'))
     // The ports postMessage() transferred live at `label` now; what reached
@@ -272,9 +273,16 @@ export class WebContents extends EventEmitter {
     )
   }
 
-  /** The page is gone: messages still waiting for it drop, and the ports they carried close. */
-  _dropQueue() {
+  /**
+   * The page is gone (`label` its last one): messages still waiting for it
+   * drop, the ports they carried and the ports that lived there close, and
+   * executeJavaScript() calls still waiting fail.
+   */
+  _pageGone(label = this._label) {
     for (const message of this._queue.splice(0)) for (const port of message.transferred ?? []) port._destinationGone()
+    closePortsAt(label)
+    for (const { reject } of this._pending.values()) reject(new Error('Object has been destroyed'))
+    this._pending.clear()
   }
 
   _postWhenAlive(message) {
@@ -449,7 +457,7 @@ export class WebContents extends EventEmitter {
     // Transferred (neutered) now, as in Electron, even if the message waits
     // for the page; the label is the page's when the message is sent.
     const ports = transferPorts(transfer, null, { deferQueue: true })
-    this._postWhenAlive({ type: 'send', channel: String(channel), args, ...(ports ? { ports, transferred: [...transfer] } : {}) })
+    this._postWhenAlive({ type: 'send', channel: String(channel), args, ...(ports ? { transferred: [...transfer] } : {}) })
   }
 
   /** Runs `code` in the page and resolves with the (structured-cloneable) result. */
@@ -1090,7 +1098,7 @@ export class BrowserWindow extends EventEmitter {
     if (this._destroyed) return
     this._destroyed = true
     clearTimeout(this._syntheticLoad)
-    this.webContents._dropQueue()
+    this.webContents._pageGone()
     windows.delete(this.id)
     contentsById.delete(this.id)
     contentsByLabel.delete(this._label)

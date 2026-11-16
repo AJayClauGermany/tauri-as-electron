@@ -30,6 +30,18 @@ function post(label, message) {
 }
 
 /**
+ * The page at `label` is gone (window or view closed, view moved): the ports
+ * that live there, or whose other end lives there, close on this side.
+ */
+export function closePortsAt(label) {
+  if (!label) return
+  for (const port of new Set(ports.values())) {
+    if (port._transferred && !port._transferred.pending && port._transferred.label === label) port._destinationGone()
+    else if (port._remote?.label === label) port._onPeerClosed()
+  }
+}
+
+/**
  * Deliver what is posted to `label` (`{ type: 'port-message' | 'port-close', port, data }`)
  * with `send` instead of a Tauri event; `send` null removes the destination.
  * The destination reports back through `onRendererPortMessage`.
@@ -142,11 +154,11 @@ export class MessagePortMain extends EventEmitter {
   }
 
   /**
-   * The message carrying this pending port was never delivered (send failed,
-   * page gone): the port is gone, so its other end closes.
+   * The page this port was transferred to is gone, or the message carrying
+   * it was never delivered: the port is gone, so its other end closes.
    */
   _destinationGone() {
-    if (!this._transferred?.pending || this._closed) return
+    if (!this._transferred || this._closed) return
     this._closed = true
     this._queue.length = 0
     if (this._entangled) this._entangled._onPeerClosed()

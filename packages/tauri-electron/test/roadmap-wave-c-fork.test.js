@@ -421,14 +421,18 @@ describe('utilityProcess.fork', () => {
     const list = [queued]
     contents.postMessage('ch', null, list)
     list.length = 0
-    expect(contents._postWhenAlive.mock.calls[0][0]).toMatchObject({ type: 'send', channel: 'ch', ports: [expect.stringMatching(/^main:/)], transferred: [queued] })
+    expect(contents._postWhenAlive.mock.calls[0][0]).toMatchObject({ type: 'send', channel: 'ch', transferred: [queued] })
     expect(queued._transferred).toMatchObject({ label: null, pending: true })
     expect(() => contents.postMessage('ch', null, [queued])).toThrow(/already neutered or closed/)
     // The page goes away before the message is sent: the port's other end closes.
     contents._queue = [contents._postWhenAlive.mock.calls[0][0]]
+    contents._pending = new Map([[1, { resolve: vi.fn(), reject: vi.fn() }]])
+    const waiting = contents._pending.get(1)
     const peerClosed = once(pair.port2, 'close')
-    contents._dropQueue()
+    contents._pageGone()
     await peerClosed
+    // executeJavaScript() calls still waiting fail.
+    expect(waiting.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'Object has been destroyed' }))
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })
