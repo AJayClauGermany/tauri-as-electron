@@ -158,6 +158,9 @@ export class IncomingMessage extends EventEmitter {
 }
 
 /** Electron's ClientRequest (a writable stream in Electron; buffered here). */
+/** How often net.request asks 'login' again after the server rejected the credentials. */
+const MAX_LOGIN_ATTEMPTS = 5
+
 export class ClientRequest extends EventEmitter {
   constructor(options, callback) {
     super()
@@ -260,7 +263,7 @@ export class ClientRequest extends EventEmitter {
     const via = this._session ? { [VIA_SESSION]: this._session } : this._partition !== undefined ? { [VIA_PARTITION]: String(this._partition) } : {}
     try {
       let response
-      for (;;) {
+      for (let attempt = 0; ; attempt++) {
         response = await netFetch(this.url, {
           method: this.method,
           headers,
@@ -270,8 +273,9 @@ export class ClientRequest extends EventEmitter {
           ...via,
         })
         if (this._aborted) return
-        // 'login': HTTP Basic authentication, answered by the listener.
-        const credentials = await this._login(response)
+        // 'login': HTTP Basic authentication, answered by the listener; after
+        // MAX_LOGIN_ATTEMPTS rejected answers the 401 / 407 is the response.
+        const credentials = attempt < MAX_LOGIN_ATTEMPTS ? await this._login(response) : null
         if (!credentials) break
         response.body?.cancel().catch(() => {})
         headers[credentials.header] = credentials.value

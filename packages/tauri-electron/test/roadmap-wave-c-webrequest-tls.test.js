@@ -264,6 +264,20 @@ describe("ClientRequest 'login'", () => {
     expect(await body).toEqual([200, `auth Basic ${btoa('user:pass')}`])
     expect(logins).toEqual([{ isProxy: false, scheme: 'basic', host: 'x.test', port: 8080, realm: 'sink' }])
   })
+
+  it('gives up after a few rejected answers and delivers the 401', async () => {
+    for (let i = 0; i < 6; i++) state.responses.push(new Response('no', { status: 401, headers: { 'www-authenticate': 'Basic realm="sink"' } }))
+    const request = net.request('http://x.test/secret')
+    let asked = 0
+    request.on('login', (authInfo, callback) => {
+      asked++
+      callback('user', 'wrong')
+    })
+    const status = new Promise((resolve) => request.on('response', (message) => resolve(message.statusCode)))
+    request.end()
+    expect(await status).toBe(401)
+    expect(asked).toBe(5)
+  })
 })
 
 describe('protocol.handle with webRequest', () => {
