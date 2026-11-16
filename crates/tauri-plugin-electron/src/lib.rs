@@ -616,7 +616,8 @@ fn is_app_page<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
     let Some(url) = views::find(app, label).and_then(|w| w.url().ok()) else {
         return false;
     };
-    if url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost") {
+    // `tauri://localhost`, or `http(s)://tauri.localhost` (no port) on Windows.
+    if trusted_origins::is_scheme_url("tauri", &url) {
         return true;
     }
     cfg!(debug_assertions)

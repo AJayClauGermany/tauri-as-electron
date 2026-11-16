@@ -322,15 +322,24 @@ pub fn find<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<TrustedOrigin
     state.origins.iter().find(|o| o.matches(&url)).cloned()
 }
 
-/// A page served by one of the plugin's custom schemes (`Builder::protocol`):
-/// `app://…`, or `http(s)://app.localhost/…` on Windows and Android.
-fn is_scheme_page(schemes: &[String], url: &Url) -> bool {
-    schemes.iter().any(|s| s == url.scheme())
-        || (matches!(url.scheme(), "http" | "https")
+/// Whether `url` is served by the custom scheme `scheme`: `scheme://…`, or,
+/// where the webview cannot register schemes (WebView2 on Windows, Android),
+/// `http(s)://scheme.localhost/…` without a port. Elsewhere that host is an
+/// ordinary loopback name any local server can answer on, so it does not count.
+pub(crate) fn is_scheme_url(scheme: &str, url: &Url) -> bool {
+    url.scheme() == scheme
+        || (cfg!(any(windows, target_os = "android"))
+            && matches!(url.scheme(), "http" | "https")
+            && url.port().is_none()
             && url
                 .host_str()
                 .and_then(|host| host.strip_suffix(".localhost"))
-                .is_some_and(|scheme| schemes.iter().any(|s| s == scheme)))
+                == Some(scheme))
+}
+
+/// A page served by one of the plugin's custom schemes (`Builder::protocol`).
+fn is_scheme_page(schemes: &[String], url: &Url) -> bool {
+    schemes.iter().any(|scheme| is_scheme_url(scheme, url))
 }
 
 /// Whether the webview's page may use the synchronous bridge's IPC
@@ -490,6 +499,30 @@ mod tests {
     use std::str::FromStr;
     use tauri::utils::acl::RemoteUrlPattern;
 
+    #[test]
+    fn scheme_pages_are_only_the_schemes_own() {
+        let url = |u: &str| Url::parse(u).unwrap();
+        let schemes = vec!["app".to_string()];
+        assert!(is_scheme_page(&schemes, &url("app://localhost/index.html")));
+        assert!(!is_scheme_page(&schemes, &url("other://localhost/")));
+        // A port means a server, never the scheme's handler.
+        assert!(!is_scheme_page(
+            &schemes,
+            &url("http://app.localhost:8080/")
+        ));
+        // http(s)://<scheme>.localhost is the scheme only where WebView2 / Android serve it so.
+        let windows_form = is_scheme_page(&schemes, &url("http://app.localhost/"));
+        assert_eq!(windows_form, cfg!(any(windows, target_os = "android")));
+        assert_eq!(
+            is_scheme_url("tauri", &url("https://tauri.localhost/")),
+            cfg!(any(windows, target_os = "android"))
+        );
+        assert!(!is_scheme_url(
+            "tauri",
+            &url("http://tauri.localhost:1420/")
+        ));
+    }
+
     fn parse(entry: Value) -> Result<TrustedOrigin, String> {
         TrustedOrigin::parse(&entry)
     }
@@ -644,10 +677,11 @@ mod tests {
             &schemes,
             &url("kitchen://localhost/page.html")
         ));
-        assert!(is_scheme_page(
-            &schemes,
-            &url("http://kitchen.localhost/page.html")
-        ));
+        // WebView2's form of the scheme (Windows only; a server elsewhere).
+        assert_eq!(
+            is_scheme_page(&schemes, &url("http://kitchen.localhost/page.html")),
+            cfg!(any(windows, target_os = "android"))
+        );
         assert!(!is_scheme_page(&schemes, &url("http://other.localhost/")));
         assert!(!is_scheme_page(&schemes, &url("http://127.0.0.1/")));
     }
