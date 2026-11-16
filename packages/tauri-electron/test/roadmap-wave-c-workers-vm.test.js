@@ -683,4 +683,25 @@ describe.each([
     expect(workerSide).toContain('URL_WORKER_MARKER')
     expect(workerSide).toContain('this worker script was not bundled')
   }, 60000)
+
+  it('keeps worker threads out of the trusted-origins script (its pages are not on the app origin)', async () => {
+    const { TauriElectronPlugin } = require('../webpack.cjs')
+    const outDir = tempDir(`wave-c-${name}-trusted-`)
+    const webpackApp = path.join(here, 'fixtures', 'webpack-app')
+    const options = { main: './src/main.js', preload: './src/preload.js', rendererNode: true, trustedOrigins: true, workers: ['src/renderer.js'], pages: [{ name: 'main_window', html: './src/index.html', js: './src/renderer.js' }] }
+    await new Promise((resolve, reject) =>
+      load()(
+        { mode: 'development', devtool: false, context: webpackApp, target: 'electron-renderer', output: { path: outDir, publicPath: '/' }, plugins: [new TauriElectronPlugin(options)], infrastructureLogging: { level: 'error' } },
+        (error, result) => (error ? reject(error) : result.hasErrors() ? reject(new Error(result.toString({ all: false, errors: true }))) : resolve(result)),
+      ),
+    )
+    const trusted = fs.readFileSync(path.join(outDir, '__tauri-electron/trusted-renderer.js'), 'utf8')
+    expect(trusted).toContain('trackFileDrops()') // the renderer bootstrap is there
+    expect(trusted).not.toContain('installWorkerRegistry')
+    expect(trusted).not.toContain('/* worker import */') // no worker bundle started from it
+    expect(fs.readdirSync(path.join(outDir, '__tauri-electron'))).toEqual(['trusted-renderer.js'])
+    // The app's own renderer pages register the worker bundle.
+    const renderer = fs.readdirSync(outDir, { recursive: true }).filter((f) => f.endsWith('.js') && !f.startsWith('__tauri-electron') && f !== 'electron-main.js').map((f) => fs.readFileSync(path.join(outDir, f), 'utf8')).join('\n')
+    expect(renderer).toContain('installWorkerRegistry')
+  }, 60000)
 })
