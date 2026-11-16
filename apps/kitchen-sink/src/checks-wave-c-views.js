@@ -7,6 +7,7 @@ import { BaseWindow, BrowserWindow, BrowserView, WebContentsView, ipcMain, webCo
 import http from 'node:http'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { withLocalServer } from './checks-wave-c-local-origins.js'
 
 const dirname = import.meta.dirname
 const childHtml = path.join(dirname, '../child.html')
@@ -52,7 +53,13 @@ async function withWindow(fn, webPreferences = {}) {
   }
 }
 
-/** A local page without the renderer bootstrap (a "remote" page). */
+const isElectron = Boolean(process.versions.electron)
+
+/**
+ * A local page without the renderer bootstrap (a "remote" page). On
+ * `localhost`: the kitchen sink trusts `http://127.0.0.1:*` (see
+ * checks-wave-c-local-origins.js), whose pages get the bootstrap.
+ */
 async function withServer(fn) {
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html' })
@@ -60,7 +67,7 @@ async function withServer(fn) {
   })
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
   try {
-    return await fn(`http://127.0.0.1:${server.address().port}/`)
+    return await fn(`http://localhost:${server.address().port}/`)
   } finally {
     server.close()
   }
@@ -124,6 +131,33 @@ export const waveCViewsChecks = [
     const error = await view.webContents.executeJavaScript('missingFunction()').then(() => null, (e) => e)
     assert(error, 'a throwing script rejects')
     return `${title}, ${JSON.stringify(later)}`
+  })) },
+  { id: 'WebContentsView on a trusted origin: preload and IPC; elsewhere none', run: () => withLocalServer(({ port, nextReport }) => withWindow(async (win, views) => {
+    const view = new WebContentsView({ webPreferences: { preload, sandbox: false } })
+    views.push(view)
+    win.contentView.addChildView(view)
+    view.setBounds({ x: 0, y: 0, width: 320, height: 240 })
+    await view.webContents.loadURL(`http://127.0.0.1:${port}/view`)
+    const report = await nextReport()
+    assert(report.preload === true, `the view's page has the preload: ${JSON.stringify(report)}`)
+    if (!isElectron) assert(report.bridge === 200 && report.command === 'allowed', `IPC allowed: ${JSON.stringify(report)}`)
+    const echoed = await view.webContents.executeJavaScript(`window.kitchen.invoke('kitchen:echo', 'view')`)
+    assert(JSON.stringify(echoed) === '["view"]', `invoke: ${JSON.stringify(echoed)}`)
+    const sync = await view.webContents.executeJavaScript(`window.kitchen.sendSync('kitchen:sync')`)
+    assert(sync === 'sync-ok', `sendSync: ${sync}`)
+    const pong = waitFor(ipcMain, 'kitchen:child-pong')
+    await view.webContents.executeJavaScript('window.kitchen.onChildPing((value) => window.kitchen.childPong(value)), true')
+    view.webContents.send('kitchen:child-ping', 'to-view')
+    const [event, value] = await pong
+    assert(value === 'to-view' && event.sender === view.webContents, `round trip: ${value}`)
+    // `localhost` is not on the list: no preload, and Tauri refuses its IPC.
+    await view.webContents.loadURL(`http://localhost:${port}/other`)
+    const away = await nextReport()
+    if (!isElectron) {
+      assert(away.preload === false, `no preload on localhost: ${JSON.stringify(away)}`)
+      assert(away.bridge !== 200 && away.command === 'refused', `IPC refused on localhost: ${JSON.stringify(away)}`)
+    }
+    return `ok (port ${port})`
   })) },
   { id: 'BaseWindow + two WebContentsViews side by side', run: async () => {
     const win = new BaseWindow({ width: 600, height: 300 })
