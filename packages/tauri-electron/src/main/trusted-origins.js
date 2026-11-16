@@ -82,8 +82,10 @@ export function registerTrustedRenderer() {
     )
     return (registration = Promise.resolve(false))
   }
-  attempts++
-  failed = false // windows created while this attempt runs share it
+  if (!dev) {
+    attempts++
+    failed = false // windows created while this attempt runs share it
+  }
   const base = globalThis.location?.href
   // One registration at a time (in development each starts after the
   // previous one ended), so an older script never replaces a newer one.

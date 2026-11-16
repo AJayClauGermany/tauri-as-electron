@@ -24,7 +24,7 @@ import { platform } from '../process.js'
 import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
-import { transferPorts } from './message-ports.js'
+import { transferPorts, checkTransferList } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
@@ -257,11 +257,12 @@ export class WebContents extends EventEmitter {
   }
 
   _post(message) {
-    // Ports transferred by postMessage() go after the message that creates them in the page.
-    const { transferred, ...rest } = message
-    const sent = emitTo(this._label, TO_RENDERER, { ...rest, to: this._label }).catch(report('webContents message'))
-    if (transferred) sent.then(() => { for (const port of transferred) port._flushTransferred() })
-    return sent
+    if (message.transfer) {
+      // Transferred when sent, to the page's label at that time.
+      const { transfer, ...rest } = message
+      message = { ...rest, ports: transferPorts(transfer, this._label) }
+    }
+    return emitTo(this._label, TO_RENDERER, { ...message, to: this._label }).catch(report('webContents message'))
   }
 
   _postWhenAlive(message) {
@@ -290,7 +291,14 @@ export class WebContents extends EventEmitter {
         this._title = data.title ?? this._title
         this._alive = true
         const queue = this._queue.splice(0)
-        for (const message of queue) this._post(message)
+        for (const message of queue) {
+          // One message that cannot be sent (a port closed or sent elsewhere meanwhile) does not stop the rest.
+          try {
+            this._post(message)
+          } catch (error) {
+            report('webContents message')(error)
+          }
+        }
         if (!hasNativePlugin()) this.navigationHistory._onNavigate(this._url, this._title)
         this.emit('did-finish-load', createEvent())
         this._win._onDidFinishLoad()
@@ -432,10 +440,10 @@ export class WebContents extends EventEmitter {
   /** Transfers MessagePortMain objects; the page receives DOM MessagePorts in event.ports. */
   postMessage(channel, message, transfer = []) {
     if (this.isDestroyed()) throw new Error('Object has been destroyed')
-    // Transferred (neutered here) at once, as in Electron, even when the
-    // message waits for the page; what reaches the ports waits with it.
-    const ports = transferPorts(transfer, this._label, { deferQueue: true })
-    this._postWhenAlive({ type: 'send', channel: String(channel), args: encode([message]), ...(ports ? { ports, transferred: transfer } : {}) })
+    const args = encode([message])
+    // Checked now (the message may wait for the page), transferred when sent.
+    if (transfer?.length) checkTransferList(transfer)
+    this._postWhenAlive({ type: 'send', channel: String(channel), args, ...(transfer?.length ? { transfer: [...transfer] } : {}) })
   }
 
   /** Runs `code` in the page and resolves with the (structured-cloneable) result. */

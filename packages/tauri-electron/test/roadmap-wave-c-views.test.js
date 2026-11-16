@@ -250,6 +250,32 @@ describe('WebContentsView', () => {
     }
   })
 
+  it('a loadURL() made while the webview is created navigates after it; the replaced page settles nothing', async () => {
+    const win = await makeWindow()
+    let finishCreate = null
+    state.onCommand = (command) => (command === 'view_create' && !finishCreate ? new Promise((resolve) => (finishCreate = resolve)) : undefined)
+    const view = new WebContentsView()
+    view.webContents.loadURL('https://a.test/')
+    win.contentView.addChildView(view)
+    await vi.waitFor(() => expect(finishCreate).not.toBeNull())
+    expect(commands('view_create').at(-1).args.options.url).toBe('https://a.test/')
+    const later = view.webContents.loadURL('https://b.test/')
+    const settled = vi.fn()
+    later.then(settled, settled)
+    finishCreate()
+    await vi.waitFor(() => expect(commands('view_navigate').at(-1)?.args.url).toBe('https://b.test/'))
+    const label = view.webContents._label
+    onPageLoad({ label, url: 'https://a.test/', event: 'started' })
+    onPageLoad({ label, url: 'https://a.test/', event: 'finished' })
+    await flush()
+    expect(settled).not.toHaveBeenCalled()
+    onPageLoad({ label, url: 'https://b.test/', event: 'started' })
+    onPageLoad({ label, url: 'https://b.test/', event: 'finished' })
+    await later
+    state.onCommand = null
+    win.destroy()
+  })
+
   it('drops the window config of a view whose webview could not be created', async () => {
     const win = await makeWindow()
     state.onCommand = (command) => {

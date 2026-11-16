@@ -132,6 +132,7 @@ class GuestHost {
     this._window = null // the BrowserWindow the Tauri webview is in
     this._pendingUrl = null
     this._loadWaiters = []
+    this._supersededUrl = null // a page replaced right after creation (see _create)
     this._state = { title: '' }
     this._visible = true
     this._focused = false
@@ -260,12 +261,13 @@ class GuestHost {
         if (movedTo !== win) this._window = movedTo
         return
       }
-      // A loadURL() made while the webview was being created.
+      // A loadURL() made while the webview was being created: the page just
+      // created is superseded, so its load does not settle that loadURL().
       const next = this._pendingUrl
       this._pendingUrl = null
       if (next && next !== url) {
-        this.webContents._alive = false
-        native('view_navigate', { label, url: guests.absoluteAppUrl(next) }).catch((error) => this._loadFailed(error, next))
+        this._supersededUrl = url
+        this._navigate(next)
       }
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
       // A placement that changed while the webview was being created.
@@ -284,7 +286,10 @@ class GuestHost {
         // Created again in the window it moved to (below): not a failed load.
         if (this._movedAway(win)) return
         report('create view')(error)
-        this._loadFailed(error, url)
+        // The loads waiting for this creation failed: a later attach does not retry them.
+        const failedUrl = this._pendingUrl ?? url
+        this._pendingUrl = null
+        this._loadFailed(error, failedUrl)
       })
       .finally(() => {
         this._creating = null
@@ -299,6 +304,13 @@ class GuestHost {
   _movedAway(win) {
     const target = this._window
     return !this._native && !this._destroyed && Boolean(target) && target !== win && !target.isDestroyed()
+  }
+
+  /** Navigate the created webview (loadURL()). */
+  _navigate(url) {
+    this.webContents._alive = false
+    this.webContents._url = url
+    native('view_navigate', { label: this._label, url: guests.absoluteAppUrl(url) }).catch((error) => this._loadFailed(error, url))
   }
 
   _loadFailed(error, url) {
@@ -384,8 +396,7 @@ class GuestHost {
       this._pendingUrl = url
       return promise
     }
-    this.webContents._alive = false
-    native('view_navigate', { label: this._label, url: guests.absoluteAppUrl(url) }).catch((error) => this._loadFailed(error, url))
+    this._navigate(url)
     return promise
   }
 
@@ -394,6 +405,10 @@ class GuestHost {
   }
 
   _onDidFinishLoad(synthetic = false) {
+    // The load of a page replaced right after it was created settles nothing.
+    const superseded = this._supersededUrl
+    this._supersededUrl = null
+    if (superseded && this.webContents._url === superseded) return
     if (synthetic) {
       this.webContents._loading = false
       this.webContents.emit('dom-ready', createEvent())
