@@ -31,6 +31,7 @@ pub fn enabled() -> Vec<&'static str> {
         "power-save-blocker",
         "power-monitor",
         "safe-storage",
+        "desktop-capturer",
         "single-instance",
         "updater",
         "devtools",

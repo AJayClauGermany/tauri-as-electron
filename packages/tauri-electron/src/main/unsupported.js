@@ -40,7 +40,7 @@ export function unsupportedClass(name, details) {
 // Chromium / Node features with no counterpart in Tauri: not planned.
 const CHROMIUM = { reason: 'unsupported', hint: 'A Chromium feature with no counterpart in WebKit / WebView2.' }
 export const contentTracing = unsupportedModule('contentTracing', CHROMIUM)
-export const desktopCapturer = unsupportedModule('desktopCapturer', { reason: 'unsupported', hint: 'Screen capture needs a Rust command; the webview cannot enumerate screens.' })
+export { desktopCapturer } from './desktop-capturer.js'
 export const inAppPurchase = unsupportedModule('inAppPurchase', { reason: 'unsupported', hint: 'StoreKit needs a Rust / Swift integration.' })
 export const netLog = unsupportedModule('netLog', CHROMIUM)
 export const pushNotifications = unsupportedModule('pushNotifications', { reason: 'unsupported', hint: 'APNs registration needs a Rust / Swift integration.' })

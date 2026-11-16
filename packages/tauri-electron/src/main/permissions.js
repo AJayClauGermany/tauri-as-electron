@@ -11,6 +11,7 @@
  */
 import { native, hasNativePlugin } from '../internal/native.js'
 import { report } from '../internal/runtime.js'
+import { onDisplayMediaRequest } from './display-media.js'
 
 let resolveContents = () => null
 let defaultSessionRef = null
@@ -40,6 +41,8 @@ export function onPermissionRequest({ id, label, permission, mediaTypes = [], ur
     answered = true
     native('permission_respond', { id, label, url, permission, mediaTypes: [...mediaTypes], granted: Boolean(granted) }).catch(report('permission request'))
   }
+  // getDisplayMedia (and desktop getUserMedia): the display media handler decides.
+  if (permission === 'display-capture') return onDisplayMediaRequest({ label, webContents, session, mediaTypes, url }, callback)
   if (typeof handler !== 'function') return callback(true)
   const details = { requestingUrl: url, securityOrigin: originOf(url), isMainFrame: true, embeddingOrigin: originOf(url) }
   if (permission === 'media') details.mediaTypes = [...mediaTypes]

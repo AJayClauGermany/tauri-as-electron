@@ -2,7 +2,7 @@
 const { app, BrowserWindow } = require('electron')
 const path = require('node:path')
 const fs = require('fs')
-const vm = require('vm')
+const v8 = require('v8')
 import { readFileSync } from 'node:fs'
 
 export const seen = {
@@ -12,7 +12,7 @@ export const seen = {
   file: __filename,
   fsType: typeof fs.readFileSync,
   namedType: typeof readFileSync,
-  stubType: typeof vm.runInNewContext,
+  stubType: typeof v8.getHeapStatistics,
 }
 
 app.whenReady().then(() => new BrowserWindow().loadURL(MAIN_WINDOW_WEBPACK_ENTRY))

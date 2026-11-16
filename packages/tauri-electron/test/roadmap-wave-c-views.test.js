@@ -267,6 +267,23 @@ describe('WebContentsView', () => {
     win.destroy()
   })
 
+  it('prints and captures its own page once it is in a window', async () => {
+    const loose = new WebContentsView()
+    await expect(loose.webContents.capturePage()).rejects.toThrow('not in a window')
+    const win = await makeWindow()
+    const view = new WebContentsView()
+    win.contentView.addChildView(view)
+    await flush()
+    state.onCommand = (command) => (command === 'print_to_pdf' ? new TextEncoder().encode('%PDF view').buffer : command === 'capture_page' ? new Uint8Array(0).buffer : undefined)
+    const pdf = await view.webContents.printToPDF({})
+    expect(new TextDecoder().decode(pdf)).toBe('%PDF view')
+    expect(commands('print_to_pdf').at(-1).args.label).toBe(view.webContents._label)
+    const image = await view.webContents.capturePage()
+    expect(image.isEmpty()).toBe(true)
+    expect(commands('capture_page').at(-1).args).toEqual({ label: view.webContents._label })
+    win.destroy()
+  })
+
   it('needs the child-webviews feature', () => {
     state.features = []
     expect(() => new WebContentsView()).toThrow(expect.objectContaining({ name: 'NotImplementedError', reason: 'feature' }))

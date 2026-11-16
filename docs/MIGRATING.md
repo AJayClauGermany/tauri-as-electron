@@ -10,7 +10,7 @@ halves install straight from this GitHub repository.
 | `main.js` with `require('electron')` or `import … from 'electron'` | The same file, run by Tauri in a hidden window |
 | a preload script, renderer pages with `<script src>` | The same files, bundled by Vite (or [webpack / rspack](#webpack-and-rspack), if that is what the project uses) and loaded into Tauri windows |
 | `electron-builder` / Forge config | `src-tauri/tauri.conf.json` + `cargo`, via `tauri build` |
-| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline` and most smaller built-ins work; sockets (`net`, `tls`, `dns`), `vm`, `worker_threads` and native modules do not yet (except `keytar`, `better-sqlite3` / `sqlite3` and `node-pty`, re-implemented in Rust). See [Node.js code](#4-nodejs-code) |
+| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline`, `vm` (iframe realms), `worker_threads` (Web Workers with the Node layer) and most smaller built-ins work; sockets (`net`, `tls`, `dns`) and native modules do not yet (except `keytar`, `better-sqlite3` / `sqlite3` and `node-pty`, re-implemented in Rust). See [Node.js code](#4-nodejs-code) |
 
 Requirements: Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
@@ -77,7 +77,7 @@ webviews, so `tauri-electron/webpack` (the same plugin is exported as
 - `electron-*` / `node` targets switched to `web`,
 - `electron` and the Node built-ins tauri-electron implements (`fs`, `os`,
   `child_process`, `util`, `stream`, `crypto`, `http`, …) redirected to
-  tauri-electron, the others (`vm`, `worker_threads`, …, with or without `node:`) to
+  tauri-electron, the others (`v8`, `cluster`, …, with or without `node:`) to
   stubs that throw a [`NotImplementedError`](#6-reading-errors) when used,
 - `__dirname`, `__filename`, `import.meta.dirname|filename` and
   `fileURLToPath(import.meta.url)` in your source rewritten to
@@ -255,6 +255,8 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `safeStorage` ciphertext | Encrypted with a key tauri-plugin-electron keeps in the OS keychain, not Electron's: values an Electron build of the app stored cannot be decrypted. Re-encrypt from the plain value (ask the user again for a stored password or token). |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
 | `session.on('will-download')` / `item.setSavePath()` | Works; the file is written to a temporary file and moved to the save path when it is complete, so the path can also be set after the handler returns. Downloads the page starts cannot be paused; on Windows and macOS their total size is unknown and `cancel()` discards the file when the transfer ends. `downloadURL()` is a transfer in Rust (the `net` feature) with the window's cookies. |
+| `desktopCapturer` + `getUserMedia({ chromeMediaSource: 'desktop' })` | `getSources()` lists screens and windows with thumbnails, but no webview captures a source the app chose: the page's request becomes `getDisplayMedia()` and the user picks again in the webview's picker (on Linux the desktop portal, which needs PipeWire). It only happens in the app's own pages. Show your own source picker only if you want to; the system one appears anyway. |
+| `webContents.printToPDF` | Works on Linux and Windows with the usual options; on macOS the PDF is one page as tall as the content. `headerTemplate` / `footerTemplate` are not supported (Windows prints WebView2's own header and footer with `displayHeaderFooter`). |
 | `session.setPermissionRequestHandler` | Applied. On Linux each request waits for the callback, as in Electron. On Windows and macOS the webview needs an answer at once: the first request of a permission per window and origin gets the platform's own prompt while the handler runs, and its answer applies to the requests after it. |
 | `session.setProxy` / `app.setProxy` | One `http://` or `socks5://` proxy for windows created afterwards and `net.fetch` (Tauri sets a webview's proxy at creation). No PAC scripts or bypass rules. On macOS, enable the `macos-proxy` feature of `tauri-plugin-electron` (macOS 14+). On Linux, the default session and `persist:` partitions share one WebKit data store, so a proxy one of them sets reaches the windows of the others too. |
 | `WebContentsView`, `BrowserView`, `<webview>` | Add the `child-webviews` feature of `tauri-plugin-electron` (opt-in: it turns on Tauri's unstable multi-webview API, which every window then uses). `<webview>` needs `webPreferences.webviewTag: true`, as in Electron. Views and guests are native webviews over the page: nothing in the page can be drawn over them, scrolling containers do not clip them, and stacking order changes apply on Linux only. The `preload` attribute and `webPreferences.preload` are ignored (the bundled preload runs in every app page and, as in windows, in pages of trusted origins; other remote guests have no `ipcRenderer`). `session.webRequest`, `certificate-error` and `login` cover views and guests as they cover windows. `executeJavaScript` in remote pages returns JSON-serializable values. |
@@ -289,7 +291,9 @@ Node.js is shipped (unless the app bundles one for `utilityProcess.fork` /
 | `module` | `createRequire`, `builtinModules`, `isBuiltin`; code is bundled, so there is no file loader. |
 | `async_hooks` | `AsyncLocalStorage` keeps its store for the synchronous part of `run()` only (lost after an `await`); `AsyncResource`; hooks never fire. |
 | `tty`, `domain` | `isatty()` is false; `domain` catches synchronous errors only. |
-| `http2`, `vm`, `v8`, `worker_threads`, `wasi`, `cluster`, `repl`, `inspector` | Not yet: they load, and throw `NotImplementedError` when used. |
+| `worker_threads` | Web Workers of the window, with the Node layer; the bundler plugins bundle the worker scripts (see [Worker threads](#worker-threads)). |
+| `vm` | Hidden iframes as contexts (main process and windows); `timeout` is ignored. Needs `'unsafe-eval'` if you set a CSP. |
+| `http2`, `v8`, `wasi`, `cluster`, `repl`, `inspector` | Not yet: they load, and throw `NotImplementedError` when used. |
 
 On the main page the globals are Node's too: `Buffer`, `global`,
 `setImmediate` / `clearImmediate`, and `setTimeout` / `setInterval`
@@ -524,6 +528,38 @@ page holds handles and gets data over a channel.
 - The HTTP *client* still goes through tauri-plugin-http, so `http.get`
   does not hand out a socket (`req.socket` is null).
 
+### Worker threads
+
+`new Worker(...)` from `worker_threads` starts a Web Worker of the window
+that calls it, with the same Node built-ins (synchronous calls reach Rust
+from the worker; Tauri commands are relayed by the window, so a worker gets
+no more permissions than its window). A webview cannot load a script from a
+path at runtime, so the bundler plugins bundle worker scripts ahead of time.
+They find the usual forms in files that import `worker_threads`:
+
+```js
+new Worker(path.join(__dirname, 'worker.js'))           // also path.resolve, `${__dirname}/…`, __dirname + '…'
+new Worker(new URL('./worker.js', import.meta.url))
+new Worker(require.resolve('./worker'))
+const script = path.join(__dirname, 'workers', 'index.js')
+new Worker(script)                                       // a const in the same file
+new Worker(__filename)                                   // the same file, with an isMainThread branch
+new Worker('…code…', { eval: true })                     // nothing to bundle
+```
+
+A `.js` path also finds the `.ts` file next to it. Paths computed at run
+time, and workers that dependencies start, need the plugins' `workers`
+option (project-relative scripts), for example
+`tauriElectron({ workers: ['src/indexer/worker.ts'] })`; an unbundled
+script makes the Worker emit an `'error'` (`ERR_MODULE_NOT_FOUND`) that
+says so. In development (Vite) every project file works without it.
+
+Differences: no `SharedArrayBuffer`, so no `Atomics.wait` and no
+synchronous workers (`synckit`); a worker ends on `process.exit()`,
+`terminate()`, an uncaught error, or once nothing it waits for is pending
+(timers, ports with listeners, relayed calls, fetch, other workers);
+`resourceLimits` are not applied and `stdin: true` is not supported.
+
 ### Native modules: `keytar`, `better-sqlite3`, `sqlite3`, `node-pty`
 
 npm packages with native code (`.node` addons) cannot load in a webview.
@@ -556,10 +592,10 @@ bundler config, if they keep the original's API.
 
 ### Everything else
 
-- `require('vm')` / `import { Worker } from 'worker_threads'` & co. do
+- `require('v8')` / `import cluster from 'cluster'` & co. do
   not fail the build and do not throw by themselves; every member throws a
   `NotImplementedError` (reason `unsupported`) naming the replacement when
-  it is called (`vm.runInNewContext is not supported on Tauri …`). Use the
+  it is called (`v8.serialize is not supported on Tauri …`). Use the
   error messages as a to-do list.
 - Replacements: `@tauri-apps/plugin-http` or `net.fetch` (HTTP), Web
   Workers, or a Rust command in `src-tauri/src/lib.rs` invoked with

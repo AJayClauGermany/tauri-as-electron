@@ -23,6 +23,8 @@ import { postToMain, rendererReady, commandHandlers } from './ipc-renderer.js'
 import { registerFilePath } from './web-utils.js'
 import { installWindowControls } from './window-controls.js'
 import { installWebviewTag } from './webview-tag.js'
+import { installDesktopCapture, DESKTOP_CAPTURE_CHANNEL } from './display-media.js'
+import { ipcRenderer } from './ipc-renderer.js'
 
 installProcessShim()
 
@@ -478,6 +480,8 @@ if (isRenderer) {
   trackFileDrops()
   // titleBarStyle 'hidden' + titleBarOverlay (Windows, Linux): minimize / maximize / close buttons.
   if (config?.titleBarOverlay) installWindowControls(config.titleBarOverlay)
+  // getUserMedia({ chromeMediaSource: 'desktop' }) → getDisplayMedia() (screen sharing).
+  installDesktopCapture(navigator.mediaDevices, (request) => ipcRenderer.invoke(DESKTOP_CAPTURE_CHANNEL, request))
   // webPreferences.webviewTag: the <webview> element (./webview-tag.js).
   if (config?.webviewTag) installWebviewTag()
   // Like Electron, window.close() closes the BrowserWindow ('close' is still emitted);

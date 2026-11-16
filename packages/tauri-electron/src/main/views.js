@@ -140,6 +140,17 @@ class GuestHost {
     this.webContents = null
   }
 
+  /**
+   * Settles as a window's `_nativeReady` does, for code shared with windows
+   * (./capture.js): once the webview exists; rejects while the view is in no window.
+   */
+  get _nativeReady() {
+    const promise = (this._creating ?? Promise.resolve()).then(() => {
+      if (!this._native) throw new Error('The view is not in a window')
+    })
+    return { promise }
+  }
+
   /** Whether a page at `url` runs the renderer bootstrap: app pages and, as in windows, trusted origins. */
   _hasBootstrap(url) {
     return BrowserWindow.prototype._hasBootstrap.call(this, url)

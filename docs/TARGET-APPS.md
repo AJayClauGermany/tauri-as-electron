@@ -93,7 +93,8 @@ round of work; **now** is the current status. See
 | `BrowserWindow.getNativeWindowHandle` | Native window integration on Windows | ❌ | ❌ |
 | `webContents.session.webRequest` (CSP and header rewrites) | Webviews and the integrated browser | ❌ | 🟡 applied to `net.fetch` and custom schemes; page requests rewritten on Windows only |
 | `session.fromPartition`, `clearStorageData` | Integrated-browser sessions | ❌ | 🟡 in-memory partitions → `incognito`; persistent ones share the default store except on macOS 14+ |
-| `desktopCapturer`, `contentTracing`, `webContents.capturePage`, `debugger`, `WebContentsView` | Screenshots, profiling, the integrated browser | ❌ | ❌ |
+| `desktopCapturer`, `webContents.capturePage` | Screenshots | ❌ | 🟡 [native] thumbnails and the visible page; a capture cannot preselect its source |
+| `contentTracing`, `debugger`, `WebContentsView` | Profiling, the integrated browser | ❌ | ❌ |
 | `app.getGPUFeatureStatus`, `getGPUInfo`, `getAppMetrics` | Diagnostics, process explorer | 🟡 | 🟡 placeholder values |
 
 ## Beyond the Electron API

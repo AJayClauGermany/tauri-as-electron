@@ -418,8 +418,10 @@ mod imp {
             }
         };
         watch(app, &host);
+        // As for windows: session.webRequest, TLS / login, screen sharing.
         crate::web_request::attach(app, &view, &label, &extras.web_request);
         crate::tls_auth::attach(app, &view, &label);
+        crate::display_media::attach(app, &view, &label);
         let shown = visible && !absolute.is_empty();
         #[cfg(any(
             target_os = "linux",

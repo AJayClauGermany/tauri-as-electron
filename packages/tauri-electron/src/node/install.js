@@ -43,6 +43,8 @@ import tls from './tls.js'
 import dgram from './dgram.js'
 import dns from './dns.js'
 import dnsPromises from './dns-promises.js'
+import vm from './vm.js'
+import workerThreads from './worker-threads.js'
 import { registerNodeModule } from '../require.js'
 
 export const nodeModules = {
@@ -85,6 +87,8 @@ export const nodeModules = {
   dgram,
   dns,
   'dns/promises': dnsPromises,
+  vm,
+  worker_threads: workerThreads,
 }
 
 const NODE_VERSION = '22.0.0'

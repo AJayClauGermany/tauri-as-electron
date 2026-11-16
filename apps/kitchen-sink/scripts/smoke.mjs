@@ -91,10 +91,13 @@ if (electron) {
 const useXvfb = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && hasCommand('xvfb-run')
 const [command, commandArgs] = useXvfb ? ['xvfb-run', ['-a', ...launch.flat()]] : launch
 console.log(`\n> ${command} ${commandArgs.join(' ')}`)
+// WebKitGTK's mock screens and cameras (tauri-plugin-electron): the screen-sharing
+// checks need no desktop portal and open no picker.
+const mockCapture = { TAURI_ELECTRON_MOCK_CAPTURE: process.env.TAURI_ELECTRON_MOCK_CAPTURE ?? '1' }
 const app = spawn(command, commandArgs, {
   cwd: root,
   stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env, KITCHEN_SMOKE_URL: smokeUrl },
+  env: { ...process.env, ...mockCapture, KITCHEN_SMOKE_URL: smokeUrl },
 })
 // GTK prints a warning per menu accelerator it cannot bind on Xvfb; drop
 // that noise (and blank lines) so real errors stay visible.

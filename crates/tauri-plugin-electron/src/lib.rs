@@ -53,9 +53,12 @@ use std::{
     time::Duration,
 };
 
+mod capture;
 #[cfg(all(desktop, feature = "clipboard"))]
 mod clipboard;
 mod cookies;
+mod desktop_capturer;
+mod display_media;
 mod downloads;
 mod features;
 #[cfg(desktop)]
@@ -1654,6 +1657,9 @@ impl Builder {
                 views::view_navigate,
                 views::view_eval,
                 views::view_close,
+                capture::print_to_pdf,
+                capture::capture_page,
+                desktop_capturer::desktop_sources,
                 native_modules::keytar,
                 native_modules::sqlite,
                 native_modules::pty_attach,

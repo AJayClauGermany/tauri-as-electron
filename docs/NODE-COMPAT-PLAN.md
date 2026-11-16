@@ -275,10 +275,10 @@ and Tauri commands (async variants). "Plugin" means an official Tauri plugin.
 | `http`, `https` (client) | JS over `plugin-http` | `net.request` in `src/main/net.js` already implements `ClientRequest` / `IncomingMessage`; `http.request` / `http.get` can wrap it. |
 | `http`, `https` (server), `net`, `tls`, `dgram`, `dns` | Rust sockets, JS protocols | No official plugin. One handle table with event channels in Rust; the HTTP server is JavaScript on top of `net` (done in layer 4). |
 | `readline` | JS, partial | Only `createInterface({ input: stream })` line splitting. No terminal. |
-| `worker_threads` | JS, partial, late | A partial adapter over Web Workers (section 4.2). Different semantics: no shared `require`, no worker script loaded from a real file path. Until then keep the stub with its hint. |
+| `worker_threads` | JS, partial (done: roadmap C2) | An adapter over Web Workers (section 4.2). Different semantics: no shared `require`, worker scripts are bundled ahead of time. See API-COVERAGE.md. |
 | `module` | JS, partial | `createRequire` returning `requireShim`, `builtinModules`. |
 | `constants` | JS | Static tables (`fs.constants`, `os.constants`). |
-| `vm` | JS, partial, late | A hidden iframe as the separate context (section 4.2). |
+| `vm` | JS, partial (done: roadmap C4) | A hidden iframe as the separate context (section 4.2). See API-COVERAGE.md. |
 | `v8` | JS, partial, late | Small stubs for commonly called functions (`getHeapStatistics`, `serialize` / `deserialize` via structured clone). |
 | `wasi` | JS, late | The webview runs WebAssembly; a JS WASI layer on top of `fs`. Low priority. |
 | `cluster`, `repl`, `inspector`, `trace_events` | Unsupported | Need Node or the engine itself (section 4.2). Keep the stubs. |
