@@ -265,7 +265,11 @@ export class WebContents extends EventEmitter {
     // The ports postMessage() transferred live at `label` now; what reached
     // them meanwhile goes after this message, which creates them there.
     return sent.then(
-      () => { for (const port of transferred) port._flushTransferred(label) },
+      () => {
+        // The page went away while the message was on its way: the ports went with it.
+        const gone = this.isDestroyed() || this._label !== label
+        for (const port of transferred) gone ? port._destinationGone() : port._flushTransferred(label)
+      },
       (error) => {
         report('webContents message')(error)
         for (const port of transferred) port._destinationGone()
@@ -281,6 +285,11 @@ export class WebContents extends EventEmitter {
   _pageGone(label = this._label) {
     for (const message of this._queue.splice(0)) for (const port of message.transferred ?? []) port._destinationGone()
     closePortsAt(label)
+    this._failPending()
+  }
+
+  /** executeJavaScript() calls waiting for a page that is gone fail. */
+  _failPending() {
     for (const { reject } of this._pending.values()) reject(new Error('Object has been destroyed'))
     this._pending.clear()
   }
@@ -462,6 +471,7 @@ export class WebContents extends EventEmitter {
 
   /** Runs `code` in the page and resolves with the (structured-cloneable) result. */
   executeJavaScript(code, _userGesture) {
+    if (this.isDestroyed()) return Promise.reject(new Error('Object has been destroyed'))
     const id = this._nextRequest++
     const { promise, resolve, reject } = deferred()
     this._pending.set(id, { resolve, reject })

@@ -162,7 +162,8 @@ export class MessagePortMain extends EventEmitter {
     this._closed = true
     this._queue.length = 0
     if (this._entangled) this._entangled._onPeerClosed()
-    if (this._remote) post(this._remote.label, { type: 'port-close', port: this._remote.id })
+    // Not to the page that is gone itself.
+    if (this._remote && this._remote.label !== this._transferred.label) post(this._remote.label, { type: 'port-close', port: this._remote.id })
     this._forget()
     this.emit('close')
   }

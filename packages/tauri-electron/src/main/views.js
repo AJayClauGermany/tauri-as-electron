@@ -369,6 +369,7 @@ class GuestHost {
     // Its page is gone; what is sent now waits for the page in the next window.
     this.webContents._alive = false
     closePortsAt(this._label)
+    this.webContents._failPending()
     guests.forgetLabel(this._label)
     native('set_window_config', { label: this._label, config: null }).catch(() => {})
     // A view can be put into another window: it reloads its page there.
