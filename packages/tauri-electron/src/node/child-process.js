@@ -473,13 +473,45 @@ function start(api, file, args, options, extra = {}) {
   return child
 }
 
+// Node options that take the next argument as their value (unless written `--opt=value`).
+const NODE_VALUE_OPTIONS = new Set([
+  '-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions', '--input-type',
+  '--inspect-port', '--debug-port', '--title', '--env-file', '--env-file-if-exists', '--redirect-warnings',
+  '--cpu-prof-dir', '--cpu-prof-name', '--heap-prof-dir', '--heap-prof-name', '--diagnostic-dir', '--report-dir',
+  '--report-directory', '--report-filename', '--openssl-config', '--icu-data-dir', '--dns-result-order',
+  '--unhandled-rejections', '--watch-path', '--test-reporter', '--test-reporter-destination', '--test-name-pattern',
+  '--experimental-default-type', '--disable-warning',
+])
+
+/**
+ * Index of the script in a Node.js command line, or -1 when there is none
+ * (`-e` / `-p` code, `-` for stdin, options only).
+ */
+export function nodeScriptIndex(args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = String(args[i])
+    if (arg === '--') return i + 1 < args.length ? i + 1 : -1
+    if (arg === '-') return -1
+    if (!arg.startsWith('-')) return i
+    if (/^--(eval|print)(=|$)/.test(arg)) return -1
+    if (/^-[a-zA-Z]+$/.test(arg)) {
+      // Short options, possibly grouped (`-pe`): code instead of a script, or a value next.
+      if (/[ep]/.test(arg)) return -1
+      if (/[rC]$/.test(arg)) i++
+      continue
+    }
+    if (NODE_VALUE_OPTIONS.has(arg)) i++
+  }
+  return -1
+}
+
 /** `child_process.spawn(command, [args], [options])`. */
 export function spawn(command, ...rest) {
   const { file, args, options } = splitArguments(command, rest)
   // Electron runs itself as Node with ELECTRON_RUN_AS_NODE: run the Node.js runtime instead.
   const env = options.env ?? globalThis.process?.env ?? {}
   if (isOwnExecutable(file) && env.ELECTRON_RUN_AS_NODE && !options.shell) {
-    const script = args.findIndex((arg) => !arg.startsWith('-'))
+    const script = nodeScriptIndex(args)
     const nodeArgs = script === -1 ? args : args.map((arg, i) => (i === script ? resolveModule(arg).file : arg))
     return start('child_process.spawn', '', nodeArgs, { ...options, env: childEnv(env) }, { node: true })
   }

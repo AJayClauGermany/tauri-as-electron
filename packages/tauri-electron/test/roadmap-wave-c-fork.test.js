@@ -580,6 +580,19 @@ describe('child_process.fork requests', () => {
     }
   })
 
+  it('finds the script of a Node.js command line past option values', () => {
+    expect(cp.nodeScriptIndex(['main.js'])).toBe(0)
+    expect(cp.nodeScriptIndex(['--inspect', 'main.js', '--flag'])).toBe(1)
+    expect(cp.nodeScriptIndex(['--require', 'setup.js', 'main.js'])).toBe(2)
+    expect(cp.nodeScriptIndex(['-r', 'setup.js', '--import=x.mjs', 'main.js'])).toBe(3)
+    expect(cp.nodeScriptIndex(['--', '-weird.js'])).toBe(1)
+    expect(cp.nodeScriptIndex(['-e', 'console.log(1)', 'arg'])).toBe(-1)
+    expect(cp.nodeScriptIndex(['-pe', '1+1'])).toBe(-1)
+    expect(cp.nodeScriptIndex(['--eval=1'])).toBe(-1)
+    expect(cp.nodeScriptIndex(['-', 'arg'])).toBe(-1)
+    expect(cp.nodeScriptIndex(['--version'])).toBe(-1)
+  })
+
   it('explains a missing Node.js runtime', async () => {
     state.scripted = (command) => {
       if (command === 'child_spawn') throw { code: 'ENOENT', errno: -2, syscall: 'spawn node', path: 'node', message: 'no Node.js runtime to fork with: bundle one as a sidecar' }
