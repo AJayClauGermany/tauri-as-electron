@@ -115,7 +115,7 @@ const timeout = setTimeout(() => {
   console.error('Timed out waiting for the kitchen sink report')
   app.kill()
   process.exit(2)
-}, 360_000)
+}, 960_000) // after the kitchen sink's own 900 s limit (src/main.js)
 
 const data = await report
 clearTimeout(timeout)
