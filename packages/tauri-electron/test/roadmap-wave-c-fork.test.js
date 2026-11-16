@@ -412,18 +412,23 @@ describe('utilityProcess.fork', () => {
     expect(() => contents.postMessage('ch', null, [closed])).toThrow(/index 0 is already neutered or closed/)
     expect(contents._postWhenAlive).not.toHaveBeenCalled()
     // A message that cannot be cloned leaves the ports alone.
-    const queued = new MessageChannelMain().port1
+    const pair = new MessageChannelMain()
+    const queued = pair.port1
     expect(() => contents.postMessage('ch', { fn() {} }, [queued])).toThrow()
     expect(queued._transferred).toBeNull()
-    // A message for a page that has not loaded keeps a copy of its transfer list and holds
-    // the ports (a second transfer throws now); they move when it is sent.
+    // A message for a page that has not loaded transfers its ports at once (a second
+    // transfer throws now, as in Electron); their label is the page's when it is sent.
     const list = [queued]
     contents.postMessage('ch', null, list)
     list.length = 0
-    expect(contents._postWhenAlive.mock.calls[0][0]).toMatchObject({ type: 'send', channel: 'ch', transfer: [queued] })
-    expect(queued._transferred).toBeNull()
+    expect(contents._postWhenAlive.mock.calls[0][0]).toMatchObject({ type: 'send', channel: 'ch', ports: [expect.stringMatching(/^main:/)], transferred: [queued] })
+    expect(queued._transferred).toMatchObject({ label: null, pending: true })
     expect(() => contents.postMessage('ch', null, [queued])).toThrow(/already neutered or closed/)
-    expect(transferPorts([queued], 'w-page')).toEqual([expect.stringMatching(/^main:/)])
+    // The page goes away before the message is sent: the port's other end closes.
+    contents._queue = [contents._postWhenAlive.mock.calls[0][0]]
+    const peerClosed = once(pair.port2, 'close')
+    contents._dropQueue()
+    await peerClosed
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })

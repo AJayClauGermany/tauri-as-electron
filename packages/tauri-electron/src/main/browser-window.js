@@ -24,7 +24,7 @@ import { platform } from '../process.js'
 import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
-import { transferPorts, reservePorts } from './message-ports.js'
+import { transferPorts } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
@@ -257,14 +257,24 @@ export class WebContents extends EventEmitter {
   }
 
   _post(message) {
-    if (!message.transfer) return emitTo(this._label, TO_RENDERER, { ...message, to: this._label }).catch(report('webContents message'))
-    // Transferred when sent, to the page's label at that time; what reached
-    // the ports meanwhile goes after the message that creates them there.
-    const { transfer, ...rest } = message
-    const ports = transferPorts(transfer, this._label, { deferQueue: true })
-    const sent = emitTo(this._label, TO_RENDERER, { ...rest, ports, to: this._label }).catch(report('webContents message'))
-    sent.then(() => { for (const port of transfer) port._flushTransferred() })
-    return sent
+    const { transferred, ...rest } = message
+    const label = this._label
+    const sent = emitTo(label, TO_RENDERER, { ...rest, to: label })
+    if (!transferred) return sent.catch(report('webContents message'))
+    // The ports postMessage() transferred live at `label` now; what reached
+    // them meanwhile goes after this message, which creates them there.
+    return sent.then(
+      () => { for (const port of transferred) port._flushTransferred(label) },
+      (error) => {
+        report('webContents message')(error)
+        for (const port of transferred) port._destinationGone()
+      },
+    )
+  }
+
+  /** The page is gone: messages still waiting for it drop, and the ports they carried close. */
+  _dropQueue() {
+    for (const message of this._queue.splice(0)) for (const port of message.transferred ?? []) port._destinationGone()
   }
 
   _postWhenAlive(message) {
@@ -293,14 +303,7 @@ export class WebContents extends EventEmitter {
         this._title = data.title ?? this._title
         this._alive = true
         const queue = this._queue.splice(0)
-        for (const message of queue) {
-          // One message that cannot be sent (a port closed or sent elsewhere meanwhile) does not stop the rest.
-          try {
-            this._post(message)
-          } catch (error) {
-            report('webContents message')(error)
-          }
-        }
+        for (const message of queue) this._post(message)
         if (!hasNativePlugin()) this.navigationHistory._onNavigate(this._url, this._title)
         this.emit('did-finish-load', createEvent())
         this._win._onDidFinishLoad()
@@ -443,12 +446,10 @@ export class WebContents extends EventEmitter {
   postMessage(channel, message, transfer = []) {
     if (this.isDestroyed()) throw new Error('Object has been destroyed')
     const args = encode([message])
-    const queued = { type: 'send', channel: String(channel), args, ...(transfer?.length ? { transfer: [...transfer] } : {}) }
-    if (this._alive) return void this._post(queued)
-    // The message waits for the page: its ports are held for it (a second
-    // transfer throws now, as in Electron) and transferred when it is sent.
-    if (transfer?.length) reservePorts(transfer)
-    this._postWhenAlive(queued)
+    // Transferred (neutered) now, as in Electron, even if the message waits
+    // for the page; the label is the page's when the message is sent.
+    const ports = transferPorts(transfer, null, { deferQueue: true })
+    this._postWhenAlive({ type: 'send', channel: String(channel), args, ...(ports ? { ports, transferred: [...transfer] } : {}) })
   }
 
   /** Runs `code` in the page and resolves with the (structured-cloneable) result. */
@@ -1089,6 +1090,7 @@ export class BrowserWindow extends EventEmitter {
     if (this._destroyed) return
     this._destroyed = true
     clearTimeout(this._syntheticLoad)
+    this.webContents._dropQueue()
     windows.delete(this.id)
     contentsById.delete(this.id)
     contentsByLabel.delete(this._label)

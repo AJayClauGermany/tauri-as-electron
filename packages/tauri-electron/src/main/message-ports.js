@@ -132,7 +132,6 @@ export class MessagePortMain extends EventEmitter {
    */
   _transferTo(label, { deferQueue = false } = {}) {
     if (this._closed || this._transferred) throw cloneError('Port at index 0 is already neutered or closed')
-    this._reserved = false
     const id = `main:${nextPortId++}`
     // Pending until _flushTransferred(): messages (and a close) arriving
     // meanwhile wait, since the destination does not have the port yet.
@@ -142,10 +141,25 @@ export class MessagePortMain extends EventEmitter {
     return id
   }
 
-  /** The port has reached its new home: send what waited for it. */
-  _flushTransferred() {
+  /**
+   * The message carrying this pending port was never delivered (send failed,
+   * page gone): the port is gone, so its other end closes.
+   */
+  _destinationGone() {
+    if (!this._transferred?.pending || this._closed) return
+    this._closed = true
+    this._queue.length = 0
+    if (this._entangled) this._entangled._onPeerClosed()
+    if (this._remote) post(this._remote.label, { type: 'port-close', port: this._remote.id })
+    this._forget()
+    this.emit('close')
+  }
+
+  /** The port has reached its new home (`label`, if not known before): send what waited for it. */
+  _flushTransferred(label) {
     const transferred = this._transferred
     if (!transferred?.pending) return
+    if (label) transferred.label = label
     transferred.pending = false
     for (const data of this._queue.splice(0)) post(transferred.label, { type: 'port-message', port: transferred.id, data })
     if (transferred.closeOnFlush) post(transferred.label, { type: 'port-close', port: transferred.id })
@@ -193,11 +207,10 @@ export function onRendererPortMessage(message) {
  * Throw if a transfer list cannot be transferred, before any port is: so a
  * bad entry leaves the others usable.
  */
-export function checkTransferList(transfer, { reserved = false } = {}) {
+export function checkTransferList(transfer) {
   for (const [index, port] of transfer.entries()) {
     if (!(port instanceof MessagePortMain)) throw cloneError('Only MessagePortMain objects can be transferred')
-    // `reserved`: ports reserved for this very message (reservePorts) are fine.
-    if (port._closed || port._transferred || (port._reserved && !reserved) || transfer.indexOf(port) !== index) {
+    if (port._closed || port._transferred || transfer.indexOf(port) !== index) {
       throw cloneError(`Port at index ${index} is already neutered or closed`)
     }
   }
@@ -206,16 +219,12 @@ export function checkTransferList(transfer, { reserved = false } = {}) {
 /**
  * Ports in a webContents.postMessage() transfer list → ids for the renderer.
  * `deferQueue`: the caller sends the message carrying them, then calls each
- * port's `_flushTransferred()` (what reached them meanwhile goes after it).
+ * port's `_flushTransferred(label)` (what reached them meanwhile goes after
+ * it), or `_destinationGone()` when it could not be sent; `label` may then
+ * be null until the message is sent.
  */
 export function transferPorts(transfer, label, { deferQueue = false } = {}) {
   if (!transfer?.length) return undefined
-  checkTransferList(transfer, { reserved: true })
-  return transfer.map((port) => port._transferTo(label, { deferQueue }))
-}
-
-/** Hold ports for a message that waits for its page: they cannot be transferred elsewhere meanwhile. */
-export function reservePorts(transfer) {
   checkTransferList(transfer)
-  for (const port of transfer) port._reserved = true
+  return transfer.map((port) => port._transferTo(label, { deferQueue }))
 }

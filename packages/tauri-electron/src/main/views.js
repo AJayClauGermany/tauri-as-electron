@@ -262,7 +262,9 @@ class GuestHost {
         return
       }
       // A loadURL() made while the webview was being created. As for a
-      // BrowserWindow, the next finished load settles the waiting loadURL()s.
+      // BrowserWindow, the next finished load settles the waiting loadURL()s
+      // (here possibly the created page's, if it finishes before the
+      // navigation starts; its events also report its URL meanwhile).
       const next = this._pendingUrl
       this._pendingUrl = null
       if (next && next !== url) this._navigate(next)
@@ -428,6 +430,7 @@ class GuestHost {
       native('set_window_config', { label, config: null }).catch(() => {})
     }
     guests.unregister(this.webContents, label)
+    this.webContents._dropQueue()
     for (const waiter of this._loadWaiters.splice(0)) waiter.reject(new Error('The webContents was destroyed'))
     this.webContents.emit('destroyed', createEvent())
   }

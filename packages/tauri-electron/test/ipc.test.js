@@ -112,6 +112,24 @@ describe('MessageChannelMain', () => {
     expect(sent).toEqual(['port-message', 'port-close'])
   })
 
+  it('webContents.postMessage before the page loads: ports go to the label the page has when the message is sent', async () => {
+    const { WebContents } = await import('../src/main/browser-window.js')
+    const win = { _label: 'electron-window-early' }
+    const contents = Object.assign(Object.create(WebContents.prototype), { _win: win, _queue: [], _alive: false, isDestroyed: () => false })
+    const { port1, port2 } = new MessageChannelMain()
+    contents.postMessage('port', 'hello', [port2])
+    port1.postMessage('waited')
+    await new Promise((r) => setTimeout(r, 5))
+    emitted.length = 0
+    // The page shows up under a new label (a replaced window), then the queued message goes.
+    win._label = 'electron-window-later'
+    await contents._post(contents._queue.shift())
+    await new Promise((r) => setTimeout(r, 5))
+    const kinds = emitted.map((e) => [e.label, e.payload.type])
+    expect(kinds).toEqual([['electron-window-later', 'send'], ['electron-window-later', 'port-message']])
+    expect(decode(emitted[1].payload.data)).toBe('waited')
+  })
+
   it('keeps port messages that reach the renderer before the port itself', async () => {
     const { ipcRenderer, onMessage } = await import('../src/renderer/ipc-renderer.js')
     const received = new Promise((resolve) => {
