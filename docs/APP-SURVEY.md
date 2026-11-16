@@ -160,7 +160,7 @@ today. Items in **bold** are on the app's main path.
 | Insomnia | **B1** (hidden worker window), C3 `utilityProcess` / `fork`, `@grpc/grpc-js` (needs `http2`) | Hard |
 | Bruno | **B1**, C1, C2 `worker_threads`, C5 `node-pty`, `http2` | Hard |
 | Joplin | **B1**, **B5**, C5 `sqlite3` + `keytar`, `sharp` | Hard |
-| SiYuan | **B1**, **B5**, main window loads its Go kernel's `http://127.0.0.1:6806` page (C6: no IPC for such pages today), C8 | Hard |
+| SiYuan | **B1**, **B5**, main window loads its Go kernel's `http://127.0.0.1:6806` page (C6: a trusted origin with `node: true`), C8 | Hard |
 | Logseq | C3 `fork`, C5 `better-sqlite3`, `keytar`, C2 | Hard |
 | AFFiNE | C3 `utilityProcess`, C1 views (tabs), A2 | Hard |
 | Trilium | C5 `better-sqlite3`, C1 `<webview>`, C3 | Hard |

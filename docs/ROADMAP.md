@@ -209,11 +209,12 @@ block was checked against tauri 2.12 / wry 0.57 (the versions in
   module aliases: `keytar` (on B3's keyring code; 6 apps), `better-sqlite3`
   / `sqlite3` (rusqlite; 5 apps), `node-pty` (portable-pty; 4 apps:
   Hyper, Tabby, VS Code, Bruno). Each M–L; `keytar` is S once B3 exists.
-- [ ] **C6. IPC and preloads for local-server pages.** Apps that start a
+- [x] **C6. IPC and preloads for local-server pages.** Apps that start a
   server and load `http://127.0.0.1:<port>` in their main window (SiYuan's
   kernel) get no IPC today ("remote pages have no IPC"). Allow an
   app-declared list of origins to receive the preload and the renderer
   capability. Effort M.
+  *Done: `plugins.electron.trustedOrigins` in tauri.conf.json (or `Builder::trusted_origin`), checked at startup: `http` and `*` ports on loopback hosts only, `https` on any host; `node: true` (loopback only) keeps a `nodeIntegration` window's Node built-ins there. The bundler plugins build the renderer modules and preloads as one classic script (`trustedOrigins` / `trustedPreload` options), which every window runs as an initialization script on those origins only, checked on every page load; Tauri grants them the renderer capability (`remote.urls`) and the synchronous bridge now answers only the app's own pages, its custom schemes and the trusted origins. The app's `src-tauri/Cargo.toml` needs `serde_json` once tauri.conf.json has a `plugins` section. Main frame only; Linux verified (Windows / macOS initialization scripts unverified); rspack development builds keep `eval` source maps in the script.*
 - [ ] **C7. `session.webRequest` applied.** Header and request rewriting
   for http(s) has no hook on WKWebView or WebKitGTK; WebView2 has
   `WebResourceRequested`. Options: Windows-only support, or rewriting only
