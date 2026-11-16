@@ -32,10 +32,7 @@ use std::{
     net::{Ipv4Addr, Shutdown, TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Condvar, Mutex,
-    },
+    sync::{mpsc, Arc, Condvar, Mutex},
     thread,
     time::{Duration, Instant},
 };
@@ -249,7 +246,6 @@ pub struct Ipc {
     stream: Mutex<Option<Stream>>,
     closed: Mutex<bool>,
     closed_changed: Condvar,
-    disconnecting: AtomicBool,
 }
 
 impl Ipc {
@@ -259,7 +255,6 @@ impl Ipc {
             stream: Mutex::new(None),
             closed: Mutex::new(false),
             closed_changed: Condvar::new(),
-            disconnecting: AtomicBool::new(false),
         })
     }
 
@@ -274,8 +269,11 @@ impl Ipc {
 
     /// Close the channel after the queued messages (`subprocess.disconnect()`).
     pub fn disconnect(&self) {
-        self.disconnecting.store(true, Ordering::SeqCst);
         self.queue.lock().unwrap().take();
+    }
+
+    fn is_closed(&self) -> bool {
+        *self.closed.lock().unwrap()
     }
 
     /// Wait until the channel has closed (the child exited or disconnected).
@@ -340,7 +338,9 @@ impl Pending {
 fn accept(listener: &TcpListener, token: &str, ipc: &Ipc) -> Option<TcpStream> {
     listener.set_nonblocking(true).ok()?;
     let deadline = Instant::now() + CONNECT_TIMEOUT;
-    while Instant::now() < deadline && !ipc.disconnecting.load(Ordering::SeqCst) {
+    // A disconnect() before the child connects still waits for it: the
+    // messages queued before it must reach the child first, as on Unix.
+    while Instant::now() < deadline && !ipc.is_closed() {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_nonblocking(false);
@@ -378,10 +378,8 @@ fn connected(ipc: &Arc<Ipc>, stream: Stream, receiver: mpsc::Receiver<Vec<u8>>, 
         return;
     };
     *ipc.stream.lock().unwrap() = Some(control);
-    // A disconnect() that came before the child connected (TCP).
-    if ipc.disconnecting.load(Ordering::SeqCst) {
-        ipc.shutdown();
-    }
+    // A disconnect() that came before the child connected (TCP) has dropped
+    // the sender: the writer below sends what is queued, then shuts down.
     let writer_ipc = Arc::downgrade(ipc);
     thread::spawn(move || {
         for chunk in receiver {
@@ -649,6 +647,38 @@ mod tests {
         }
         assert_eq!(lines, vec!["1".to_string(), "2".to_string()]);
         drop(reader);
+        drop(child);
+        wait_end(&rx);
+    }
+
+    /// send() then disconnect() before the child connects back (TCP): the
+    /// child still gets the message, then end-of-file.
+    #[test]
+    fn tcp_disconnect_before_connect_flushes_the_queue() {
+        let ipc = IpcOptions {
+            kind: IpcKind::Utility,
+            fd: 3,
+            tcp: true,
+        };
+        let mut command = Command::new("/bin/true");
+        let pending = prepare(&mut command, &ipc).unwrap();
+        let env: String = command
+            .get_envs()
+            .find(|(k, _)| *k == IPC_ENV)
+            .map(|(_, v)| v.unwrap().to_string_lossy().into_owned())
+            .unwrap();
+        let parts: Vec<&str> = env.split(':').collect();
+        let port: u16 = parts[2].parse().unwrap();
+        let token = parts[3].to_string();
+        let (sink, rx) = collect();
+        let channel = pending.start(sink);
+        assert!(channel.send(b"\"job\"\n".to_vec()));
+        channel.disconnect();
+        let mut child = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+        child.write_all(format!("{token}\n").as_bytes()).unwrap();
+        let mut received = String::new();
+        child.read_to_string(&mut received).unwrap();
+        assert_eq!(received, "\"job\"\n");
         drop(child);
         wait_end(&rx);
     }
