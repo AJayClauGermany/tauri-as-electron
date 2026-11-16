@@ -127,6 +127,17 @@ describe('trusted origins in the main process', () => {
     expect(state.commands.map((c) => c.args.script)).toEqual(['RENDERER_SCRIPT', 'EDITED_SCRIPT'])
   })
 
+  it('in a build, tries again for the next window after a failed fetch', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    fetchMock.mockImplementationOnce(async () => ({ ok: false, status: 503, text: async () => '' }))
+    const { registerTrustedRenderer } = await freshModules()
+    expect(await registerTrustedRenderer()).toBe(false)
+    expect(await registerTrustedRenderer()).toBe(true)
+    expect(await registerTrustedRenderer()).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    error.mockRestore()
+  })
+
   it('does nothing without trusted origins, and warns when the bundler built no script', async () => {
     state.origins = []
     let modules = await freshModules()

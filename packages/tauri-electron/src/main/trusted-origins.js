@@ -38,17 +38,25 @@ export function trustedOriginOf(url) {
 /** How long window creation waits for the renderer script. */
 const FETCH_TIMEOUT_MS = 15_000
 
-/** The script, given up after FETCH_TIMEOUT_MS (window creation waits for it). */
+/** The script's text, given up after FETCH_TIMEOUT_MS (window creation waits for it). */
 function fetchScript(url, dev) {
   const controller = typeof AbortController === 'function' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(new Error(`${url}: no answer in ${FETCH_TIMEOUT_MS / 1000} s`)), FETCH_TIMEOUT_MS) : null
   const options = { ...(dev ? { cache: 'no-store' } : {}), ...(controller ? { signal: controller.signal } : {}) }
-  return fetch(url, options).finally(() => clearTimeout(timer))
+  // The timer also covers the body: the abort ends a stalled read.
+  return fetch(url, options)
+    .then((response) => {
+      if (!response.ok) throw new Error(`${url}: ${response.status}`)
+      return response.text()
+    })
+    .finally(() => clearTimeout(timer))
 }
 
 let registration = null
 let registered = false
 let lastScript = null
+// The last attempt failed (a build tries again for the next window).
+let failed = false
 
 /**
  * Hand the renderer script to tauri-plugin-electron. Resolves to whether
@@ -61,7 +69,7 @@ let lastScript = null
 export function registerTrustedRenderer() {
   const app = globalThis.__TAURI_ELECTRON_APP__
   const dev = Boolean(app?.root)
-  if (registration && !dev) return registration
+  if (registration && !dev && !failed) return registration
   if (!hasNativePlugin() || !trustedOrigins().length) return (registration = Promise.resolve(false))
   const url = app?.trustedRenderer
   if (!url) {
@@ -77,17 +85,15 @@ export function registerTrustedRenderer() {
   // previous one ended), so an older script never replaces a newer one.
   registration = (registration ?? Promise.resolve())
     .then(() => fetchScript(base ? new URL(url, base) : url, dev))
-    .then((response) => {
-      if (!response.ok) throw new Error(`${url}: ${response.status}`)
-      return response.text()
-    })
     .then(async (script) => {
+      failed = false
       if (script === lastScript) return registered
       const ok = Boolean(await native('set_trusted_renderer', { script }))
       lastScript = script
       return (registered = ok)
     })
     .catch((error) => {
+      failed = true
       report('trusted origins: renderer script')(error)
       return registered
     })

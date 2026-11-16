@@ -49,7 +49,6 @@ function utilityStdio(stdio = 'inherit') {
   throw new TypeError('stdio must be a string or an array')
 }
 
-
 export class UtilityProcess extends EventEmitter {
   constructor(modulePath, args = [], options = {}) {
     super()

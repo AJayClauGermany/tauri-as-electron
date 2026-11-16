@@ -272,23 +272,24 @@ impl Ipc {
 
     /// Queue bytes (a JSON line) for the child. False once disconnected.
     pub fn send(&self, data: Vec<u8>) -> bool {
-        let unconnected = self.stream.lock().unwrap().is_none();
-        let queued = self
-            .queue
-            .lock()
-            .unwrap()
-            .as_ref()
-            .is_some_and(|sender| sender.send(data).is_ok());
-        if queued && unconnected {
+        // Under the queue lock, which disconnect() takes before it sets
+        // `disconnecting`: a waiting TCP accept never sees the disconnect
+        // without the message queued before it.
+        let queue = self.queue.lock().unwrap();
+        let Some(sender) = queue.as_ref() else {
+            return false;
+        };
+        if self.stream.lock().unwrap().is_none() {
             self.queued_unconnected.store(true, Ordering::SeqCst);
         }
-        queued
+        sender.send(data).is_ok()
     }
 
     /// Close the channel after the queued messages (`subprocess.disconnect()`).
     pub fn disconnect(&self) {
+        let mut queue = self.queue.lock().unwrap();
         self.disconnecting.store(true, Ordering::SeqCst);
-        self.queue.lock().unwrap().take();
+        queue.take();
     }
 
     /// The child exited: it will not connect any more (TCP), then disconnect.

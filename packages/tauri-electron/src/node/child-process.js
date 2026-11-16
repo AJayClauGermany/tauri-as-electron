@@ -490,8 +490,6 @@ const NODE_VALUE_OPTIONS = new Set([
   '--test-timeout', '--title', '--tls-cipher-list', '--tls-keylog', '--trace-event-categories',
   '--trace-event-file-pattern', '--unhandled-rejections', '--use-largepages', '--v8-pool-size', '--watch-kill-signal',
   '--watch-path',
-  // V8 options Node passes on, which also take a separate value.
-  '--max-old-space-size', '--max-semi-space-size', '--stack-size', '--stack-trace-limit',
 ])
 const NODE_SHORT_VALUE_OPTIONS = new Set(['r', 'C'])
 // Options after which there is no script file: code, stdin, a package.json script.

@@ -24,7 +24,7 @@ import { platform } from '../process.js'
 import { toProjectPath } from '../internal/app-files.js'
 import { resolveImage } from './native-image.js'
 import { IpcMain } from './ipc-main.js'
-import { transferPorts } from './message-ports.js'
+import { transferPorts, checkTransferList } from './message-ports.js'
 import { session as sessionModule } from './session.js'
 import { toNativeSchemeUrl } from './protocol.js'
 import { createWebviewWindow } from './native-window.js'
@@ -432,6 +432,8 @@ export class WebContents extends EventEmitter {
   /** Transfers MessagePortMain objects; the page receives DOM MessagePorts in event.ports. */
   postMessage(channel, message, transfer = []) {
     if (this.isDestroyed()) throw new Error('Object has been destroyed')
+    // Checked now, not when the queued message is sent after the page loads.
+    if (transfer?.length) checkTransferList(transfer)
     this._postWhenAlive({ type: 'send', channel: String(channel), args: encode([message]), transfer })
   }
 

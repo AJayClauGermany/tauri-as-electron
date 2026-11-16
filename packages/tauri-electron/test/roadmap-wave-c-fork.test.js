@@ -405,8 +405,12 @@ describe('utilityProcess.fork', () => {
     closed.close()
     expect(() => child.postMessage(null, [port2, closed])).toThrow(/index 1 is already neutered or closed/)
     expect(() => child.postMessage(null, [port2, port2])).toThrow(/index 1/)
-    // webContents.postMessage's transfer list is checked the same way.
+    // webContents.postMessage's transfer list is checked the same way, when it is called.
     expect(() => transferPorts([port2, closed], 'w-any')).toThrow(/index 1 is already neutered or closed/)
+    const { WebContents } = await import('../src/main/browser-window.js')
+    const contents = Object.assign(Object.create(WebContents.prototype), { isDestroyed: () => false, _postWhenAlive: vi.fn() })
+    expect(() => contents.postMessage('ch', null, [closed])).toThrow(/index 0 is already neutered or closed/)
+    expect(contents._postWhenAlive).not.toHaveBeenCalled()
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })

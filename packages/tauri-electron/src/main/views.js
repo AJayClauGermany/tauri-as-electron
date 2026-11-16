@@ -250,13 +250,12 @@ class GuestHost {
       }
       this._native = true
       // The window closed while the webview was being created (_onWindowGone
-      // had nothing native to forget then): forget it now, and create it again
-      // in the window it was moved to meanwhile, if any.
+      // had nothing native to forget then): forget it now (finally() below
+      // creates it in the window it was moved to meanwhile, if any).
       if (win.isDestroyed()) {
-        const target = this._window !== win && !this._window?.isDestroyed() ? this._window : null
-        const latest = this._placement
+        const movedTo = this._window
         this._onWindowGone()
-        if (target) this._recreate = { win: target, placement: latest }
+        if (movedTo !== win) this._window = movedTo
         return
       }
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
@@ -279,9 +278,15 @@ class GuestHost {
       })
       .finally(() => {
         this._creating = null
-        const again = this._recreate
-        this._recreate = null
-        if (again && !this._destroyed && !again.win.isDestroyed()) this._create(again.win, again.placement)
+        // Moved to another window while `win` went away (whichever way the
+        // creation ended): create it there. After a task, so a loadURL()
+        // waiting on this creation has stored its URL first.
+        setTimeout(() => {
+          const target = this._window
+          if (!this._native && !this._creating && !this._destroyed && target && target !== win && !target.isDestroyed()) {
+            this._create(target, this._placement)
+          }
+        }, 0)
       })
     return this._creating
   }
