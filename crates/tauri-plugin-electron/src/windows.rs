@@ -58,6 +58,8 @@ pub async fn create_window<R: Runtime>(
         .on_download(downloads::on_download)
         .on_permission_request(permissions::on_permission_request);
     let window = builder.build().map_err(|e| e.to_string())?;
+    // Screen sharing: media settings and the screen-capture hook (C9).
+    crate::display_media::attach(&app, &window, &label);
     web_request::attach(&app, &window, &label, &extras.web_request);
     tls_auth::attach(&app, &window, &label);
     #[cfg(any(

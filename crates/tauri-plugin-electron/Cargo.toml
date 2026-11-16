@@ -25,6 +25,7 @@ default = [
   "power-save-blocker",
   "power-monitor",
   "safe-storage",
+  "desktop-capturer",
 ]
 # dialog.* (including the *Sync variants)
 dialog = ["dep:tauri-plugin-dialog"]
@@ -55,6 +56,9 @@ power-monitor = ["dep:zbus"]
 # safeStorage: a random key kept in the OS keychain (Keychain, Credential
 # Manager, Secret Service) and AES-256-GCM.
 safe-storage = ["dep:keyring", "dep:aes-gcm"]
+# desktopCapturer.getSources: screens and windows with thumbnails (X11 on
+# Linux, GDI on Windows, CoreGraphics on macOS).
+desktop-capturer = ["dep:x11rb", "dep:objc2-core-graphics", "windows/Win32_Graphics_Dwm", "windows/Win32_Storage_Xps"]
 
 # --- opt-in ------------------------------------------------------------------------
 # app.requestSingleInstanceLock() / 'second-instance'. Electron apps allow several
@@ -114,6 +118,8 @@ tauri-plugin-deep-link = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.23"
+# webContents.capturePage / desktopCapturer thumbnails (already built for Tauri's icons).
+png = "0.18"
 # Sockets for net / dgram / dns (feature node-net); Tauri already runs tokio.
 tokio = { version = "1", optional = true, features = ["net", "io-util", "sync", "rt", "time", "macros"] }
 socket2 = { version = "0.6", optional = true, features = ["all"] }
@@ -142,12 +148,18 @@ libc = "0.2"
 # (the version wry uses, so nothing more is built).
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
+# printToPDF's print settings and capturePage's snapshot (the versions webkit2gtk uses).
+gtk = "0.18"
+cairo-rs = "0.18"
+# desktopCapturer (feature desktop-capturer): X11 screens and windows.
+x11rb = { version = "0.13", optional = true }
 
-# WebView2 webviews of BrowserWindows: session.webRequest, certificate errors
-# and HTTP authentication (the versions wry uses, so nothing more is built).
+# WebView2 webviews of BrowserWindows: session.webRequest, certificate errors,
+# HTTP authentication, printToPDF / capturePage / screen sharing, and GDI for
+# desktopCapturer (the versions wry uses, so nothing more is built).
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 # keytar's findCredentials on Windows (feature keytar): CredEnumerateW, which keyring lacks.
 windows-sys = { version = "0.60", optional = true, features = ["Win32_Foundation", "Win32_Security_Credentials"] }
 
@@ -170,6 +182,14 @@ zbus = { version = "5", optional = true }
 # used directly for keytar's attributes and for findCredentials.
 dbus-secret-service = { version = "4.1", optional = true, features = ["crypto-rust"] }
 
-# keytar's findCredentials on macOS (feature keytar): a keychain search, which keyring lacks.
+# printToPDF / capturePage on WKWebView; desktopCapturer with CoreGraphics (the versions wry uses).
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSError", "NSString", "NSValue"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSBitmapImageRep", "NSImage", "NSImageRep"] }
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView", "WKPDFConfiguration", "WKSnapshotConfiguration"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFArray", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", optional = true, default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGDirectDisplay", "CGError", "CGImage", "CGWindow"] }
+# keytar's findCredentials on macOS (feature keytar): a keychain search, which keyring lacks.
 security-framework = { version = "3", optional = true }

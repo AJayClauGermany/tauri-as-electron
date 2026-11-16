@@ -64,3 +64,6 @@ export { NotImplementedError } from './internal/runtime.js'
 
 import * as electron from './index.js'
 export default electron
+
+// Last: registers an ipcMain handler (screen sharing), so ipcMain must exist.
+import './main/desktop-capture-channel.js'

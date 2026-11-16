@@ -33,6 +33,9 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-download-control`
 - `allow-download-commit`
 - `allow-download-discard`
+- `allow-print-to-pdf`
+- `allow-capture-page`
+- `allow-desktop-sources`
 - `allow-web-request-listeners`
 - `allow-web-request-respond`
 - `allow-tls-auth-respond`
@@ -69,6 +72,32 @@ Enables the bridge_respond command without any pre-configured scope.
 <td>
 
 Denies the bridge_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-capture-page`
+
+</td>
+<td>
+
+Enables the capture_page command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-capture-page`
+
+</td>
+<td>
+
+Denies the capture_page command without any pre-configured scope.
 
 </td>
 </tr>
@@ -381,6 +410,32 @@ Enables the create_window command without any pre-configured scope.
 <td>
 
 Denies the create_window command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-desktop-sources`
+
+</td>
+<td>
+
+Enables the desktop_sources command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-desktop-sources`
+
+</td>
+<td>
+
+Denies the desktop_sources command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1161,6 +1216,32 @@ Enables the power_monitor_start command without any pre-configured scope.
 <td>
 
 Denies the power_monitor_start command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-print-to-pdf`
+
+</td>
+<td>
+
+Enables the print_to_pdf command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-print-to-pdf`
+
+</td>
+<td>
+
+Denies the print_to_pdf command without any pre-configured scope.
 
 </td>
 </tr>

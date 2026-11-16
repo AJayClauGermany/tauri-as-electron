@@ -213,6 +213,14 @@ pub mod gtk {
 
     fn classify(request: &PermissionRequest) -> (&'static str, Vec<&'static str>) {
         if let Some(media) = request.downcast_ref::<UserMediaPermissionRequest>() {
+            // getDisplayMedia (C9): answered by the display media handler.
+            if crate::display_media::gtk::is_display(media) {
+                let audio = media.is_for_audio_device().then_some("audio");
+                return (
+                    "display-capture",
+                    ["video"].into_iter().chain(audio).collect(),
+                );
+            }
             let mut types = Vec::new();
             if media.is_for_audio_device() {
                 types.push("audio");
@@ -246,11 +254,12 @@ pub mod gtk {
         let label = label.to_string();
         view.connect_permission_request(move |view, request| {
             let state = app.state::<Permissions>();
-            if !state.has_handler(&label) {
+            let (permission, media) = classify(request);
+            // Screen capture always asks the main process (setDisplayMediaRequestHandler).
+            if !state.has_handler(&label) && permission != "display-capture" {
                 request.allow();
                 return true;
             }
-            let (permission, media) = classify(request);
             let id = state.next_id.fetch_add(1, Ordering::Relaxed) + 1;
             let url = view.uri().map(|u| u.to_string()).unwrap_or_default();
             PENDING.with(|p| p.borrow_mut().insert(id, request.clone()));
@@ -295,5 +304,7 @@ pub fn respond<R: Runtime>(
         target_os = "openbsd"
     ))]
     let _ = app.run_on_main_thread(move || gtk::answer(id, granted));
+    #[cfg(windows)]
+    let _ = app.run_on_main_thread(move || crate::display_media::answer(id, granted));
     let _ = (label, url, permission);
 }
