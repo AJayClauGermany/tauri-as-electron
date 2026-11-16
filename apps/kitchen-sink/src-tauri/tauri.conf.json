@@ -24,6 +24,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "electron": {
+      "trustedOrigins": [{ "origin": "http://127.0.0.1:*", "node": true }]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

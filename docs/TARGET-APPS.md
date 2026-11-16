@@ -67,7 +67,7 @@ round of work; **now** is the current status. See
 | `app.isInApplicationsFolder` / `moveToApplicationsFolder` | macOS “move to Applications” | ⚪ | ⚪ returns `false` |
 | `webUtils.getPathForFile` | Drag a repository folder onto the window | 🟡 | ✅ paths from Tauri's native file drop |
 | `dialog.showCertificateTrustDialog` | Untrusted certificates (Windows/macOS) | ❌ | ❌ |
-| `app.on('certificate-error')` | Same | ❌ never emitted | ❌ never emitted |
+| `app.on('certificate-error')` | Same | ❌ never emitted | 🟡 Linux and Windows (not macOS) |
 | `shell.beep`, `app.dock.bounce` | Notify when the window is not focused | 🟡 | 🟡 |
 
 ### VS Code only
@@ -80,7 +80,7 @@ round of work; **now** is the current status. See
 | `webPreferences.additionalArguments` → renderer `process.argv` | The window configuration is passed in `--vscode-window-config=…` | ❌ | ✅ |
 | `webPreferences.zoomFactor`, `sandbox`, `spellcheck`, `backgroundThrottling` | Window creation | 🟡 | ✅ `spellcheck` ignored |
 | `protocol.registerSchemesAsPrivileged`, `protocol.handle`, `unhandle`, `registerFileProtocol` | `vscode-file://` and `vscode-webview://` | ❌ | 🟡 `handle` works for schemes declared in Rust; `net.fetch('file://…')` and `registerFileProtocol` read files with the `node-fs` feature |
-| `utilityProcess.fork` | Extension host, shared process, pty host, file watcher | ❌ | ❌ biggest blocker, see below |
+| `utilityProcess.fork` | Extension host, shared process, pty host, file watcher | ❌ | 🟡 a real Node.js (bundled sidecar) with `process.parentPort` and transferred `MessagePortMain`s; see below |
 | `safeStorage.encryptString/decryptString`, `isEncryptionAvailable`, `getSelectedStorageBackend` | Secret storage | ❌ | 🟡 reports encryption unavailable (VS Code has a fallback for this) |
 | `powerMonitor` events and `getSystemIdleState`, `isOnBatteryPower` | Telemetry, idle detection | ❌ | 🟡 `unknown`, battery from `navigator.getBattery` |
 | `powerSaveBlocker.start/stop` | Keep the display awake during debugging | ❌ | ✅ Operating-system assertion (`keepawake`) |
@@ -91,7 +91,7 @@ round of work; **now** is the current status. See
 | `Menu.sendActionToFirstResponder`, `app.dock.setMenu`, `setJumpList`, `addRecentDocument` | Platform integration | ⚪ | ⚪ |
 | `BrowserWindow.setTitleBarOverlay`, `setWindowButtonPosition`, `setTouchBar`, `addTabbedWindow`, `setRepresentedFilename`, `setDocumentEdited` | Platform chrome | ⚪ / ❌ (`TouchBar` threw) | ⚪ (accepted, cached) |
 | `BrowserWindow.getNativeWindowHandle` | Native window integration on Windows | ❌ | ❌ |
-| `webContents.session.webRequest` (CSP and header rewrites) | Webviews and the integrated browser | ❌ | ⚪ listeners stored, not applied |
+| `webContents.session.webRequest` (CSP and header rewrites) | Webviews and the integrated browser | ❌ | 🟡 applied to `net.fetch` and custom schemes; page requests rewritten on Windows only |
 | `session.fromPartition`, `clearStorageData` | Integrated-browser sessions | ❌ | 🟡 in-memory partitions → `incognito`; persistent ones share the default store except on macOS 14+ |
 | `desktopCapturer`, `webContents.capturePage` | Screenshots | ❌ | 🟡 [native] thumbnails and the visible page; a capture cannot preselect its source |
 | `contentTracing`, `debugger`, `WebContentsView` | Profiling, the integrated browser | ❌ | ❌ |
@@ -109,10 +109,13 @@ app unchanged. These gaps are outside `electron`'s exports:
   plugins (`plugin-fs`, `plugin-shell`, ...), Rust commands, or a Node
   sidecar.
 - **`utilityProcess`.** VS Code runs its extension host and shared process
-  as `utilityProcess.fork()` children that talk over `MessagePort`s. The
-  closest Tauri equivalent is a Node sidecar (`plugin-shell`) with a
-  message protocol over stdio. That needs a bundled Node runtime, so it is
-  left to the app.
+  as `utilityProcess.fork()` children that talk over `MessagePort`s. This
+  now works on a Node.js the app bundles as a sidecar (roadmap C3):
+  `process.parentPort`, ports transferred from the main process (also ones
+  whose other end is in a window). VS Code's entry points are computed at
+  runtime (`FileAccess.asFileUri(...)`), so they have to be listed in the
+  bundler plugin's `fork` option, and its native modules (`node-pty`,
+  `@vscode/sqlite3`) still need their own solution.
 - **`nodeIntegration` renderers.** Desktop's renderer imports Node modules
   directly. A Tauri webview cannot do that.
 - **The `asar` archive and `__dirname`-relative file access.** The Vite

@@ -14,6 +14,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# tauri::generate_context!() needs it once tauri.conf.json has a `plugins`
+# section (here `plugins.electron.trustedOrigins`).
+serde_json = "1"
 # tauri-electron's native half. It registers the official Tauri plugins the
 # Electron API is built on and grants the main window their permissions, so
 # the features below are the only switch. Defaults: "dialog", "clipboard",
@@ -28,7 +31,10 @@ tauri = { version = "2", features = [] }
 tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron", features = [
   "node-fs",            # fs, fs/promises: file access from the main process
   "node-os",            # os: host, user, memory, CPUs, network interfaces
-  "node-child-process", # child_process: runs arbitrary commands; delete to disable
+  "node-child-process", # child_process (also fork, utilityProcess): runs arbitrary commands; delete to disable
   "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
   "node-tls",           # tls, https servers (rustls); implies node-net
+  "keytar",             # keytar: passwords in the OS keychain
+  "sqlite",             # better-sqlite3 / sqlite3: SQLite compiled in
+  "pty",                # node-pty: pseudo-terminals; runs arbitrary programs
 ] }

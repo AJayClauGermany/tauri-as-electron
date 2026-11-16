@@ -124,7 +124,8 @@ describe('child_process sync', () => {
     state.answer = () => frame({ status: null, signal: 15, error: { code: 'ETIMEDOUT', errno: -110, syscall: 'spawnSync /bin/sh', path: '/bin/sh' } })
     expect(cp.spawnSync('sleep', ['9'], { timeout: 10 })).toMatchObject({ signal: 'SIGTERM', error: { code: 'ETIMEDOUT' } })
     expect(state.sync.at(-1).args.timeout).toBe(10)
-    expect(() => cp.fork('worker.js')).toThrow(/no Node\.js is shipped/)
+    // An IPC channel needs an asynchronous child (roadmap C3 implements fork and 'ipc').
+    expect(() => cp.spawnSync('node', ['w.js'], { stdio: ['pipe', 'pipe', 'pipe', 'ipc'] })).toThrow(expect.objectContaining({ code: 'ERR_IPC_SYNC_FORK' }))
   })
 })
 

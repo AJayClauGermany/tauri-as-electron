@@ -1,0 +1,78 @@
+/**
+ * Trusted origins: pages served by someone else's server (typically one the
+ * app starts on loopback, like SiYuan's kernel at `http://127.0.0.1:6806`)
+ * that get the renderer bootstrap, the preload and IPC like the app's own
+ * pages. They are declared when the app is built
+ * (`tauri.conf.json` > `plugins.electron.trustedOrigins`); tauri-plugin-electron
+ * checks them and reports them in `process_info`.
+ *
+ * The bundler plugins cannot put the bootstrap in those pages' HTML, so they
+ * build it (with the preloads) as one classic script; the main process hands
+ * it to tauri-plugin-electron, which gives every window created afterwards an
+ * initialization script running it on the trusted origins only.
+ */
+import { native, hasNativePlugin, processInfo } from '../internal/native.js'
+import { report, warnOnce } from '../internal/runtime.js'
+
+/** `[{ origin, scheme, host, port, node }]`; `port` null: any port. */
+export function trustedOrigins() {
+  return processInfo()?.trustedOrigins ?? []
+}
+
+/** The entry `url` is on, or null. */
+export function trustedOriginOf(url) {
+  const list = trustedOrigins()
+  if (!list.length) return null
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const scheme = parsed.protocol.slice(0, -1)
+  if (scheme !== 'http' && scheme !== 'https') return null
+  const port = Number(parsed.port || (scheme === 'https' ? 443 : 80))
+  return list.find((o) => o.scheme === scheme && o.host === parsed.hostname && (o.port == null || o.port === port)) ?? null
+}
+
+let registration = null
+let registered = false
+
+/**
+ * Hand the renderer script to tauri-plugin-electron, once (later calls share
+ * the first one's promise). Resolves to whether windows created from now on
+ * run it on the trusted origins.
+ */
+export function registerTrustedRenderer() {
+  if (registration) return registration
+  if (!hasNativePlugin() || !trustedOrigins().length) return (registration = Promise.resolve(false))
+  const url = globalThis.__TAURI_ELECTRON_APP__?.trustedRenderer
+  if (!url) {
+    warnOnce(
+      'trusted-renderer',
+      'tauri.conf.json declares trusted origins (plugins.electron.trustedOrigins), but the bundler plugin did not build their renderer script ' +
+        "(its `trustedOrigins` option is false, or tauri.conf.json is not in src-tauri/): pages of those origins get no preload or IPC.",
+    )
+    return (registration = Promise.resolve(false))
+  }
+  const base = globalThis.location?.href
+  registration = fetch(base ? new URL(url, base) : url)
+    .then((response) => {
+      if (!response.ok) throw new Error(`${url}: ${response.status}`)
+      return response.text()
+    })
+    .then((script) => native('set_trusted_renderer', { script }))
+    .then(
+      (ok) => (registered = Boolean(ok)),
+      (error) => {
+        report('trusted origins: renderer script')(error)
+        return false
+      },
+    )
+  return registration
+}
+
+/** Whether windows created now get the renderer script on trusted origins. */
+export function trustedRendererRegistered() {
+  return registered
+}

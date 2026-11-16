@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the capture_page command without any pre-configured scope."
         },
         {
+          "description": "Enables the child_disconnect command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-disconnect",
+          "markdownDescription": "Enables the child_disconnect command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_disconnect command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-disconnect",
+          "markdownDescription": "Denies the child_disconnect command without any pre-configured scope."
+        },
+        {
           "description": "Enables the child_end command without any pre-configured scope.",
           "type": "string",
           "const": "allow-child-end",
@@ -341,6 +353,18 @@
           "type": "string",
           "const": "deny-child-kill",
           "markdownDescription": "Denies the child_kill command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the child_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-child-send",
+          "markdownDescription": "Enables the child_send command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the child_send command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-child-send",
+          "markdownDescription": "Denies the child_send command without any pre-configured scope."
         },
         {
           "description": "Enables the child_spawn command without any pre-configured scope.",
@@ -583,6 +607,18 @@
           "markdownDescription": "Denies the is_devtools_open command without any pre-configured scope."
         },
         {
+          "description": "Enables the keytar command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-keytar",
+          "markdownDescription": "Enables the keytar command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the keytar command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-keytar",
+          "markdownDescription": "Denies the keytar command without any pre-configured scope."
+        },
+        {
           "description": "Enables the message_box command without any pre-configured scope.",
           "type": "string",
           "const": "allow-message-box",
@@ -823,6 +859,30 @@
           "markdownDescription": "Denies the process_info command without any pre-configured scope."
         },
         {
+          "description": "Enables the pty_attach command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pty-attach",
+          "markdownDescription": "Enables the pty_attach command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pty_attach command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pty-attach",
+          "markdownDescription": "Denies the pty_attach command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the pty_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-pty-control",
+          "markdownDescription": "Enables the pty_control command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the pty_control command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-pty-control",
+          "markdownDescription": "Denies the pty_control command without any pre-configured scope."
+        },
+        {
           "description": "Enables the safe_storage_decrypt command without any pre-configured scope.",
           "type": "string",
           "const": "allow-safe-storage-decrypt",
@@ -871,6 +931,18 @@
           "markdownDescription": "Denies the set_menu_visible command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_trusted_renderer command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-trusted-renderer",
+          "markdownDescription": "Enables the set_trusted_renderer command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_trusted_renderer command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-trusted-renderer",
+          "markdownDescription": "Denies the set_trusted_renderer command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_window_config command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-window-config",
@@ -881,6 +953,30 @@
           "type": "string",
           "const": "deny-set-window-config",
           "markdownDescription": "Denies the set_window_config command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the sqlite command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-sqlite",
+          "markdownDescription": "Enables the sqlite command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the sqlite command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-sqlite",
+          "markdownDescription": "Denies the sqlite command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the tls_auth_respond command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-tls-auth-respond",
+          "markdownDescription": "Enables the tls_auth_respond command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the tls_auth_respond command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-tls-auth-respond",
+          "markdownDescription": "Denies the tls_auth_respond command without any pre-configured scope."
         },
         {
           "description": "Enables the trash_item command without any pre-configured scope.",
@@ -943,16 +1039,58 @@
           "markdownDescription": "Denies the udp_send command without any pre-configured scope."
         },
         {
-          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-print-to-pdf`\n- `allow-capture-page`\n- `allow-desktop-sources`",
+          "description": "Enables the web_request_listeners command without any pre-configured scope.",
           "type": "string",
-          "const": "default",
-          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-print-to-pdf`\n- `allow-capture-page`\n- `allow-desktop-sources`"
+          "const": "allow-web-request-listeners",
+          "markdownDescription": "Enables the web_request_listeners command without any pre-configured scope."
         },
         {
-          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`",
+          "description": "Denies the web_request_listeners command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-web-request-listeners",
+          "markdownDescription": "Denies the web_request_listeners command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the web_request_respond command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-web-request-respond",
+          "markdownDescription": "Enables the web_request_respond command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the web_request_respond command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-web-request-respond",
+          "markdownDescription": "Denies the web_request_respond command without any pre-configured scope."
+        },
+        {
+          "description": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-print-to-pdf`\n- `allow-capture-page`\n- `allow-desktop-sources`\n- `allow-web-request-listeners`\n- `allow-web-request-respond`\n- `allow-tls-auth-respond`\n- `allow-set-trusted-renderer`",
+          "type": "string",
+          "const": "default",
+          "markdownDescription": "Everything tauri-electron needs in the hidden `electron-main` window (Electron's main process). Do not grant this to renderer windows.\n#### This default permission set includes:\n\n- `allow-process-info`\n- `allow-set-window-config`\n- `allow-open-devtools`\n- `allow-close-devtools`\n- `allow-is-devtools-open`\n- `allow-trash-item`\n- `allow-bridge-respond`\n- `allow-set-menu-visible`\n- `allow-cookies-get`\n- `allow-cookies-set`\n- `allow-cookies-remove`\n- `allow-clipboard-read-html`\n- `allow-message-box`\n- `allow-message-box-close`\n- `allow-power-blocker-start`\n- `allow-power-blocker-stop`\n- `allow-notification-show`\n- `allow-notification-close`\n- `allow-power-monitor-start`\n- `allow-safe-storage-status`\n- `allow-safe-storage-encrypt`\n- `allow-safe-storage-decrypt`\n- `allow-create-window`\n- `allow-permission-handler`\n- `allow-permission-respond`\n- `allow-download-url`\n- `allow-download-control`\n- `allow-download-commit`\n- `allow-download-discard`\n- `allow-print-to-pdf`\n- `allow-capture-page`\n- `allow-desktop-sources`\n- `allow-web-request-listeners`\n- `allow-web-request-respond`\n- `allow-tls-auth-respond`\n- `allow-set-trusted-renderer`"
+        },
+        {
+          "description": "The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-keytar`",
+          "type": "string",
+          "const": "keytar",
+          "markdownDescription": "The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-keytar`"
+        },
+        {
+          "description": "The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-sqlite`",
+          "type": "string",
+          "const": "sqlite",
+          "markdownDescription": "The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-sqlite`"
+        },
+        {
+          "description": "The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-pty-attach`\n- `allow-pty-control`",
+          "type": "string",
+          "const": "pty",
+          "markdownDescription": "The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-pty-attach`\n- `allow-pty-control`"
+        },
+        {
+          "description": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can (and a Node.js runtime for `child_process.fork` / `utilityProcess.fork`), and write to, read from, signal and message it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`\n- `allow-child-send`\n- `allow-child-disconnect`",
           "type": "string",
           "const": "node-child-process",
-          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`"
+          "markdownDescription": "Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can (and a Node.js runtime for `child_process.fork` / `utilityProcess.fork`), and write to, read from, signal and message it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-child-spawn`\n- `allow-child-write`\n- `allow-child-end`\n- `allow-child-kill`\n- `allow-child-send`\n- `allow-child-disconnect`"
         },
         {
           "description": "Node's `fs` and `fs/promises` (Cargo feature `node-fs`): read and write any file the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.\n#### This permission set includes:\n\n- `allow-node-fs`\n- `allow-fs-watch`\n- `allow-fs-unwatch`",

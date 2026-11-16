@@ -10,7 +10,7 @@ halves install straight from this GitHub repository.
 | `main.js` with `require('electron')` or `import … from 'electron'` | The same file, run by Tauri in a hidden window |
 | a preload script, renderer pages with `<script src>` | The same files, bundled by Vite (or [webpack / rspack](#webpack-and-rspack), if that is what the project uses) and loaded into Tauri windows |
 | `electron-builder` / Forge config | `src-tauri/tauri.conf.json` + `cargo`, via `tauri build` |
-| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline` and most smaller built-ins work; sockets (`net`, `tls`, `dns`), `vm`, `worker_threads` and native modules do not yet. See [Node.js code](#4-nodejs-code) |
+| Node.js in the main process | `fs`, `os`, `child_process` (backed by Rust), `Buffer`, `util`, `events`, `stream`, `crypto` (hashes, random values), the `http` / `https` client, `zlib`, `assert`, `timers`, `readline` and most smaller built-ins work; sockets (`net`, `tls`, `dns`), `vm`, `worker_threads` and native modules do not yet (except `keytar`, `better-sqlite3` / `sqlite3` and `node-pty`, re-implemented in Rust). See [Node.js code](#4-nodejs-code) |
 
 Requirements: Node 20+, Rust, and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
@@ -248,8 +248,9 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `webContents.openDevTools()` | Debug builds only. For release builds, add the `devtools` feature (uses private APIs on macOS). |
 | `webContents.on('before-input-event')` + `preventDefault()` | Reported after the page saw the key; block keys with a `keydown` listener in the page. |
 | Renderer calls to privileged Tauri APIs | Renderers only get IPC permissions (like context-isolated, sandboxed Electron renderers). Route through the main process, or add a capability file in `src-tauri/capabilities/`. |
-| `utilityProcess.fork()`, `child_process.fork()` | Not available: they start another Node.js process, and none is shipped. Run that code in the main process or a Web Worker, or spawn a separate executable with `child_process.spawn`. |
+| `utilityProcess.fork()`, `child_process.fork()` | Run in a real Node.js: in development the one on `PATH`; for a release, bundle one as a sidecar (`npx github:AJayClauGermany/tauri-as-electron --node-sidecar`). Entry modules with static paths are found and bundled for Node; list others with the plugin's `fork` option. See [Node.js code](#utilityprocessfork-and-child_processfork). |
 | `fs`, `os`, `child_process` in a renderer (`nodeIntegration: true`, `sandbox: false`) | Work, as in Electron, in windows created with those options, when the bundler plugin loads the Node layer in renderer pages: option `rendererNode` (default `'auto'` detects the options in your sources; set `true` if it misses them, e.g. options built at runtime). Sandboxed windows (the default) get a `NotImplementedError`: expose what the page needs with `ipcMain.handle`. |
+| A window showing a server the app starts (`win.loadURL('http://127.0.0.1:6806')`, as SiYuan does) | Pages the app does not serve get no preload and no IPC unless their origin is trusted: add `"plugins": { "electron": { "trustedOrigins": ["http://127.0.0.1:*"] } }` to `src-tauri/tauri.conf.json` (`{ "origin": "http://127.0.0.1:*", "node": true }` if that window uses `nodeIntegration`), and `serde_json = "1"` to `src-tauri/Cargo.toml` (Tauri needs it for any `plugins` section). The bundler plugin then builds the bootstrap and the preload for those pages (options `trustedOrigins`, `trustedPreload`). Only loopback hosts may use `http` or a `*` port; prefer the exact port when you know it. See the [crate README](../crates/tauri-plugin-electron/README.md#trusted-origins-ipc-for-pages-of-a-local-server). |
 | `@electron/remote` | Works without changes: the bundler plugins alias it to tauri-electron's implementation. Keep `initialize()` and `enable(webContents)` in the main process. Every access is a synchronous round trip, as in Electron, so prefer IPC in hot paths. |
 | `safeStorage` ciphertext | Encrypted with a key tauri-plugin-electron keeps in the OS keychain, not Electron's: values an Electron build of the app stored cannot be decrypted. Re-encrypt from the plain value (ask the user again for a stored password or token). |
 | `app.getPath('userData')` | `<appData>/<identifier>` rather than `<appData>/<productName>`. |
@@ -258,6 +259,8 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 | `webContents.printToPDF` | Works on Linux and Windows with the usual options; on macOS the PDF is one page as tall as the content. `headerTemplate` / `footerTemplate` are not supported (Windows prints WebView2's own header and footer with `displayHeaderFooter`). |
 | `session.setPermissionRequestHandler` | Applied. On Linux each request waits for the callback, as in Electron. On Windows and macOS the webview needs an answer at once: the first request of a permission per window and origin gets the platform's own prompt while the handler runs, and its answer applies to the requests after it. |
 | `session.setProxy` / `app.setProxy` | One `http://` or `socks5://` proxy for windows created afterwards and `net.fetch` (Tauri sets a webview's proxy at creation). No PAC scripts or bypass rules. On macOS, enable the `macos-proxy` feature of `tauri-plugin-electron` (macOS 14+). On Linux, the default session and `persist:` partitions share one WebKit data store, so a proxy one of them sets reaches the windows of the others too. |
+| `session.webRequest` | Applied to `net.fetch` / `net.request` / `session.fetch` and to `protocol.handle()` schemes (every event). The http(s) requests of pages can be cancelled, redirected and given other request headers on Windows only; Linux reports them (onCompleted & co.) without changing them, macOS not at all. Response headers of pages (CSP, CORS) cannot be rewritten: serve your own pages through `protocol.handle()` (where `onHeadersReceived` applies), or set CSP with a `<meta>` tag. |
+| `certificate-error`, `login`, `setCertificateVerifyProc` | Emitted on Linux and Windows (`select-client-certificate` on Windows only), never on macOS. `setCertificateVerifyProc` is only asked about certificates the webview rejected, so it can trust a self-signed server but cannot pin a certificate the system trusts. |
 | Linux tray `click` events | Not delivered (Tauri / libappindicator limitation). |
 | `Notification` `click` / `action` / `close` / `reply` | `click` and `action` work on desktop; `close` is reported on Linux only; `reply` is never emitted (keep a fallback, such as opening a window). |
 | `powerMonitor` `suspend` / `lock-screen` / … | Reported on Linux (logind and the screen saver over D-Bus); on macOS and Windows only `resume` (detected from timer drift). Idle time works everywhere. |
@@ -265,7 +268,8 @@ The scaffolder only writes files; if you prefer to see each one (Vite):
 ## 4. Node.js code
 
 Electron's main process is a Node.js process. Here it is a webview, and no
-Node.js is shipped. tauri-electron implements some Node built-ins itself
+Node.js is shipped (unless the app bundles one for `utilityProcess.fork` /
+`child_process.fork`). tauri-electron implements some Node built-ins itself
 (the plan and status: [NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)):
 
 | Built-in | Status |
@@ -274,7 +278,7 @@ Node.js is shipped. tauri-electron implements some Node built-ins itself
 | `buffer` and the global `Buffer` (main process) | The `buffer` npm package: a `Uint8Array` subclass. |
 | `fs`, `fs/promises`, `original-fs` | Rust, behind the `node-fs` feature of `tauri-plugin-electron` (main process only). |
 | `os` | Rust, behind `node-os` (main process only). |
-| `child_process` | Rust, behind `node-child-process` (main process only). |
+| `child_process` | Rust, behind `node-child-process` (main process only). `fork()` runs a real Node.js (a sidecar the app bundles; see [below](#utilityprocessfork-and-child_processfork)). |
 | `util`, `util/types`, `events`, `stream`, `stream/promises`, `string_decoder` | Pure JavaScript (`util` in-house; `stream` is readable-stream, Node's own streams). |
 | `crypto` | Hashes, HMAC, PBKDF2, HKDF, scrypt (@noble/hashes), random values and `webcrypto` / `subtle` (Web Crypto). No ciphers, signatures or key pairs yet. |
 | `http`, `https` | The client (`request`, `get`) over tauri-plugin-http; servers (`createServer`) over `net` / `tls`, see [Sockets](#sockets-net-tls-dgram-dns-http-servers). |
@@ -301,7 +305,7 @@ off (the template and the scaffolder write this for you):
 tauri-plugin-electron = { git = "https://github.com/AJayClauGermany/tauri-as-electron", features = [
   "node-fs",            # fs, fs/promises: file access from the main process
   "node-os",            # os: host, user, memory, CPUs, network interfaces
-  "node-child-process", # child_process: runs arbitrary commands; delete to disable
+  "node-child-process", # child_process (also fork, utilityProcess): runs arbitrary commands; delete to disable
   "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
   "node-tls",           # tls, https servers (rustls); implies node-net
 ] }
@@ -387,8 +391,76 @@ Forge's `extraResource` are not read yet.
 - Shells are Node's: `/bin/sh -c` on Unix, `cmd.exe /d /s /c` on Windows.
   `stdio: 'inherit'` means the app's own stdout / stderr (the terminal of
   `tauri dev`).
-- Not available: `fork()` and the `'ipc'` stdio channel (they need a
-  Node.js child), and streams or descriptors beyond 0–2 in `stdio`.
+- `fork()`, an `'ipc'` entry in `stdio` and `spawn(process.execPath, …)`
+  with `ELECTRON_RUN_AS_NODE` start a real Node.js; see the next section.
+- Not available: streams or descriptors beyond 0–2 (and `'ipc'`) in `stdio`.
+
+### `utilityProcess.fork` and `child_process.fork`
+
+Both run the module in a real Node.js child process, started by
+`tauri-plugin-electron`'s `node-child-process` feature (the same switch as
+`child_process`: forking runs arbitrary code too).
+
+- `child_process.fork(modulePath, args, { execArgv, env, cwd, silent, stdio, execPath })`
+  uses Node's own IPC channel (`NODE_CHANNEL_FD` on a socket pair, `json`
+  serialization): `child.send(message, callback)`, `'message'`,
+  `disconnect()`, `connected`, `'disconnect'`, `kill()`, `'exit'` /
+  `'close'`, `stdout` / `stderr` with `silent: true`. In the child,
+  `process.send` and `process.on('message')` are Node's.
+- `utilityProcess.fork(modulePath, args, { env, execArgv, cwd, stdio, serviceName })`
+  gives a `UtilityProcess` (`postMessage(message, [MessagePortMain])`,
+  `kill()`, `pid`, `stdout` / `stderr` with `stdio: 'pipe'`, `'spawn'`,
+  `'exit'`, `'message'`) and the child `process.parentPort`. Messages are
+  structured-clone-like, as everywhere in tauri-electron. Ports transferred
+  to the child are relayed by the main process, so one whose other end
+  lives in a window works too (VS Code's pattern: `MessageChannelMain`,
+  one port to a renderer, one to a utility process). In the child,
+  `require('electron')` / `import … from 'electron'` gives `net` (Node's
+  `fetch`); main-process modules throw a clear error, as they are absent in
+  Electron's utility processes. The process ends when the app quits.
+
+**Which Node.js.** In order: the `execPath` option of `fork`, the
+`TAURI_ELECTRON_NODE` environment variable, a sidecar next to the app's
+executable named `<Cargo package>-node` or `node`, and in debug builds `node`
+on `PATH` (so `tauri dev` works with the Node.js you develop with). A
+release build needs the sidecar. To set it up (copies the Node.js you run it
+with to `src-tauri/binaries/<package>-node-<target triple>` and adds it to
+`bundle.externalBin`):
+
+```bash
+npx github:AJayClauGermany/tauri-as-electron --node-sidecar
+```
+
+For other targets pass `--target <triple> --from <that platform's node binary>`
+(from nodejs.org). Without a runtime, `fork` fails with `spawn node ENOENT`
+and a message saying where it looked.
+
+**Which module.** The child's Node.js needs the module as a file. The
+bundler plugins find fork calls whose path is static —
+`path.join(__dirname, 'worker.js')`, `path.resolve(import.meta.dirname, …)`,
+`` `${__dirname}/worker.js` ``, `new URL('./worker.js', import.meta.url)`,
+`require.resolve('./worker')`, or a `const` holding one of those — and
+bundle each entry for Node (TypeScript and npm dependencies included, Node
+built-ins external) with a small bootstrap: into
+`node_modules/.tauri-electron/fork/` in development (rebuilt on change) and
+`src-tauri/electron-resources/fork/` in a build, shipped as `<resources>/fork/`
+by the same `"resources": { "electron-resources/": "" }` mapping as the app
+files. A `.js` path also finds a `.ts` source of that name. List entries the
+scan cannot see (paths built at runtime) with the plugin option
+`fork: ['src/worker.ts']`; `fork: false` turns this off. In the bundled
+child, `__dirname` is the app folder of the source file (the project in
+development, `<resources>/app/…` in a build), as for `fs` in the main
+process. A path that is not a bundled entry runs as it is (app-relative
+paths from the app folder).
+
+Limits: `serialization: 'advanced'` is not supported (the parent side has
+no V8 serializer), nor sending handles (sockets, servers) with `send()`;
+ports go to a utility process, not back from it; native addons (`.node`
+files) in a fork entry's dependencies are not bundled. Windows passes no
+socket to a child the way Node expects, so there the child connects back
+over loopback (a random token proves it is the right one) and the
+bootstrap provides `process.send` / `process.parentPort`: written for
+Windows, verified on Linux only.
 
 ### `os`
 
@@ -453,6 +525,36 @@ page holds handles and gets data over a channel.
 - The HTTP *client* still goes through tauri-plugin-http, so `http.get`
   does not hand out a socket (`req.socket` is null).
 
+### Native modules: `keytar`, `better-sqlite3`, `sqlite3`, `node-pty`
+
+npm packages with native code (`.node` addons) cannot load in a webview.
+tauri-electron re-implements four common ones in Rust, and the bundler
+plugins (and `require()`) alias them, so `import Database from
+'better-sqlite3'` or `require('node-pty')` keeps working without the
+package installed. Like the Node built-ins, they answer the main process
+and windows created with `nodeIntegration` / `sandbox: false`, and each is
+a Cargo feature (`--into` enables the ones your `package.json` depends on;
+the template lists them commented out):
+
+```toml
+  "keytar",             # keytar: passwords in the OS keychain
+  "sqlite",             # better-sqlite3 / sqlite3: SQLite compiled in (needs a C compiler)
+  "pty",                # node-pty: pseudo-terminals; runs arbitrary programs
+```
+
+| Package | What differs |
+| --- | --- |
+| `keytar` | Nothing in the API. Entries are stored where keytar stores them (Keychain generic passwords, Windows credentials named `<service>/<account>`, Secret Service items with keytar's attributes), so passwords the Electron build saved are still found. Without a keychain (Linux without a Secret Service) every call rejects, as keytar's does. |
+| `better-sqlite3` | Synchronous like the original: each call is a blocking request to Rust (rusqlite). `iterate()` reads all rows before yielding. `db.function()` suits deterministic functions only: SQLite cannot call into the page while it waits, so the statement runs again with the results the page computed, once per distinct argument list. `aggregate`, `table` and `loadExtension` throw. |
+| `sqlite3` | The callback API; operations run one after another per database, off the main thread. No `'change'` event, `loadExtension` or `Backup`. |
+| `node-pty` | `spawn` throws when the program cannot start (node-pty's Unix child prints the error and exits 1). No `uid` / `gid`, no `open()`. |
+
+Databases and terminals a page opened are closed when the page reloads,
+as when a Node process restarts. Forks published under other names
+(`@homebridge/node-pty-prebuilt-multiarch`, …) are not aliased
+automatically: alias them to `tauri-electron/node-pty` & co. in your
+bundler config, if they keep the original's API.
+
 ### Everything else
 
 - `require('vm')` / `import { Worker } from 'worker_threads'` & co. do
@@ -497,7 +599,7 @@ whether to change your code, enable a feature, or stop looking:
 | `[tauri-electron] … failed: …` (console error) | A Tauri call behind a fire-and-forget Electron API rejected. The message is translated when it is a permission or feature problem. | Read the translated message. |
 | `plugin X not found` in a stack trace | Same as `reason: 'feature'`, seen raw. | Enable the feature. |
 | `Failed to resolve module specifier "fs"` in the browser console | A Node built-in imported from a page the Vite plugin did not process (e.g. a `<script>` tag loaded from outside the project). | Let Vite bundle the file, or drop the import. |
-| `Module not found: Can't resolve 'x'` from webpack / rspack | A dependency your Electron build left to Node (`externals`, a native module). | Remove it from `externals` in the Tauri config so it is bundled, or replace the native module. |
+| `Module not found: Can't resolve 'x'` from webpack / rspack | A dependency your Electron build left to Node (`externals`, a native module). | Remove it from `externals` in the Tauri config so it is bundled, or replace the native module (`keytar`, `better-sqlite3`, `sqlite3` and `node-pty` are aliased to Rust versions: enable their feature). |
 
 Everything Electron accepts but behaves differently here is marked 🟡 in
 [API-COVERAGE.md](API-COVERAGE.md), with the difference spelled out. The

@@ -44,7 +44,8 @@ export { desktopCapturer } from './desktop-capturer.js'
 export const inAppPurchase = unsupportedModule('inAppPurchase', { reason: 'unsupported', hint: 'StoreKit needs a Rust / Swift integration.' })
 export const netLog = unsupportedModule('netLog', CHROMIUM)
 export const pushNotifications = unsupportedModule('pushNotifications', { reason: 'unsupported', hint: 'APNs registration needs a Rust / Swift integration.' })
-export const utilityProcess = unsupportedModule('utilityProcess', { reason: 'unsupported', hint: 'There is no Node.js runtime. Run Node code as a sidecar via @tauri-apps/plugin-shell, or move it to Rust.' })
+// Implemented on a Node.js child process (roadmap C3); re-exported here so index.js keeps its list.
+export { utilityProcess } from './utility-process.js'
 export const sharedTexture = unsupportedModule('sharedTexture', CHROMIUM)
 
 // Electron's view hierarchy: a Tauri window holds exactly one webview.

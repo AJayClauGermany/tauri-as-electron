@@ -1,0 +1,16 @@
+"$schema" = "schemas/schema.json"
+
+[[set]]
+identifier = "keytar"
+description = "The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows."
+permissions = ["allow-keytar"]
+
+[[set]]
+identifier = "sqlite"
+description = "The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows."
+permissions = ["allow-sqlite"]
+
+[[set]]
+identifier = "pty"
+description = "The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows."
+permissions = ["allow-pty-attach", "allow-pty-control"]

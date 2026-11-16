@@ -42,7 +42,10 @@ The plugin:
 Options: `preload` (string or array), `mainHtml` (default
 `electron-main.html`), `aliasPath` (default `true`), `require` (default
 `true`), `moduleScripts` (default `true`), `forwardMainConsole` (default
-`true`).
+`true`), `trustedOrigins` (default `'auto'`: when `src-tauri/tauri.conf.json`
+declares `plugins.electron.trustedOrigins`, build the bootstrap and the
+preloads as one classic script that tauri-plugin-electron runs in pages of
+those origins), `trustedPreload` (their preload; default `preload`).
 
 ## Webpack and rspack
 
@@ -101,7 +104,8 @@ Options: `main` (required; string or array), `preload` (string, array, or
 `filename` defaults to `<name>/index.html`), `mainEntry` (default
 `electron-main`), `mainHtml` (default `electron-main.html`), `aliasPath`,
 `require`, `forwardMainConsole` (default `true` each), `forgeGlobals`
-(default `true`). `fromForge(forgeConfig?, { context, mode, outDir = 'dist', port = 1420, ...pluginOptions })`
+(default `true`), `trustedOrigins` and `trustedPreload` (as for Vite; the
+script is a child compilation). `fromForge(forgeConfig?, { context, mode, outDir = 'dist', port = 1420, ...pluginOptions })`
 returns a Promise of the config.
 
 The Tauri side needs [`tauri-plugin-electron`](../../crates/tauri-plugin-electron)

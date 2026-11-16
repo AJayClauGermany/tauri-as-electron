@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-pty-control"
+description = "Enables the pty_control command without any pre-configured scope."
+commands.allow = ["pty_control"]
+
+[[permission]]
+identifier = "deny-pty-control"
+description = "Denies the pty_control command without any pre-configured scope."
+commands.deny = ["pty_control"]

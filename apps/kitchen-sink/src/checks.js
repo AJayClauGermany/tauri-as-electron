@@ -39,6 +39,10 @@ import { waveBRendererChecks } from './checks-wave-b-renderer.js'
 import { waveBNative1Checks } from './checks-wave-b-native1.js'
 import { waveBWindowChecks } from './checks-wave-b-windows.js'
 import { waveCCaptureChecks } from './checks-wave-c-capture.js'
+import { waveCNativeModuleChecks } from './checks-wave-c-native-modules.js'
+import { waveCForkChecks } from './checks-wave-c-fork.js'
+import { waveCWebRequestTlsChecks } from './checks-wave-c-webrequest-tls.js'
+import { waveCLocalOriginsChecks } from './checks-wave-c-local-origins.js'
 
 const isElectron = Boolean(process.versions.electron)
 
@@ -578,7 +582,7 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
-export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks, ...waveBBundlerChecks, ...waveBRendererChecks, ...waveBNative1Checks, ...waveBWindowChecks, ...waveCCaptureChecks]
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks, ...waveBBundlerChecks, ...waveBRendererChecks, ...waveBNative1Checks, ...waveBWindowChecks, ...waveCNativeModuleChecks, ...waveCForkChecks, ...waveCWebRequestTlsChecks, ...waveCLocalOriginsChecks, ...waveCCaptureChecks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

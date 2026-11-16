@@ -28,6 +28,8 @@ const COMMANDS: &[&str] = &[
     "child_write",
     "child_end",
     "child_kill",
+    "child_send",
+    "child_disconnect",
     "net_connect",
     "net_listen",
     "net_write",
@@ -53,6 +55,14 @@ const COMMANDS: &[&str] = &[
     "print_to_pdf",
     "capture_page",
     "desktop_sources",
+    "keytar",
+    "sqlite",
+    "pty_attach",
+    "pty_control",
+    "web_request_listeners",
+    "web_request_respond",
+    "tls_auth_respond",
+    "set_trusted_renderer",
 ];
 
 fn main() {

@@ -25,6 +25,7 @@ import { BrowserWindow, onPageLoad } from './browser-window.js'
 import { defaultSession } from './session.js'
 import { configureDownloads, onDownloadEvent } from './downloads.js'
 import { onPermissionRequest } from './permissions.js'
+import { listenTlsAuthEvents } from './tls-auth.js'
 import { Menu } from './menu.js'
 import { startMainBridge } from './ipc-main.js'
 import { initNativeTheme } from './native-theme.js'
@@ -134,6 +135,7 @@ class App extends EventEmitter {
       webview.listen('tauri-electron:opened', ({ payload }) => this._onOpened(payload)),
       webview.listen('tauri-electron:download', ({ payload }) => onDownloadEvent(payload)),
       webview.listen('tauri-electron:permission-request', ({ payload }) => onPermissionRequest(payload)),
+      listenTlsAuthEvents(webview, this),
       initNativeTheme(),
       initScreen(),
     ])

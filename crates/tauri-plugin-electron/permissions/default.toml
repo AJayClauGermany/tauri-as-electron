@@ -35,4 +35,8 @@ permissions = [
   "allow-print-to-pdf",
   "allow-capture-page",
   "allow-desktop-sources",
+  "allow-web-request-listeners",
+  "allow-web-request-respond",
+  "allow-tls-auth-respond",
+  "allow-set-trusted-renderer",
 ]
