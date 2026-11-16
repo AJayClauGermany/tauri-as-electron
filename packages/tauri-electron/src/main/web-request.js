@@ -650,7 +650,8 @@ export async function onPageRequest(payload) {
       const stage = await requestStage(webRequest, payload.url, headers, makeDetails)
       if (stage.cancel) return respond({ cancel: true })
       const changed = JSON.stringify(stage.headers) !== JSON.stringify(headerPairs(headers))
-      return respond({ redirectURL: stage.url !== payload.url ? stage.url : null, requestHeaders: changed ? stage.headers : null })
+      // Tauri passes `redirect_url` as `redirectUrl`.
+      return respond({ redirectUrl: stage.url !== payload.url ? stage.url : null, requestHeaders: changed ? stage.headers : null })
     } catch (error) {
       report('session.webRequest')(error)
       return respond({})

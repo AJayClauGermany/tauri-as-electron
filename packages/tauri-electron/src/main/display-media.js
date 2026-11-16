@@ -14,7 +14,9 @@
  *   becomes `getDisplayMedia()` in the page (src/renderer/display-media.js),
  *   which first tells the main process over IPC; that request then goes to
  *   the permission request handler ('media', as in Electron), not to the
- *   display media handler.
+ *   display media handler, when its `chromeMediaSourceId` is one that
+ *   desktopCapturer.getSources() returned (other ids are refused, as
+ *   Chromium refuses unknown sources).
  * - macOS (WKWebView) reports no screen-capture requests: WebKit asks the
  *   user itself and neither handler is called.
  */
@@ -26,11 +28,29 @@ export const DESKTOP_CAPTURE_CHANNEL = 'tauri-electron:desktop-capture'
 const INTENT_MS = 15_000
 
 const intents = new Map()
+/**
+ * Source ids desktopCapturer.getSources() returned in this process. As in
+ * Electron, a page needs one of them (from the main process) to capture the
+ * desktop with getUserMedia: otherwise any page could skip the display media
+ * handler by announcing a capture.
+ */
+const issuedSources = new Set()
 
-/** The page `label` is about to turn a desktop getUserMedia() into getDisplayMedia(). */
+/** Remember the ids desktopCapturer.getSources() gave out. */
+export function rememberDesktopSources(ids) {
+  for (const id of ids) issuedSources.add(String(id))
+}
+
+/**
+ * The page `label` is about to turn a desktop getUserMedia() into
+ * getDisplayMedia(). False (nothing recorded) for a source id the main
+ * process did not hand out.
+ */
 export function noteDesktopCapture(label, request = {}, now = Date.now()) {
+  const sourceId = String(request?.sourceId ?? '')
+  if (!issuedSources.has(sourceId)) return false
   const list = (intents.get(label) ?? []).filter((intent) => now - intent.at < INTENT_MS)
-  list.push({ at: now, sourceId: String(request.sourceId ?? ''), audio: Boolean(request.audio) })
+  list.push({ at: now, sourceId, audio: Boolean(request.audio) })
   intents.set(label, list)
   return true
 }

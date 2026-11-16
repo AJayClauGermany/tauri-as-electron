@@ -398,6 +398,21 @@ describe('utilityProcess.fork', () => {
     expect(() => child.postMessage('x', [{}])).toThrow(/MessagePortMain/)
   })
 
+  it('delivers messages queued on a port before it was transferred', async () => {
+    const child = utilityProcess.fork('/src/utility.js')
+    const { port1, port2 } = new MessageChannelMain()
+    // Reaches port2's queue before the transfer (MessageChannelMain delivers on the next tick).
+    port1.postMessage(5)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    child.postMessage({ type: 'port' }, [port2])
+    port1.start()
+    const doubled = once(port1, 'message')
+    expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })
+    expect((await doubled)[0].data).toBe(10)
+    child.kill()
+    await once(child, 'exit')
+  })
+
   it('validates stdio like Electron and needs the bootstrap', () => {
     expect(() => utilityProcess.fork('/src/utility.js', [], { stdio: ['pipe', 'pipe', 'pipe'] })).toThrow('stdin value other than ignore is not supported.')
     const saved = globalThis.__TAURI_ELECTRON_APP__

@@ -138,9 +138,11 @@ export class UtilityProcess extends EventEmitter {
     }
     const data = encode(message)
     if (this._exited) return
-    const ids = transfer.map((port) => port._transferTo(this._label))
+    // The 'm' line creates the ports in the child, so it goes before their queued messages.
+    const ids = transfer.map((port) => port._transferTo(this._label, { deferQueue: true }))
     for (const id of ids) this._ports.add(id)
     this._write({ t: 'm', d: data, p: ids })
+    for (const port of transfer) port._flushTransferred()
   }
 
   /** Terminate the child (SIGTERM on POSIX). False when it is not running. */

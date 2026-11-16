@@ -23,7 +23,7 @@ vi.mock('../src/internal/native.js', async (importOriginal) => {
 const { pdfOptions, parsePageRanges, printToPDF, capturePage, PAPER_FORMATS } = await import('../src/main/capture.js')
 const { desktopCapturer, sourceOptions } = await import('../src/main/desktop-capturer.js')
 const { onPermissionRequest } = await import('../src/main/permissions.js')
-const { noteDesktopCapture, DESKTOP_CAPTURE_CHANNEL } = await import('../src/main/display-media.js')
+const { noteDesktopCapture, rememberDesktopSources, DESKTOP_CAPTURE_CHANNEL } = await import('../src/main/display-media.js')
 const { session } = await import('../src/main/session.js')
 const renderer = await import('../src/renderer/display-media.js')
 const { encodePng } = await import('../src/internal/png.js')
@@ -226,8 +226,9 @@ describe('setDisplayMediaRequestHandler', () => {
   it("answers a desktop getUserMedia() with the permission handler ('media'), not the display handler", () => {
     const display = vi.fn()
     ses().setDisplayMediaRequestHandler(display)
+    rememberDesktopSources(['screen:1:0'])
     // The page announced it over IPC (registered on ipcMain when the module loads).
-    state.handlers.get(DESKTOP_CAPTURE_CHANNEL)({ sender: { _label: 'w1' } }, { sourceId: 'screen:1:0', audio: false })
+    expect(state.handlers.get(DESKTOP_CAPTURE_CHANNEL)({ sender: { _label: 'w1' } }, { sourceId: 'screen:1:0', audio: false })).toBe(true)
     const asked = []
     ses().setPermissionRequestHandler((webContents, permission, callback, details) => {
       asked.push([permission, details.mediaTypes])
@@ -243,11 +244,22 @@ describe('setDisplayMediaRequestHandler', () => {
   })
 
   it('grants an announced desktop capture without a permission handler, and forgets stale announcements', () => {
+    rememberDesktopSources(['window:9:0'])
     noteDesktopCapture('w1', { sourceId: 'window:9:0' })
     request(8)
-    noteDesktopCapture('w1', {}, Date.now() - 60_000)
+    noteDesktopCapture('w1', { sourceId: 'window:9:0' }, Date.now() - 60_000)
     request(9)
     expect(answers()).toEqual([true, false])
+  })
+
+  it('refuses announcements of sources desktopCapturer did not return, so the display handler still decides', () => {
+    const display = vi.fn((request, callback) => callback({}))
+    ses().setDisplayMediaRequestHandler(display)
+    expect(noteDesktopCapture('w1', {})).toBe(false)
+    expect(noteDesktopCapture('w1', { sourceId: 'screen:999:0' })).toBe(false)
+    request(10)
+    expect(display).toHaveBeenCalledTimes(1)
+    expect(answers()).toEqual([false])
   })
 })
 
@@ -294,6 +306,13 @@ describe('renderer: desktop getUserMedia → getDisplayMedia', () => {
       ['announce', { sourceId: 'window:3:0', audio: false }],
       ['getDisplayMedia', { video: true, audio: false }],
     ])
+  })
+
+  it('rejects a desktop request the main process refused, without opening the picker', async () => {
+    const devices = fakeDevices()
+    renderer.installDesktopCapture(devices, async () => false)
+    await expect(devices.getUserMedia({ video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: 'made:up:0' } } })).rejects.toMatchObject({ name: 'NotAllowedError' })
+    expect(devices.calls).toEqual([])
   })
 
   it('keeps only the audio of a desktop-audio request', async () => {

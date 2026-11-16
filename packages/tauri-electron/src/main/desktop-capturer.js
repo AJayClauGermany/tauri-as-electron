@@ -12,6 +12,7 @@
 import { native, hasNativePlugin, featureError } from '../internal/native.js'
 import { NotImplementedError, explainError, isMainProcess, inTauri } from '../internal/runtime.js'
 import { NativeImage } from './native-image.js'
+import { rememberDesktopSources } from './display-media.js'
 
 function base64ToBytes(text) {
   const binary = atob(text)
@@ -62,6 +63,8 @@ export const desktopCapturer = {
       const explained = explainError('desktopCapturer.getSources', error)
       throw explained instanceof Error ? explained : new Error(String(error?.message ?? error))
     }
-    return sources.map((raw) => toSource(raw, request.fetchWindowIcons))
+    const result = sources.map((raw) => toSource(raw, request.fetchWindowIcons))
+    rememberDesktopSources(result.map((source) => source.id))
+    return result
   },
 }

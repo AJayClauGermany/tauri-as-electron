@@ -68,11 +68,14 @@ export function installDesktopCapture(mediaDevices, announce) {
     if (typeof mediaDevices.getDisplayMedia !== 'function') {
       throw new DOMException('Desktop capture needs getDisplayMedia(), which this webview does not provide', 'NotSupportedError')
     }
+    let accepted
     try {
-      await announce({ sourceId: request.sourceId, audio: request.audio })
+      accepted = await announce({ sourceId: request.sourceId, audio: request.audio })
     } catch (error) {
       report('desktop capture')(error)
     }
+    // The main process refuses ids desktopCapturer.getSources() did not return, as Chromium does.
+    if (accepted === false) throw new DOMException(`Unknown desktop capture source '${request.sourceId}': pass an id from desktopCapturer.getSources()`, 'NotAllowedError')
     const stream = await mediaDevices.getDisplayMedia(request.display)
     if (!request.video) {
       for (const track of stream.getVideoTracks()) {

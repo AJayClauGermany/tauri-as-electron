@@ -116,15 +116,26 @@ export class MessagePortMain extends EventEmitter {
     if (this._transferred) ports.delete(this._transferred.id)
   }
 
-  /** Hand this port to a renderer; returns the id the renderer will use. */
-  _transferTo(label) {
+  /**
+   * Hand this port to a renderer (or a utility process); returns the id the
+   * destination will use. `deferQueue`: the caller sends the message that
+   * creates the port first, then calls `_flushTransferred()` (a utility
+   * process drops messages for ports it does not have yet).
+   */
+  _transferTo(label, { deferQueue = false } = {}) {
     if (this._closed || this._transferred) throw cloneError('Port at index 0 is already neutered or closed')
     const id = `main:${nextPortId++}`
     this._transferred = { label, id }
     ports.set(id, this)
-    const queue = this._queue.splice(0)
-    for (const data of queue) post(label, { type: 'port-message', port: id, data })
+    if (!deferQueue) this._flushTransferred()
     return id
+  }
+
+  /** Send the messages queued before the transfer to the port's new home. */
+  _flushTransferred() {
+    if (!this._transferred) return
+    const { label, id } = this._transferred
+    for (const data of this._queue.splice(0)) post(label, { type: 'port-message', port: id, data })
   }
 
   /** A port that lives in a renderer, received through ipcRenderer.postMessage. */

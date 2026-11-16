@@ -323,8 +323,14 @@ describe('page requests from tauri-plugin-electron', () => {
     await onPageRequest({ reply: 2, label: 'w-page', event: 'request', request: 6, url: 'https://video.test/v', method: 'GET', resourceType: 'xhr', requestHeaders: [['Accept', '*/*']] })
     expect(state.commands).toEqual([
       { command: 'web_request_respond', args: { reply: 1, cancel: true } },
-      { command: 'web_request_respond', args: { reply: 2, redirectURL: null, requestHeaders: [['Accept', '*/*'], ['Origin', 'https://www.youtube.com']] } },
+      { command: 'web_request_respond', args: { reply: 2, redirectUrl: null, requestHeaders: [['Accept', '*/*'], ['Origin', 'https://www.youtube.com']] } },
     ])
+  })
+
+  it('answers a redirect under the argument name the Rust command reads', async () => {
+    ses.webRequest.onBeforeRequest({ urls: ['*://old.test/*'] }, (details, callback) => callback({ redirectURL: 'https://new.test/x' }))
+    await onPageRequest({ reply: 3, label: 'w-page', event: 'request', request: 7, url: 'https://old.test/x', method: 'GET', resourceType: 'mainFrame', requestHeaders: [] })
+    expect(state.commands).toEqual([{ command: 'web_request_respond', args: { reply: 3, redirectUrl: 'https://new.test/x', requestHeaders: null } }])
   })
 
   it('reports what WebKitGTK / WebView2 saw to the listeners', async () => {
