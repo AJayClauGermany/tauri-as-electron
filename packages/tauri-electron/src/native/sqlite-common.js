@@ -11,8 +11,9 @@ import { callSync, callAsync, rawAnswer } from './common.js'
 
 export const BIND_TYPES = 'SQLite3 can only bind numbers, strings, bigints, buffers, and null'
 
-const INT64_MIN = -(2n ** 63n)
-const INT64_MAX = 2n ** 63n - 1n
+// BigInt() rather than literals: apps' build targets may predate them (Vite warns).
+const INT64_MIN = BigInt('-9223372036854775808')
+const INT64_MAX = BigInt('9223372036854775807')
 
 /**
  * A JavaScript value in the wire form. `strict`: better-sqlite3's rules
