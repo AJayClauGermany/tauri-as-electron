@@ -53,7 +53,7 @@ export class MessagePortMain extends EventEmitter {
     this._closed = false
     this._entangled = null // the other end, when both ends live in the main process
     this._remote = null // { label, id }: the other end lives in a renderer
-    this._transferred = null // { label, id }: this port now lives in a renderer
+    this._transferred = null // { label, id, pending }: this port now lives in a renderer (pending: not sent there yet)
   }
 
   postMessage(message, transfer) {
@@ -76,7 +76,8 @@ export class MessagePortMain extends EventEmitter {
   _deliver(data) {
     if (this._closed) return
     if (this._transferred) {
-      post(this._transferred.label, { type: 'port-message', port: this._transferred.id, data })
+      if (this._transferred.pending) this._queue.push(data)
+      else post(this._transferred.label, { type: 'port-message', port: this._transferred.id, data })
     } else if (!this._started) {
       this._queue.push(data)
     } else {
@@ -98,7 +99,7 @@ export class MessagePortMain extends EventEmitter {
     this._closed = true
     if (this._entangled) this._entangled._onPeerClosed()
     if (this._remote) post(this._remote.label, { type: 'port-close', port: this._remote.id })
-    if (this._transferred) post(this._transferred.label, { type: 'port-close', port: this._transferred.id })
+    this._closeTransferred()
     this._forget()
     this.emit('close')
   }
@@ -106,9 +107,16 @@ export class MessagePortMain extends EventEmitter {
   _onPeerClosed() {
     if (this._closed) return
     this._closed = true
-    if (this._transferred) post(this._transferred.label, { type: 'port-close', port: this._transferred.id })
+    this._closeTransferred()
     this._forget()
     this.emit('close')
+  }
+
+  /** Tell the port's new home it closed (after the transfer, if that is still pending). */
+  _closeTransferred() {
+    if (!this._transferred) return
+    if (this._transferred.pending) this._transferred.closeOnFlush = true
+    else post(this._transferred.label, { type: 'port-close', port: this._transferred.id })
   }
 
   _forget() {
@@ -125,17 +133,21 @@ export class MessagePortMain extends EventEmitter {
   _transferTo(label, { deferQueue = false } = {}) {
     if (this._closed || this._transferred) throw cloneError('Port at index 0 is already neutered or closed')
     const id = `main:${nextPortId++}`
-    this._transferred = { label, id }
+    // Pending until _flushTransferred(): messages (and a close) arriving
+    // meanwhile wait, since the destination does not have the port yet.
+    this._transferred = { label, id, pending: true }
     ports.set(id, this)
     if (!deferQueue) this._flushTransferred()
     return id
   }
 
-  /** Send the messages queued before the transfer to the port's new home. */
+  /** The port has reached its new home: send what waited for it. */
   _flushTransferred() {
-    if (!this._transferred) return
-    const { label, id } = this._transferred
-    for (const data of this._queue.splice(0)) post(label, { type: 'port-message', port: id, data })
+    const transferred = this._transferred
+    if (!transferred?.pending) return
+    transferred.pending = false
+    for (const data of this._queue.splice(0)) post(transferred.label, { type: 'port-message', port: transferred.id, data })
+    if (transferred.closeOnFlush) post(transferred.label, { type: 'port-close', port: transferred.id })
   }
 
   /** A port that lives in a renderer, received through ipcRenderer.postMessage. */
@@ -189,9 +201,13 @@ export function checkTransferList(transfer) {
   }
 }
 
-/** Ports in a webContents.postMessage() transfer list → ids for the renderer. */
-export function transferPorts(transfer, label) {
+/**
+ * Ports in a webContents.postMessage() transfer list → ids for the renderer.
+ * `deferQueue`: the caller sends the message carrying them later and then
+ * calls each port's `_flushTransferred()`.
+ */
+export function transferPorts(transfer, label, { deferQueue = false } = {}) {
   if (!transfer?.length) return undefined
   checkTransferList(transfer)
-  return transfer.map((port) => port._transferTo(label))
+  return transfer.map((port) => port._transferTo(label, { deferQueue }))
 }

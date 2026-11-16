@@ -96,6 +96,22 @@ describe('MessageChannelMain', () => {
     expect(() => transferPorts([port2], 'x')).toThrow()
   })
 
+  it('holds messages and a close for a transferred port until the message carrying it is sent', async () => {
+    emitted.length = 0
+    const { port1, port2 } = new MessageChannelMain()
+    const [id] = transferPorts([port2], 'electron-window-2', { deferQueue: true })
+    expect(() => transferPorts([port2], 'x')).toThrow(/neutered/)
+    port1.postMessage('waits')
+    await new Promise((r) => setTimeout(r, 5))
+    port1.close()
+    await new Promise((r) => setTimeout(r, 5))
+    expect(emitted.filter((e) => e.payload.port === id)).toEqual([])
+    port2._flushTransferred()
+    await new Promise((r) => setTimeout(r, 5))
+    const sent = emitted.filter((e) => e.payload.port === id).map((e) => e.payload.type)
+    expect(sent).toEqual(['port-message', 'port-close'])
+  })
+
   it('keeps port messages that reach the renderer before the port itself', async () => {
     const { ipcRenderer, onMessage } = await import('../src/renderer/ipc-renderer.js')
     const received = new Promise((resolve) => {

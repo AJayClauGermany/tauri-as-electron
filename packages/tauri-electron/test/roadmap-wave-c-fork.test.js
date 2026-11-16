@@ -408,9 +408,15 @@ describe('utilityProcess.fork', () => {
     // webContents.postMessage's transfer list is checked the same way, when it is called.
     expect(() => transferPorts([port2, closed], 'w-any')).toThrow(/index 1 is already neutered or closed/)
     const { WebContents } = await import('../src/main/browser-window.js')
-    const contents = Object.assign(Object.create(WebContents.prototype), { isDestroyed: () => false, _postWhenAlive: vi.fn() })
+    const contents = Object.assign(Object.create(WebContents.prototype), { isDestroyed: () => false, _postWhenAlive: vi.fn(), _win: { _label: 'w-any' } })
     expect(() => contents.postMessage('ch', null, [closed])).toThrow(/index 0 is already neutered or closed/)
     expect(contents._postWhenAlive).not.toHaveBeenCalled()
+    // A port queued for a page that has not loaded is transferred already: it cannot be sent twice.
+    const queued = new MessageChannelMain().port1
+    contents.postMessage('ch', null, [queued])
+    expect(() => contents.postMessage('ch', null, [queued])).toThrow(/already neutered or closed/)
+    expect(contents._postWhenAlive).toHaveBeenCalledTimes(1)
+    expect(contents._postWhenAlive.mock.calls[0][0]).toMatchObject({ type: 'send', channel: 'ch', ports: [expect.stringMatching(/^main:/)], transferred: [queued] })
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })

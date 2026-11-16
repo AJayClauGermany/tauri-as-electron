@@ -218,26 +218,36 @@ describe('WebContentsView', () => {
     second.destroy()
   })
 
-  it('also creates it in the new window when creation in the closed one failed, with the URL loaded meanwhile', async () => {
-    const first = await makeWindow()
-    const second = await makeWindow()
-    let failCreate
-    state.onCommand = (command) => (command === 'view_create' && !failCreate ? new Promise((resolve, reject) => (failCreate = reject)) : undefined)
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const view = new WebContentsView()
-    view.webContents.on('did-fail-load', () => {})
-    first.contentView.addChildView(view)
-    await vi.waitFor(() => expect(commands('view_create')).toHaveLength(1))
-    second.contentView.addChildView(view)
-    view.webContents.loadURL('https://example.net/next').catch(() => {})
-    first.destroy()
-    failCreate(new Error('the window is gone'))
-    await vi.waitFor(() => expect(commands('view_create')).toHaveLength(2))
-    expect(commands('view_create')[1].args.window).toBe(second._label)
-    expect(commands('view_create')[1].args.options.url).toBe('https://example.net/next')
-    error.mockRestore()
-    state.onCommand = null
-    second.destroy()
+  it('also creates it in the new window when creation in the closed one failed, without reporting a failed load', async () => {
+    for (const loadDuringCreation of [false, true]) {
+      const first = await makeWindow()
+      const second = await makeWindow()
+      let failCreate = null
+      const before = commands('view_create').length
+      state.onCommand = (command) => (command === 'view_create' && !failCreate ? new Promise((resolve, reject) => (failCreate = reject)) : undefined)
+      const view = new WebContentsView()
+      const failed = vi.fn()
+      view.webContents.on('did-fail-load', failed)
+      const loads = [view.webContents.loadURL('https://example.net/first')]
+      first.contentView.addChildView(view)
+      await vi.waitFor(() => expect(commands('view_create')).toHaveLength(before + 1))
+      second.contentView.addChildView(view)
+      if (loadDuringCreation) loads.push(view.webContents.loadURL('https://example.net/next'))
+      first.destroy()
+      failCreate(new Error('the window is gone'))
+      await vi.waitFor(() => expect(commands('view_create')).toHaveLength(before + 2))
+      const retry = commands('view_create')[before + 1].args
+      expect(retry.window).toBe(second._label)
+      expect(retry.options.url).toBe(loadDuringCreation ? 'https://example.net/next' : 'https://example.net/first')
+      await flush()
+      expect(failed).not.toHaveBeenCalled()
+      const settled = vi.fn()
+      for (const load of loads) load.then(settled, settled)
+      await flush()
+      expect(settled).not.toHaveBeenCalled() // waiting for the page in the new window
+      state.onCommand = null
+      second.destroy()
+    }
   })
 
   it('drops the window config of a view whose webview could not be created', async () => {

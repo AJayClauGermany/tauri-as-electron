@@ -213,14 +213,14 @@ class GuestHost {
     if (this._creating || this._native || this._destroyed) return this._creating ?? Promise.resolve()
     this._window = win
     this._placement = placement
-    const url = this._pendingUrl ?? 'about:blank'
-    this._pendingUrl = null
+    // The page: `_pendingUrl` (set by loadURL()), read when the webview is
+    // made and kept until it exists, so a creation that does not happen
+    // leaves it for the next one.
+    let url = 'about:blank'
     this._creating = (async () => {
       await win._nativeReady.promise
-      if (this._destroyed || win.isDestroyed()) {
-        this._pendingUrl ??= url
-        return
-      }
+      if (this._destroyed || win.isDestroyed()) return
+      url = this._pendingUrl ?? 'about:blank'
       const generation = ++this._generation
       const label = `electron-view-${this.id}${generation > 1 ? `-${generation}` : ''}`
       this._label = label
@@ -254,9 +254,18 @@ class GuestHost {
       // creates it in the window it was moved to meanwhile, if any).
       if (win.isDestroyed()) {
         const movedTo = this._window
+        const next = this._pendingUrl
         this._onWindowGone()
+        if (next) this._pendingUrl = next
         if (movedTo !== win) this._window = movedTo
         return
+      }
+      // A loadURL() made while the webview was being created.
+      const next = this._pendingUrl
+      this._pendingUrl = null
+      if (next && next !== url) {
+        this.webContents._alive = false
+        native('view_navigate', { label, url: guests.absoluteAppUrl(next) }).catch((error) => this._loadFailed(error, next))
       }
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
       // A placement that changed while the webview was being created.
@@ -272,23 +281,29 @@ class GuestHost {
           guests.forgetLabel(this._label)
           native('set_window_config', { label: this._label, config: null }).catch(() => {})
         }
+        // Created again in the window it moved to (below): not a failed load.
+        if (this._movedAway(win)) return
         report('create view')(error)
-        for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
-        this.webContents?.emit('did-fail-load', createEvent(), -2, String(error?.message ?? error), url, true, 0, 0)
+        this._loadFailed(error, url)
       })
       .finally(() => {
         this._creating = null
         // Moved to another window while `win` went away (whichever way the
-        // creation ended): create it there. After a task, so a loadURL()
-        // waiting on this creation has stored its URL first.
-        setTimeout(() => {
-          const target = this._window
-          if (!this._native && !this._creating && !this._destroyed && target && target !== win && !target.isDestroyed()) {
-            this._create(target, this._placement)
-          }
-        }, 0)
+        // creation ended): create it there, with the latest loadURL().
+        if (this._movedAway(win)) this._create(this._window, this._placement)
       })
     return this._creating
+  }
+
+  /** Not created, and now in a live window other than `win`. */
+  _movedAway(win) {
+    const target = this._window
+    return !this._native && !this._destroyed && Boolean(target) && target !== win && !target.isDestroyed()
+  }
+
+  _loadFailed(error, url) {
+    for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
+    this.webContents?.emit('did-fail-load', createEvent(), -2, String(error?.message ?? error), url, true, 0, 0)
   }
 
   _update(update) {
@@ -364,23 +379,13 @@ class GuestHost {
       return promise
     }
     this._loadWaiters.push({ resolve, reject })
-    if (!this._native && !this._creating) {
-      // Loaded once the view is in a window.
+    if (!this._native) {
+      // Loaded when the webview is made (or, if it is being made, right after).
       this._pendingUrl = url
       return promise
     }
-    const ready = this._creating ?? Promise.resolve()
-    ready.then(() => {
-      if (!this._native) {
-        this._pendingUrl = url
-        return
-      }
-      this.webContents._alive = false
-      return native('view_navigate', { label: this._label, url: guests.absoluteAppUrl(url) })
-    }).catch((error) => {
-      for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
-      this.webContents.emit('did-fail-load', createEvent(), -2, String(error?.message ?? error), url, true, 0, 0)
-    })
+    this.webContents._alive = false
+    native('view_navigate', { label: this._label, url: guests.absoluteAppUrl(url) }).catch((error) => this._loadFailed(error, url))
     return promise
   }
 

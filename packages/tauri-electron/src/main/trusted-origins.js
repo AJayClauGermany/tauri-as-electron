@@ -55,8 +55,10 @@ function fetchScript(url, dev) {
 let registration = null
 let registered = false
 let lastScript = null
-// The last attempt failed (a build tries again for the next window).
+// The last attempt failed: a build tries once more, for the next window.
 let failed = false
+let attempts = 0
+const BUILD_ATTEMPTS = 2
 
 /**
  * Hand the renderer script to tauri-plugin-electron. Resolves to whether
@@ -69,7 +71,7 @@ let failed = false
 export function registerTrustedRenderer() {
   const app = globalThis.__TAURI_ELECTRON_APP__
   const dev = Boolean(app?.root)
-  if (registration && !dev && !failed) return registration
+  if (registration && !dev && (!failed || attempts >= BUILD_ATTEMPTS)) return registration
   if (!hasNativePlugin() || !trustedOrigins().length) return (registration = Promise.resolve(false))
   const url = app?.trustedRenderer
   if (!url) {
@@ -80,13 +82,14 @@ export function registerTrustedRenderer() {
     )
     return (registration = Promise.resolve(false))
   }
+  attempts++
+  failed = false // windows created while this attempt runs share it
   const base = globalThis.location?.href
   // One registration at a time (in development each starts after the
   // previous one ended), so an older script never replaces a newer one.
   registration = (registration ?? Promise.resolve())
     .then(() => fetchScript(base ? new URL(url, base) : url, dev))
     .then(async (script) => {
-      failed = false
       if (script === lastScript) return registered
       const ok = Boolean(await native('set_trusted_renderer', { script }))
       lastScript = script
