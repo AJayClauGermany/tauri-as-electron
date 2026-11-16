@@ -159,6 +159,32 @@ export const waveCViewsChecks = [
     }
     return `ok (port ${port})`
   })) },
+  { id: 'WebContentsView: capturePage and printToPDF (view and its window)', run: () => withWindow(async (win, views) => {
+    const view = new WebContentsView({ webPreferences: { preload, sandbox: false } })
+    views.push(view)
+    win.contentView.addChildView(view)
+    view.setBounds({ x: 0, y: 0, width: 200, height: 150 })
+    await view.webContents.loadFile(childHtml)
+    await view.webContents.executeJavaScript(`document.body.innerHTML = ''; document.documentElement.style.background = document.body.style.background = 'rgb(0, 160, 0)'; 1`)
+    await sleep(300)
+    const image = await view.webContents.capturePage()
+    assert(!image.isEmpty(), 'empty image of the view')
+    const size = image.getSize()
+    assert(Math.abs(size.width - 200) <= 2 && Math.abs(size.height - 150) <= 2, `the view's size: ${size.width} × ${size.height}`)
+    const bitmap = image.toBitmap()
+    const pixels = image.getSize(1)
+    const at = (pixels.width * Math.floor(pixels.height / 2) + Math.floor(pixels.width / 2)) * 4
+    const [b, g, r] = bitmap.subarray(at, at + 3)
+    assert(g > 120 && r < 60 && b < 60, `centre pixel rgb(${r}, ${g}, ${b})`)
+    const pdf = await view.webContents.printToPDF({})
+    assert(Buffer.from(pdf).toString('latin1', 0, 5) === '%PDF-', 'a PDF of the view')
+    // The window holds a view: its own page is still captured and printed.
+    const own = await win.webContents.capturePage()
+    assert(!own.isEmpty(), "empty image of the window's page")
+    const ownPdf = await win.webContents.printToPDF({})
+    assert(Buffer.from(ownPdf).toString('latin1', 0, 5) === '%PDF-', "a PDF of the window's page")
+    return `${size.width} × ${size.height}, green; PDFs ${pdf.length} and ${ownPdf.length} bytes`
+  }) },
   { id: 'BaseWindow + two WebContentsViews side by side', run: async () => {
     const win = new BaseWindow({ width: 600, height: 300 })
     const left = new WebContentsView({ webPreferences: { preload, sandbox: false } })

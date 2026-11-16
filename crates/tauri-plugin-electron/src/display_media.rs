@@ -7,7 +7,7 @@
 //! `permission_respond`; tauri-electron decides with the session's display
 //! media handler (src/main/display-media.js).
 //!
-//! - **Linux (WebKitGTK)**: the windows get WebKit's media-stream and WebRTC
+//! - **Linux (WebKitGTK)**: windows and views get WebKit's media-stream and WebRTC
 //!   settings (off by default in WebKitGTK, always on in Electron); the
 //!   request is WebKitGTK's `UserMediaPermissionRequest` for a display device
 //!   (held until the handler answers). The source is then chosen in the
