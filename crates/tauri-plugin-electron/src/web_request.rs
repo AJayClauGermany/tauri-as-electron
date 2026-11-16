@@ -106,16 +106,18 @@ impl WebRequests {
 }
 
 /// Whether WebView2 hands this request to us: http(s), not Tauri's own
-/// `*.localhost` hosts (the app's pages, `ipc`, custom schemes).
+/// `*.localhost` hosts (the app's pages, `ipc`, custom schemes), which never
+/// have a port; a local server at `http://foo.localhost:3000` is a page request.
 #[allow(dead_code)]
 pub fn is_page_request(url: &str) -> bool {
     let Ok(url) = tauri::Url::parse(url) else {
         return false;
     };
     matches!(url.scheme(), "http" | "https")
-        && !url
-            .host_str()
-            .is_some_and(|host| host.ends_with(".localhost"))
+        && !(url.port().is_none()
+            && url
+                .host_str()
+                .is_some_and(|host| host.ends_with(".localhost")))
 }
 
 #[allow(dead_code)]
@@ -587,6 +589,8 @@ mod tests {
         assert!(is_page_request("http://localhost:3000/"));
         assert!(!is_page_request("http://tauri.localhost/index.html"));
         assert!(!is_page_request("http://app.localhost/x"));
+        // A port means a local server, not one of Tauri's hosts.
+        assert!(is_page_request("http://app.localhost:3000/x"));
         assert!(!is_page_request("file:///etc/hosts"));
         assert!(!is_page_request("not a url"));
     }

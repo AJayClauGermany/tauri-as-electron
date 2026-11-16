@@ -398,6 +398,24 @@ describe('utilityProcess.fork', () => {
     expect(() => child.postMessage('x', [{}])).toThrow(/MessagePortMain/)
   })
 
+  it('checks every port before transferring any', async () => {
+    const child = utilityProcess.fork('/src/utility.js')
+    const { port1, port2 } = new MessageChannelMain()
+    const closed = new MessageChannelMain().port1
+    closed.close()
+    expect(() => child.postMessage(null, [port2, closed])).toThrow(/index 1 is already neutered or closed/)
+    expect(() => child.postMessage(null, [port2, port2])).toThrow(/index 1/)
+    // port2 was left alone and still transfers.
+    child.postMessage({ type: 'port' }, [port2])
+    expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })
+    port1.start()
+    const doubled = once(port1, 'message')
+    port1.postMessage(2)
+    expect((await doubled)[0].data).toBe(4)
+    child.kill()
+    await once(child, 'exit')
+  })
+
   it('delivers messages queued on a port before it was transferred', async () => {
     const child = utilityProcess.fork('/src/utility.js')
     const { port1, port2 } = new MessageChannelMain()
@@ -591,6 +609,9 @@ describe('child_process.fork requests', () => {
     expect(cp.nodeScriptIndex(['--eval=1'])).toBe(-1)
     expect(cp.nodeScriptIndex(['-', 'arg'])).toBe(-1)
     expect(cp.nodeScriptIndex(['--version'])).toBe(-1)
+    expect(cp.nodeScriptIndex(['--allow-fs-read', '/data', 'worker.js'])).toBe(2)
+    expect(cp.nodeScriptIndex(['-C', 'dev', 'main.js'])).toBe(2)
+    expect(cp.nodeScriptIndex(['--run', 'build'])).toBe(-1)
   })
 
   it('explains a missing Node.js runtime', async () => {

@@ -249,6 +249,9 @@ class GuestHost {
         return native('view_close', { label }).catch(() => {})
       }
       this._native = true
+      // The window closed while the webview was being created (_onWindowGone
+      // had nothing native to forget then): forget it now.
+      if (win.isDestroyed()) return this._onWindowGone()
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
       // A placement that changed while the webview was being created.
       const latest = this._placement
@@ -258,6 +261,8 @@ class GuestHost {
       }
     })()
       .catch((error) => {
+        // No webview for the label: its window config goes too.
+        if (this._label && !this._native) native('set_window_config', { label: this._label, config: null }).catch(() => {})
         report('create view')(error)
         for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
         this.webContents?.emit('did-fail-load', createEvent(), -2, String(error?.message ?? error), url, true, 0, 0)

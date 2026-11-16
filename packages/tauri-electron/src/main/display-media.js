@@ -14,9 +14,9 @@
  *   becomes `getDisplayMedia()` in the page (src/renderer/display-media.js),
  *   which first tells the main process over IPC; that request then goes to
  *   the permission request handler ('media', as in Electron), not to the
- *   display media handler, when its `chromeMediaSourceId` is one that
- *   desktopCapturer.getSources() returned (other ids are refused, as
- *   Chromium refuses unknown sources).
+ *   display media handler, when it names no source (the whole desktop, as in
+ *   Electron's docs) or one desktopCapturer.getSources() returned (other ids
+ *   are refused, as Chromium refuses unknown sources).
  * - macOS (WKWebView) reports no screen-capture requests: WebKit asks the
  *   user itself and neither handler is called.
  */
@@ -29,26 +29,33 @@ const INTENT_MS = 15_000
 
 const intents = new Map()
 /**
- * Source ids desktopCapturer.getSources() returned in this process. As in
- * Electron, a page needs one of them (from the main process) to capture the
- * desktop with getUserMedia: otherwise any page could skip the display media
- * handler by announcing a capture.
+ * Source ids desktopCapturer.getSources() returned in this process, with
+ * when. As in Electron, a page that names a source needs an id the main
+ * process handed it (otherwise any page could skip the display media handler
+ * by naming one); without an id it asks for the whole desktop, which Electron
+ * also sends to the permission request handler. Ids are forgotten after a
+ * while, so the table stays small however often an app lists sources.
  */
-const issuedSources = new Set()
+const issuedSources = new Map()
+const SOURCE_ID_MS = 60 * 60_000
 
 /** Remember the ids desktopCapturer.getSources() gave out. */
-export function rememberDesktopSources(ids) {
-  for (const id of ids) issuedSources.add(String(id))
+export function rememberDesktopSources(ids, now = Date.now()) {
+  for (const [id, at] of issuedSources) if (now - at >= SOURCE_ID_MS) issuedSources.delete(id)
+  for (const id of ids) issuedSources.set(String(id), now)
 }
 
 /**
  * The page `label` is about to turn a desktop getUserMedia() into
  * getDisplayMedia(). False (nothing recorded) for a source id the main
- * process did not hand out.
+ * process did not hand out (recently).
  */
 export function noteDesktopCapture(label, request = {}, now = Date.now()) {
   const sourceId = String(request?.sourceId ?? '')
-  if (!issuedSources.has(sourceId)) return false
+  if (sourceId) {
+    const at = issuedSources.get(sourceId)
+    if (at === undefined || now - at >= SOURCE_ID_MS) return false
+  }
   const list = (intents.get(label) ?? []).filter((intent) => now - intent.at < INTENT_MS)
   list.push({ at: now, sourceId, audio: Boolean(request.audio) })
   intents.set(label, list)

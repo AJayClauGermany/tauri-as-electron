@@ -142,5 +142,6 @@ export function deserializeError(data) {
 /** Whether the app is running from a production bundle (not the dev server). */
 export function isPackagedBuild() {
   if (typeof location === 'undefined') return false
-  return location.protocol === 'tauri:' || location.hostname === 'tauri.localhost'
+  // tauri://localhost, or http(s)://tauri.localhost on Windows (never with a port).
+  return location.protocol === 'tauri:' || (location.hostname === 'tauri.localhost' && !location.port)
 }

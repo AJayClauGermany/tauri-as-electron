@@ -133,8 +133,12 @@ export class UtilityProcess extends EventEmitter {
   /** Send `message` to `process.parentPort` in the child, transferring `MessagePortMain`s. */
   postMessage(message, transfer = []) {
     if (!Array.isArray(transfer)) throw new TypeError('transfer must be an array of MessagePortMain')
-    for (const port of transfer) {
+    for (const [index, port] of transfer.entries()) {
       if (!(port instanceof MessagePortMain)) throw cloneError('Only MessagePortMain objects can be transferred')
+      // Checked for all ports first, so a bad one leaves the others untouched.
+      if (port._closed || port._transferred || transfer.indexOf(port) !== index) {
+        throw cloneError(`Port at index ${index} is already neutered or closed`)
+      }
     }
     const data = encode(message)
     if (this._exited) return

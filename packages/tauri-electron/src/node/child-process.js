@@ -473,19 +473,31 @@ function start(api, file, args, options, extra = {}) {
   return child
 }
 
-// Node options that take the next argument as their value (unless written `--opt=value`).
+// Node.js options that take the next argument as their value (unless written
+// `--opt=value`). Short ones are in NODE_SHORT_VALUE_OPTIONS.
 const NODE_VALUE_OPTIONS = new Set([
-  '-r', '--require', '--import', '--loader', '--experimental-loader', '-C', '--conditions', '--input-type',
-  '--inspect-port', '--debug-port', '--title', '--env-file', '--env-file-if-exists', '--redirect-warnings',
-  '--cpu-prof-dir', '--cpu-prof-name', '--heap-prof-dir', '--heap-prof-name', '--diagnostic-dir', '--report-dir',
-  '--report-directory', '--report-filename', '--openssl-config', '--icu-data-dir', '--dns-result-order',
-  '--unhandled-rejections', '--watch-path', '--test-reporter', '--test-reporter-destination', '--test-name-pattern',
-  '--experimental-default-type', '--disable-warning',
+  '--allow-fs-read', '--allow-fs-write', '--conditions', '--cpu-prof-dir', '--cpu-prof-interval', '--cpu-prof-name',
+  '--debug-port', '--diagnostic-dir', '--disable-warning', '--dns-result-order', '--env-file', '--env-file-if-exists',
+  '--experimental-config-file', '--experimental-default-type', '--experimental-loader', '--experimental-policy',
+  '--experimental-sea-config', '--heap-prof-dir', '--heap-prof-interval', '--heap-prof-name',
+  '--heapsnapshot-near-heap-limit', '--heapsnapshot-signal', '--icu-data-dir', '--import', '--input-type',
+  '--inspect-port', '--inspect-publish-uid', '--loader', '--localstorage-file', '--max-http-header-size',
+  '--network-family-autoselection-attempt-timeout', '--openssl-config', '--policy-integrity', '--redirect-warnings',
+  '--report-dir', '--report-directory', '--report-filename', '--report-signal', '--require', '--secure-heap',
+  '--secure-heap-min', '--snapshot-blob', '--test-concurrency', '--test-coverage-branches', '--test-coverage-exclude',
+  '--test-coverage-functions', '--test-coverage-include', '--test-coverage-lines', '--test-isolation',
+  '--test-name-pattern', '--test-reporter', '--test-reporter-destination', '--test-shard', '--test-skip-pattern',
+  '--test-timeout', '--title', '--tls-cipher-list', '--tls-keylog', '--trace-event-categories',
+  '--trace-event-file-pattern', '--unhandled-rejections', '--use-largepages', '--v8-pool-size', '--watch-kill-signal',
+  '--watch-path',
 ])
+const NODE_SHORT_VALUE_OPTIONS = new Set(['r', 'C'])
+// Options after which there is no script file: code, stdin, a package.json script.
+const NODE_NO_SCRIPT_OPTIONS = /^--(eval|print|run)(=|$)/
 
 /**
  * Index of the script in a Node.js command line, or -1 when there is none
- * (`-e` / `-p` code, `-` for stdin, options only).
+ * (`-e` / `-p` code, `--run`, `-` for stdin, options only).
  */
 export function nodeScriptIndex(args) {
   for (let i = 0; i < args.length; i++) {
@@ -493,11 +505,11 @@ export function nodeScriptIndex(args) {
     if (arg === '--') return i + 1 < args.length ? i + 1 : -1
     if (arg === '-') return -1
     if (!arg.startsWith('-')) return i
-    if (/^--(eval|print)(=|$)/.test(arg)) return -1
+    if (NODE_NO_SCRIPT_OPTIONS.test(arg)) return -1
     if (/^-[a-zA-Z]+$/.test(arg)) {
       // Short options, possibly grouped (`-pe`): code instead of a script, or a value next.
       if (/[ep]/.test(arg)) return -1
-      if (/[rC]$/.test(arg)) i++
+      if (NODE_SHORT_VALUE_OPTIONS.has(arg.at(-1))) i++
       continue
     }
     if (NODE_VALUE_OPTIONS.has(arg)) i++

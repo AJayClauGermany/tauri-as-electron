@@ -44,7 +44,8 @@ let lastScript = null
  * windows created from now on run it on the trusted origins. In a build it
  * is fetched once (later calls share the first one's promise); in
  * development (the dev server rebuilds it after a source change) it is
- * fetched again for each window and handed over again when it changed.
+ * fetched again for each window (one fetch at a time, in order) and handed
+ * over again when it changed.
  */
 export function registerTrustedRenderer() {
   const app = globalThis.__TAURI_ELECTRON_APP__
@@ -61,7 +62,10 @@ export function registerTrustedRenderer() {
     return (registration = Promise.resolve(false))
   }
   const base = globalThis.location?.href
-  registration = fetch(base ? new URL(url, base) : url, dev ? { cache: 'no-store' } : undefined)
+  // One registration at a time (in development each starts after the
+  // previous one ended), so an older script never replaces a newer one.
+  registration = (registration ?? Promise.resolve())
+    .then(() => fetch(base ? new URL(url, base) : url, dev ? { cache: 'no-store' } : undefined))
     .then((response) => {
       if (!response.ok) throw new Error(`${url}: ${response.status}`)
       return response.text()

@@ -157,10 +157,10 @@ export class IncomingMessage extends EventEmitter {
   }
 }
 
-/** Electron's ClientRequest (a writable stream in Electron; buffered here). */
 /** How often net.request asks 'login' again after the server rejected the credentials. */
 const MAX_LOGIN_ATTEMPTS = 5
 
+/** Electron's ClientRequest (a writable stream in Electron; buffered here). */
 export class ClientRequest extends EventEmitter {
   constructor(options, callback) {
     super()

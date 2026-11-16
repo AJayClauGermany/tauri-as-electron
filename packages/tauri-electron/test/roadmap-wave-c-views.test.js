@@ -199,6 +199,24 @@ describe('WebContentsView', () => {
     win.destroy()
   })
 
+  it('drops the window config of a view whose webview could not be created', async () => {
+    const win = await makeWindow()
+    state.onCommand = (command) => {
+      if (command === 'view_create') throw new Error('no such window')
+    }
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const view = new WebContentsView()
+    view.webContents.on('did-fail-load', () => {})
+    win.contentView.addChildView(view)
+    await vi.waitFor(() => expect(commands('view_create')).toHaveLength(1))
+    await flush()
+    const label = view.webContents._label
+    expect(commands('set_window_config').filter((c) => c.args.label === label).at(-1).args.config).toBeNull()
+    error.mockRestore()
+    state.onCommand = null
+    win.destroy()
+  })
+
   it('places nested views relative to their parents and in another window when moved', async () => {
     const win = await makeWindow()
     const other = await makeWindow()

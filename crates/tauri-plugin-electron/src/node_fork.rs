@@ -32,7 +32,10 @@ use std::{
     net::{Ipv4Addr, Shutdown, TcpListener, TcpStream},
     path::PathBuf,
     process::Command,
-    sync::{mpsc, Arc, Condvar, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Condvar, Mutex,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -246,6 +249,12 @@ pub struct Ipc {
     stream: Mutex<Option<Stream>>,
     closed: Mutex<bool>,
     closed_changed: Condvar,
+    /// TCP: whether to keep waiting for the child to connect. A disconnect()
+    /// stops the wait unless messages were queued before the child connected
+    /// (they reach it first, as on Unix); the child's exit always stops it.
+    disconnecting: AtomicBool,
+    queued_unconnected: AtomicBool,
+    child_gone: AtomicBool,
 }
 
 impl Ipc {
@@ -255,11 +264,17 @@ impl Ipc {
             stream: Mutex::new(None),
             closed: Mutex::new(false),
             closed_changed: Condvar::new(),
+            disconnecting: AtomicBool::new(false),
+            queued_unconnected: AtomicBool::new(false),
+            child_gone: AtomicBool::new(false),
         })
     }
 
     /// Queue bytes (a JSON line) for the child. False once disconnected.
     pub fn send(&self, data: Vec<u8>) -> bool {
+        if self.stream.lock().unwrap().is_none() {
+            self.queued_unconnected.store(true, Ordering::SeqCst);
+        }
         self.queue
             .lock()
             .unwrap()
@@ -269,11 +284,22 @@ impl Ipc {
 
     /// Close the channel after the queued messages (`subprocess.disconnect()`).
     pub fn disconnect(&self) {
+        self.disconnecting.store(true, Ordering::SeqCst);
         self.queue.lock().unwrap().take();
     }
 
-    fn is_closed(&self) -> bool {
+    /// The child exited: it will not connect any more (TCP), then disconnect.
+    pub fn child_exited(&self) {
+        self.child_gone.store(true, Ordering::SeqCst);
+        self.disconnect();
+    }
+
+    /// TCP: whether waiting for the child to connect is pointless now.
+    fn stop_waiting(&self) -> bool {
         *self.closed.lock().unwrap()
+            || self.child_gone.load(Ordering::SeqCst)
+            || (self.disconnecting.load(Ordering::SeqCst)
+                && !self.queued_unconnected.load(Ordering::SeqCst))
     }
 
     /// Wait until the channel has closed (the child exited or disconnected).
@@ -338,9 +364,9 @@ impl Pending {
 fn accept(listener: &TcpListener, token: &str, ipc: &Ipc) -> Option<TcpStream> {
     listener.set_nonblocking(true).ok()?;
     let deadline = Instant::now() + CONNECT_TIMEOUT;
-    // A disconnect() before the child connects still waits for it: the
-    // messages queued before it must reach the child first, as on Unix.
-    while Instant::now() < deadline && !ipc.is_closed() {
+    // A disconnect() after send() still waits for the child: the queued
+    // messages must reach it first, as on Unix (see `Ipc::stop_waiting`).
+    while Instant::now() < deadline && !ipc.stop_waiting() {
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_nonblocking(false);
@@ -681,6 +707,32 @@ mod tests {
         assert_eq!(received, "\"job\"\n");
         drop(child);
         wait_end(&rx);
+    }
+
+    /// Waiting for a TCP child stops at once when nothing is queued for it,
+    /// and when the child has exited.
+    #[test]
+    fn tcp_stops_waiting_for_a_child_that_will_not_connect() {
+        for exited in [false, true] {
+            let ipc = IpcOptions {
+                kind: IpcKind::Utility,
+                fd: 3,
+                tcp: true,
+            };
+            let mut command = Command::new("/bin/true");
+            let pending = prepare(&mut command, &ipc).unwrap();
+            let (sink, rx) = collect();
+            let channel = pending.start(sink);
+            if exited {
+                assert!(channel.send(b"\"never read\"\n".to_vec()));
+                channel.child_exited();
+            } else {
+                channel.disconnect();
+            }
+            let started = Instant::now();
+            wait_end(&rx);
+            assert!(started.elapsed() < Duration::from_secs(5));
+        }
     }
 
     #[test]

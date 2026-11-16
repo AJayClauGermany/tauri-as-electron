@@ -461,7 +461,7 @@ impl Children {
                     // channel is closed (a grandchild may still hold it).
                     if let Some(ipc) = &running.ipc {
                         ipc.wait_closed(Duration::from_millis(250));
-                        ipc.disconnect();
+                        ipc.child_exited();
                     }
                     children.table.lock().unwrap().remove(&id);
                     let _ = events.send(json!({ "type": "exit", "code": code, "signal": signal }));

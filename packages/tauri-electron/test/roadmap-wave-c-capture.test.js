@@ -243,6 +243,12 @@ describe('setDisplayMediaRequestHandler', () => {
     expect(display).toHaveBeenCalledTimes(1)
   })
 
+  it("lets a request without a source id (the whole desktop, as in Electron's docs) go to the permission handler", () => {
+    expect(noteDesktopCapture('w1', { audio: true })).toBe(true)
+    request(11)
+    expect(answers()).toEqual([true])
+  })
+
   it('grants an announced desktop capture without a permission handler, and forgets stale announcements', () => {
     rememberDesktopSources(['window:9:0'])
     noteDesktopCapture('w1', { sourceId: 'window:9:0' })
@@ -255,8 +261,10 @@ describe('setDisplayMediaRequestHandler', () => {
   it('refuses announcements of sources desktopCapturer did not return, so the display handler still decides', () => {
     const display = vi.fn((request, callback) => callback({}))
     ses().setDisplayMediaRequestHandler(display)
-    expect(noteDesktopCapture('w1', {})).toBe(false)
     expect(noteDesktopCapture('w1', { sourceId: 'screen:999:0' })).toBe(false)
+    // Ids are forgotten after an hour.
+    rememberDesktopSources(['screen:5:0'], Date.now() - 2 * 60 * 60_000)
+    expect(noteDesktopCapture('w1', { sourceId: 'screen:5:0' })).toBe(false)
     request(10)
     expect(display).toHaveBeenCalledTimes(1)
     expect(answers()).toEqual([false])
