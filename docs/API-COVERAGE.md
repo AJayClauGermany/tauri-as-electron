@@ -5,7 +5,7 @@ no-op (so boilerplate keeps running; warns once) · ❌ not implemented yet,
 but Tauri could support it (throws `NotImplementedError` with
 `reason: 'unimplemented'`, or warns once for `on`/`once`) · 🚫 not possible
 on Tauri and not planned (`reason: 'unsupported'`: Node.js built-ins,
-Chromium-only features, Electron's view hierarchy).
+Chromium-only features).
 
 Every `NotImplementedError` carries a `reason` (`unimplemented`,
 `unsupported`, `feature`, `plugin`, `permission`) and a hint; see
@@ -106,10 +106,12 @@ for more):
 | `setMovable`, `setOpacity`, `setAspectRatio`, `blur`, `setWindowButtonPosition/Visibility`, `setTouchBar`, tabs, `setVibrancy`, thumbar buttons, `setRepresentedFilename`, `setDocumentEdited` | ⚪ | State is cached; no native effect. |
 | `capturePage` | 🟡 | Same as `webContents.capturePage`. |
 | `getNativeWindowHandle`, `getMediaSourceId` | 🚫 | Handles exist only in Rust; no webview lets the app choose the captured source (see `desktopCapturer`). |
-| `BaseWindow` | 🟡 | Alias of `BrowserWindow`. |
-| `BrowserView`, `View`, `ImageView` | 🚫 | A Tauri window holds one webview. |
-| `WebContentsView` | ❌ | Tauri's multi-webview windows (unstable) could back it ([ROADMAP](ROADMAP.md) C1). |
-| `<webview>` tag (`webPreferences.webviewTag`) | ❌ | Not defined: the tag is an unknown HTML element and loads nothing. Same backing as `WebContentsView` ([ROADMAP](ROADMAP.md) C1). |
+| `BaseWindow` | 🟡 | Alias of `BrowserWindow` (it has a webContents, under its views). |
+| `contentView` (`addChildView(view, index)`, `removeChildView`, `children`), `getContentView`, `setContentView` | 🟡 | [native] Feature `child-webviews`. The content view is a `WebContentsView` of the window's own webContents; child views are drawn over it. A view set with `setContentView` fills the window. Later views are on top; re-adding a view raises it (stacking order is applied on Linux; on Windows / macOS it stays the creation order). |
+| `View` (`setBounds`, `getBounds`, `setVisible`, `getVisible`, `children`, `bounds-changed`) | 🟡 | A rectangle that positions its children. `setBackgroundColor` and `setBorderRadius` do not draw. |
+| `WebContentsView` (`new WebContentsView({ webPreferences, webContents })`, `webContents`, `setBackgroundColor`) | 🟡 | [native] Feature `child-webviews`: a Tauri child webview (`Window::add_child`, Tauri's unstable multi-webview API) with its own `webContents` (`getType()` `'browserView'`): IPC, `executeJavaScript`, navigation events, `partition` / `session`, downloads, permission requests, `session.webRequest`, `certificate-error` / `login`, screen sharing, `printToPDF` and `capturePage` of the view's page (as for windows), the preload and IPC in pages of trusted origins, devtools, `webContents.fromId` / `getAllWebContents`, `BrowserWindow.fromWebContents` (the window it is in). Created when the view joins a window's tree (`loadURL` before that is kept), hidden when it leaves, moved when it joins another window's; `webContents.close()` destroys it. When its window closes, the webview goes with it (the webContents stays usable and reloads its page if the view is added to another window). Linux: views are laid in a `GtkOverlay` over the window's webview and clipped to the window. Remote pages: `executeJavaScript` runs in Rust (JSON results, promises awaited), `reload` / `stop` / history too. `ImageView` ❌. |
+| `BrowserView` (`webContents`, `setBounds`, `getBounds`, `setAutoResize`, `setBackgroundColor`), `setBrowserView`, `getBrowserView`, `addBrowserView`, `removeBrowserView`, `setTopBrowserView`, `getBrowserViews`, `BrowserWindow.fromBrowserView` | 🟡 | [native] Feature `child-webviews`, on `WebContentsView`. `setAutoResize` follows the window's `resize` event. |
+| `<webview>` tag (`webPreferences.webviewTag`) | 🟡 | [native] Feature `child-webviews`. Defined in pages of windows created with `webviewTag: true` only (Electron's rule). The guest is a child webview the main process attaches (`will-attach-webview`, which may change `webPreferences` or `preventDefault()`; `did-attach-webview`; the embedder's `nodeIntegration` / `contextIsolation` / `sandbox` / `javascript` rules), kept over the element's box (resize, scroll, `display` / `visibility`, removal, page hidden) from the page; it is destroyed when the element leaves the page or the page navigates. Attributes `src`, `partition`, `useragent`, `allowpopups` (popups are blocked without it), `nodeintegration`, `webpreferences`, `httpreferrer`; `preload` is ignored (the bundled preload runs in app pages and pages of trusted origins; other remote guests get none). Methods: `loadURL`, `getURL`, `getTitle`, `isLoading`, `canGoBack` / `goBack` / `goForward` / `goToIndex` / `goToOffset`, `reload`, `stop`, `executeJavaScript`, `insertCSS`, `send`, `setZoomFactor` / `setZoomLevel`, `openDevTools`, `findInPage`, `setAudioMuted`, editing commands, `print`, `getWebContentsId`, `focus`. Events: `did-attach`, `load-commit`, `did-start-loading`, `did-stop-loading`, `did-finish-load`, `dom-ready`, `page-title-updated`, `did-start-navigation`, `did-navigate`, `did-navigate-in-page`, `ipc-message` (`ipcRenderer.sendToHost`), `console-message` and `context-menu` (app pages), `found-in-page`, `close` (`window.close()` in the guest), `devtools-opened` / `-closed`, `destroyed`. The guest is a native webview over the page: page content cannot be drawn over it, it is clipped by the window but not by scrolling containers, it ignores the embedder's zoom, and elements inside shadow roots are not found. No `did-fail-load` for network errors, `capturePage`, `sendInputEvent`, `new-window`. |
 
 ### `webContents`
 
@@ -137,7 +139,9 @@ for more):
 | `mainFrame` (`url`, `origin`, `routingId`, `processId`, `send`, `postMessage`, `executeJavaScript`, …), `webFrameMain.fromId` | 🟡 | One frame per page; iframes are not modelled. |
 | `session` | 🟡 | See `session`. |
 | `setUserAgent`, `getUserAgent`, `setAudioMuted`, `setBackgroundThrottling`, `setWebRTCIPHandlingPolicy`, … | 🟡 | User agent applies to windows created afterwards. |
-| `webContents.getAllWebContents`, `getFocusedWebContents`, `fromId`, `fromFrame` | ✅ | |
+| `webContents.getAllWebContents`, `getFocusedWebContents`, `fromId`, `fromFrame` | ✅ | Include the webContents of views and `<webview>` guests. |
+| `getType`, `hostWebContents`, `getOwnerBrowserWindow` | ✅ | `'window'`, `'browserView'` (views) or `'webview'`; a guest's `hostWebContents` is its embedder. |
+| `will-attach-webview`, `did-attach-webview` | ✅ | On the embedder (feature `child-webviews`). |
 | `printToPDF` | 🟡 | [native] Resolves with the PDF's bytes. Linux: WebKitGTK prints to GTK's "Print to File" printer (`pageSize` named or in inches, `landscape`, `margins`, `scale`, `pageRanges`, `printBackground`); Windows: WebView2 `PrintToPdf` (the same options, and WebView2's own header and footer for `displayHeaderFooter`); macOS: WKWebView `createPDF`, one page as tall as the content (no paper size, margins, orientation, scale or page ranges). `headerTemplate` / `footerTemplate`, `preferCSSPageSize`, `generateTaggedPDF`, `generateDocumentOutline` are ignored. Electron < 21's microns, `marginsType` and `{ from, to }` are accepted. |
 | `capturePage(rect?)` | 🟡 | [native] A PNG `NativeImage` of the visible page (WebKitGTK `get_snapshot`, WebView2 `CapturePreview`, WKWebView `takeSnapshot`), cropped to `rect`. A hidden window gives an empty image on Linux (WebKitGTK takes no snapshot of a window that is not shown). `stayHidden` / `stayAwake` have no effect. |
 | `savePage`, `debugger`, frame subscriptions | 🚫 | Chromium-only. |
@@ -150,7 +154,8 @@ for more):
 | Payloads | ✅ | Structured-clone-like: `Uint8Array` and other typed arrays, `ArrayBuffer`, `Date`, `Map`, `Set`, `RegExp`, `BigInt`, `Error`, `undefined`, `NaN`/`±Infinity`. Functions throw `An object could not be cloned.` Cycles are not supported. |
 | `ipcMain.on/once/removeListener/removeAllListeners` | ✅ | `event.sender`, `event.senderFrame`, `event.processId`, `event.frameId`, `event.ports`, `event.reply`. |
 | `ipcMain.handle/handleOnce/removeHandler` | ✅ | Errors reject the renderer's `invoke` with Electron's message format. |
-| `ipcRenderer.send/invoke/on/once/off/removeAllListeners/sendToHost` | ✅ | |
+| `ipcRenderer.send/invoke/on/once/off/removeAllListeners` | ✅ | |
+| `ipcRenderer.sendToHost` | ✅ | In a `<webview>` guest: `ipc-message` on the element. Elsewhere it does nothing, as in Electron. |
 | `ipcRenderer.sendSync`, `event.returnValue` | ✅ | [native] A blocking request to the plugin's URI scheme, answered when a listener sets `returnValue` (also after an `await`). Times out after 25 s. Without the plugin: async send, returns `undefined`. |
 | `ipcRenderer.postMessage(channel, message, [MessagePort])` | ✅ | Main receives `MessagePortMain`s in `event.ports`. |
 | `MessageChannelMain`, `MessagePortMain` | ✅ | Main ↔ main, main ↔ renderer and renderer ↔ renderer (a port received from one window can be posted to another), and main / renderer → utility process (`utilityProcess`'s `postMessage`). Ports cannot be transferred *through* a port. |

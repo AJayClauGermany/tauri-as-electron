@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-view-eval"
+description = "Enables the view_eval command without any pre-configured scope."
+commands.allow = ["view_eval"]
+
+[[permission]]
+identifier = "deny-view-eval"
+description = "Denies the view_eval command without any pre-configured scope."
+commands.deny = ["view_eval"]

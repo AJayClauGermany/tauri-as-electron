@@ -100,6 +100,7 @@ once tauri.conf.json has a `plugins` section (the template has it).
 | `updater` | off | `autoUpdater` (needs `plugins.updater` in `tauri.conf.json`) | `tauri-plugin-updater` |
 | `devtools` | off | `webContents.openDevTools()` in release builds | Tauri's `devtools` feature |
 | `macos-proxy` | off | `session.setProxy` on macOS (14+) | Tauri's `macos-proxy` feature |
+| `child-webviews` | off | `WebContentsView`, `BrowserView`, `BrowserWindow.contentView`, the `<webview>` tag | Tauri's `unstable` feature (`Window::add_child`, multi-webview windows); `gtk` on Linux (already in the build) |
 | `node-fs` | off, listed by the template | Node's `fs`, `fs/promises` in the main process (`fs.watch` included) | `notify` crate (`std::fs` for the rest) |
 | `node-os` | off, listed by the template | Node's `os` | `sysinfo` crate |
 | `node-child-process` | off, listed by the template | Node's `child_process`, including `fork`, and `utilityProcess` (on a Node.js sidecar the app bundles) | none (`std::process`, in this crate) |
@@ -136,7 +137,20 @@ first, so a second launch exits before anything else starts), then grants:
   the enabled features, for a window the main process creates with
   `nodeIntegration: true` or `sandbox: false`. Only `electron-main` can
   configure windows (`set_window_config`), and the Node built-ins also check
-  the grant in Rust.
+  the grant in Rust. It names the label as a window and as a webview, so it
+  also grants a `<webview nodeintegration>` guest (a webview in another
+  window) that the main process allowed.
+
+Child webviews (`child-webviews`) get the capabilities of the window they
+are in, as Tauri matches capabilities by window label too: the renderer
+permissions, like the window's own page. Views are never put in the
+`electron-main` window, whose capability names that window.
+
+`child-webviews` is opt-in because it needs Tauri's `unstable` feature: its
+API may change in minor Tauri releases, and it puts every window in Tauri's
+multi-webview mode (each window's own webview becomes a child webview sized
+to the window; on Linux this crate re-attaches the edge-resize handles of
+frameless windows, which Tauri gives only to a window's sole webview).
 
 Add capability files in `src-tauri/capabilities/` for anything more, or call
 `.default_capabilities(false)` to manage every permission yourself.
@@ -166,12 +180,13 @@ Add capability files in `src-tauri/capabilities/` for anything more, or call
 | `new BrowserWindow()` | `create_window`: Rust's `WebviewWindowBuilder` from the same `WindowConfig` as JavaScript's `new WebviewWindow()`, plus the hooks below (`src/windows.rs`) |
 | `session.on('will-download')`, `DownloadItem`, `downloadURL` | Downloads go to a temporary file, moved to the save path by `download_commit`. Page downloads: WebKitGTK's download signals (Linux), `on_download` (Windows, macOS). `download_url`: a reqwest transfer with the window's cookies (`net` feature) that can pause and cancel (`src/downloads.rs`) |
 | `session.setPermissionRequestHandler` | WebKitGTK's `permission-request`, answered when the handler calls back (Linux); `on_permission_request` answered from the handler's earlier decisions (Windows, macOS) (`src/permissions.rs`) |
+| `WebContentsView`, `BrowserView`, `<webview>` (`child-webviews` feature) | Child webviews of the BrowserWindow (`Window::add_child`): `view_create`, `view_update` (bounds, visibility, raise, move to another window, focus, background), `view_navigate`, `view_eval` (script in pages without the renderer bootstrap, JSON result), `view_close`, for `electron-main` only. A page moves the guests of its own `<webview>` elements over `view/bounds` on the scheme. Linux: tauri-runtime-wry packs webviews into the window's box, where bounds do nothing, so views are moved into a `GtkOverlay` over the window's webview, in an event box that clips them (`src/views.rs`) |
 | `webContents.printToPDF`, `capturePage` | `print_to_pdf` / `capture_page` through `with_webview`: a WebKitGTK print operation to GTK's "Print to File" printer and `get_snapshot` (Linux), `PrintToPdf` / `CapturePreview` (WebView2), `createPDF` / `takeSnapshot` (WKWebView). The command waits off the main thread for the completion callback (`src/capture.rs`) |
 | `desktopCapturer.getSources` (`desktop-capturer` feature) | `desktop_sources`: X11 `GetImage` / `_NET_CLIENT_LIST` / `_NET_WM_ICON` (Linux), GDI `StretchBlt` / `PrintWindow` (Windows), `CGDisplayCreateImage` / `CGWindowListCreateImage` (macOS) (`src/desktop_capturer.rs`) |
-| `session.setDisplayMediaRequestHandler`, screen sharing | A page's screen-capture request arrives as a `display-capture` permission request: WebKitGTK's display-device `UserMediaPermissionRequest` (Linux), WebView2 `ScreenCaptureStarting` with a deferral (Windows). BrowserWindows on Linux get WebKitGTK's media-stream and WebRTC settings; `TAURI_ELECTRON_MOCK_CAPTURE=1` gives them WebKit's mock screens and cameras instead of real devices, for automated tests (`src/display_media.rs`) |
+| `session.setDisplayMediaRequestHandler`, screen sharing | A page's screen-capture request arrives as a `display-capture` permission request: WebKitGTK's display-device `UserMediaPermissionRequest` (Linux), WebView2 `ScreenCaptureStarting` with a deferral (Windows). BrowserWindows and views on Linux get WebKitGTK's media-stream and WebRTC settings; `TAURI_ELECTRON_MOCK_CAPTURE=1` gives them WebKit's mock screens and cameras instead of real devices, for automated tests (`src/display_media.rs`) |
 | `session.webRequest` for page requests | WebView2's `WebResourceRequested` (a `*` filter while the session listens; each request held with a deferral until `web_request_respond`) and `WebResourceResponseReceived` (Windows); WebKitGTK's `resource-load-started` and the resource's signals, reported only (Linux); `web_request_listeners` tells Rust what each window's session listens to (`src/web_request.rs`). `net.fetch` and `protocol.handle` schemes are handled in JavaScript |
 | `certificate-error`, `setCertificateVerifyProc`, `login`, `select-client-certificate` | WebKitGTK's `load-failed-with-tls-errors` (a trusted certificate is allowed for its host on the web context, then the page is loaded again) and `authenticate` (Linux); WebView2's `ServerCertificateErrorDetected`, `BasicAuthenticationRequested`, `ClientCertificateRequested` (Windows). Held until `tls_auth_respond` (`src/tls_auth.rs`) |
-| Preloads and IPC in pages of trusted origins | An initialization script added by `create_window` (the renderer script the main process registered with `set_trusted_renderer`, run only on the listed origins), a capability with `remote.urls`, and the scheme's caller checks (`src/trusted_origins.rs`) |
+| Preloads and IPC in pages of trusted origins | An initialization script added by `create_window` and `view_create` (the renderer script the main process registered with `set_trusted_renderer`, run only on the listed origins), a capability with `remote.urls`, and the scheme's caller checks (`src/trusted_origins.rs`) |
 | `did-start-loading`, `did-navigate`, `did-stop-loading` (every page, remote ones included) | `on_page_load` hook |
 | `app` events `activate`, `open-file`, `open-url` (macOS) | `RunEvent::Reopen` / `RunEvent::Opened` |
 

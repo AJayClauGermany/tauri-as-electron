@@ -22,6 +22,7 @@ import { windowConfig } from './window-config.js'
 import { postToMain, rendererReady, commandHandlers } from './ipc-renderer.js'
 import { registerFilePath } from './web-utils.js'
 import { installWindowControls } from './window-controls.js'
+import { installWebviewTag } from './webview-tag.js'
 import { installDesktopCapture, DESKTOP_CAPTURE_CHANNEL } from './display-media.js'
 import { ipcRenderer } from './ipc-renderer.js'
 
@@ -481,8 +482,13 @@ if (isRenderer) {
   if (config?.titleBarOverlay) installWindowControls(config.titleBarOverlay)
   // getUserMedia({ chromeMediaSource: 'desktop' }) → getDisplayMedia() (screen sharing).
   installDesktopCapture(navigator.mediaDevices, (request) => ipcRenderer.invoke(DESKTOP_CAPTURE_CHANNEL, request))
-  // Like Electron, window.close() closes the BrowserWindow ('close' is still emitted).
-  window.close = () => {
-    getCurrentWindow().close().catch(report('window.close'))
-  }
+  // webPreferences.webviewTag: the <webview> element (./webview-tag.js).
+  if (config?.webviewTag) installWebviewTag()
+  // Like Electron, window.close() closes the BrowserWindow ('close' is still emitted);
+  // in a view or <webview> guest it only tells the main process (the element's 'close').
+  window.close = config?.guest
+    ? () => lifecycle('guest-close', {})
+    : () => {
+        getCurrentWindow().close().catch(report('window.close'))
+      }
 }

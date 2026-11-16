@@ -34,6 +34,7 @@ tauri-plugin-electron = { path = "../../../crates/tauri-plugin-electron", featur
   "node-child-process", # child_process (also fork, utilityProcess): runs arbitrary commands; delete to disable
   "node-net",           # net, dgram, dns, http/https servers: sockets from the main process
   "node-tls",           # tls, https servers (rustls); implies node-net
+  "child-webviews",     # WebContentsView, BrowserView, <webview> (Tauri's unstable multi-webview API)
   "keytar",             # keytar: passwords in the OS keychain
   "sqlite",             # better-sqlite3 / sqlite3: SQLite compiled in
   "pty",                # node-pty: pseudo-terminals; runs arbitrary programs

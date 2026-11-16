@@ -165,7 +165,9 @@ export async function capturePage(contents, rect, _opts) {
   }
   const bytes = toBytes(result)
   if (!bytes.length) return new NativeImage()
-  const image = new NativeImage({ bytes, scaleFactor: contents._win._state?.scaleFactor || 1 })
+  // A view's or <webview> guest's pixels are those of the window it is in.
+  const win = contents.getOwnerBrowserWindow?.() ?? contents._win
+  const image = new NativeImage({ bytes, scaleFactor: win?._state?.scaleFactor || 1 })
   if (rect && typeof rect === 'object' && (rect.width > 0 || rect.height > 0)) return image.crop(rect)
   return image
 }

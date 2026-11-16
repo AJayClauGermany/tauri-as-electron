@@ -132,10 +132,10 @@ pub struct Answer {
     pub request_headers: Option<Vec<(String, String)>>,
 }
 
-/// Hook a new window's webview (from `create_window`).
+/// Hook a new window's webview (from `create_window`) or a view's (`views.rs`).
 pub fn attach<R: Runtime>(
     app: &AppHandle<R>,
-    window: &tauri::WebviewWindow<R>,
+    window: &tauri::Webview<R>,
     label: &str,
     events: &[String],
 ) {
@@ -170,7 +170,7 @@ pub fn web_request_listeners<R: Runtime>(
     for label in labels {
         state.set(&label, wants);
         #[cfg(windows)]
-        if let Some(window) = app.get_webview_window(&label) {
+        if let Some(window) = crate::views::find(&app, &label) {
             let _ = window
                 .with_webview(move |webview| webview2::set_filter(&webview, &label, wants.request));
         }

@@ -52,8 +52,8 @@ fn emit<R: Runtime>(app: &AppHandle<R>, event: &str, payload: Value) -> bool {
     app.emit_to(MAIN_LABEL, event, payload).is_ok()
 }
 
-/// Hook a new window's webview (from `create_window`).
-pub fn attach<R: Runtime>(app: &AppHandle<R>, window: &tauri::WebviewWindow<R>, label: &str) {
+/// Hook a new window's webview (from `create_window`) or a view's (`views.rs`).
+pub fn attach<R: Runtime>(app: &AppHandle<R>, window: &tauri::Webview<R>, label: &str) {
     let handle = app.clone();
     let label = label.to_string();
     let _ = window.with_webview(move |webview| {

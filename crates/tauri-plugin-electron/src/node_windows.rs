@@ -71,7 +71,9 @@ pub fn grant<R: Runtime>(app: &AppHandle<R>, label: &str) -> Result<(), String> 
         let mut capability = json!({
             "identifier": format!("electron-node-{label}"),
             "description": "A BrowserWindow created with nodeIntegration or an unsandboxed preload: Node built-ins, like Electron gives it.",
+            // A view's label names a webview (in another window): match both.
             "windows": [label],
+            "webviews": [label],
             "permissions": permissions,
         });
         // Also on trusted origins declared with `node: true` (trusted_origins.rs).

@@ -38,6 +38,7 @@ import { waveBBundlerChecks } from './checks-wave-b-bundler.js'
 import { waveBRendererChecks } from './checks-wave-b-renderer.js'
 import { waveBNative1Checks } from './checks-wave-b-native1.js'
 import { waveBWindowChecks } from './checks-wave-b-windows.js'
+import { waveCViewsChecks } from './checks-wave-c-views.js'
 import { waveCWorkersVmChecks } from './checks-wave-c-workers-vm.js'
 import { waveCCaptureChecks } from './checks-wave-c-capture.js'
 import { waveCNativeModuleChecks } from './checks-wave-c-native-modules.js'
@@ -583,7 +584,7 @@ const coreChecks = [
 
 // Module checks override same-named core checks.
 const moduleIds = new Set(moduleChecks.map((c) => c.id))
-export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks, ...waveBBundlerChecks, ...waveBRendererChecks, ...waveBNative1Checks, ...waveBWindowChecks, ...waveCNativeModuleChecks, ...waveCForkChecks, ...waveCWebRequestTlsChecks, ...waveCLocalOriginsChecks, ...waveCWorkersVmChecks, ...waveCCaptureChecks]
+export const checks = [...coreChecks.filter((c) => !moduleIds.has(c.id)), ...moduleChecks, ...nodeChecks, ...layer2Checks, ...layer3Checks, ...layer4Checks, ...waveAChecks, ...waveBNative2Checks, ...waveBBundlerChecks, ...waveBRendererChecks, ...waveBNative1Checks, ...waveBWindowChecks, ...waveCNativeModuleChecks, ...waveCForkChecks, ...waveCWebRequestTlsChecks, ...waveCLocalOriginsChecks, ...waveCWorkersVmChecks, ...waveCCaptureChecks, ...waveCViewsChecks]
 
 export function applicationMenu() {
   const isMac = process.platform === 'darwin'

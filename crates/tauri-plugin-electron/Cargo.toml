@@ -71,6 +71,15 @@ updater = ["dep:tauri-plugin-updater"]
 devtools = ["tauri/devtools"]
 # session.setProxy on macOS (needs macOS 14; Tauri's `macos-proxy` feature).
 macos-proxy = ["tauri/macos-proxy"]
+# WebContentsView, BrowserView and the <webview> tag, as child webviews of a
+# window (Tauri's multi-webview API, `Window::add_child`). Opt-in, although
+# five of the surveyed chat apps are built on it: it needs Tauri's `unstable`
+# feature, whose API may change in minor Tauri releases and which puts every
+# window in Tauri's multi-webview mode (each window's own webview becomes a
+# child webview sized to the window, a mode with fewer users than the
+# default). On Linux it also uses gtk (already in the build through Tauri) to
+# lay views over the window's webview and to keep frameless windows resizable.
+child-webviews = ["tauri/unstable"]
 
 # --- Node built-ins backed by Rust ---------------------------------------------------
 # Not in `default`: apps list them explicitly in src-tauri/Cargo.toml (the
@@ -148,7 +157,8 @@ libc = "0.2"
 # (the version wry uses, so nothing more is built).
 [target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
 webkit2gtk = { version = "=2.0.2", features = ["v2_38"] }
-# printToPDF's print settings and capturePage's snapshot (the versions webkit2gtk uses).
+# printToPDF's print settings and capturePage's snapshot, and the views of
+# feature child-webviews (the versions webkit2gtk uses).
 gtk = "0.18"
 cairo-rs = "0.18"
 # desktopCapturer (feature desktop-capturer): X11 screens and windows.

@@ -7,7 +7,7 @@
 //! `permission_respond`; tauri-electron decides with the session's display
 //! media handler (src/main/display-media.js).
 //!
-//! - **Linux (WebKitGTK)**: the windows get WebKit's media-stream and WebRTC
+//! - **Linux (WebKitGTK)**: windows and views get WebKit's media-stream and WebRTC
 //!   settings (off by default in WebKitGTK, always on in Electron); the
 //!   request is WebKitGTK's `UserMediaPermissionRequest` for a display device
 //!   (held until the handler answers). The source is then chosen in the
@@ -19,16 +19,16 @@
 //! - **macOS (WKWebView)**: no hook. WebKit asks the user and shows the
 //!   system picker; the handler is not called.
 
-use tauri::{AppHandle, Runtime, WebviewWindow};
+use tauri::{AppHandle, Runtime, Webview};
 
 /// Set (to anything but `0`) to give BrowserWindows WebKitGTK's mock capture
 /// devices instead of the real ones (Linux; for tests).
 #[allow(dead_code)]
 pub const MOCK_CAPTURE_ENV: &str = "TAURI_ELECTRON_MOCK_CAPTURE";
 
-/// Called for each window `create_window` makes.
+/// Called for each window `create_window` makes and each view (`views.rs`).
 #[allow(unused_variables)]
-pub fn attach<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, label: &str) {
+pub fn attach<R: Runtime>(app: &AppHandle<R>, window: &Webview<R>, label: &str) {
     #[cfg(any(
         target_os = "linux",
         target_os = "dragonfly",
@@ -87,7 +87,7 @@ mod webview2 {
     };
 
     use serde_json::json;
-    use tauri::{AppHandle, Emitter, Runtime, WebviewWindow};
+    use tauri::{AppHandle, Emitter, Runtime, Webview};
     use webview2_com::{
         Microsoft::Web::WebView2::Win32::{
             ICoreWebView2Deferral, ICoreWebView2ScreenCaptureStartingEventArgs, ICoreWebView2_27,
@@ -103,7 +103,7 @@ mod webview2 {
             RefCell::new(HashMap::new());
     }
 
-    pub fn attach<R: Runtime>(app: &AppHandle<R>, window: &WebviewWindow<R>, label: &str) {
+    pub fn attach<R: Runtime>(app: &AppHandle<R>, window: &Webview<R>, label: &str) {
         let app = app.clone();
         let label = label.to_string();
         let _ = window.with_webview(move |webview| unsafe {

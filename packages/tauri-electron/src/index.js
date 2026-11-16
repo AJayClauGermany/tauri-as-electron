@@ -31,6 +31,7 @@ export { powerMonitor, powerSaveBlocker } from './main/power.js'
 export { systemPreferences } from './main/system-preferences.js'
 export { safeStorage } from './main/safe-storage.js'
 export { crashReporter } from './main/crash-reporter.js'
+export { View, WebContentsView, BrowserView } from './main/views.js'
 
 // Shared
 export { shell } from './main/shell.js'
@@ -50,11 +51,8 @@ export {
   netLog,
   pushNotifications,
   utilityProcess,
-  BrowserView,
-  WebContentsView,
   ShareMenu,
   TouchBar,
-  View,
   ImageView,
   IpcMainServiceWorker,
   sharedTexture,

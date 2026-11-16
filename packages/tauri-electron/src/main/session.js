@@ -12,12 +12,13 @@
  * certificate errors (./tls-auth.js).
  */
 import { EventEmitter, createEvent } from '../internal/emitter.js'
+import { bus } from '../internal/bus.js'
 import { NotImplementedError, MAIN_LABEL, report, warnOnce } from '../internal/runtime.js'
 import { native, hasNativePlugin } from '../internal/native.js'
 import { platform } from '../process.js'
 import { netFetch, setDefaultProxy, OWN_PROXY, VIA_SESSION } from './net.js'
 import { protocol } from './protocol.js'
-import { BrowserWindow, webContentsFromLabel } from './browser-window.js'
+import { BrowserWindow, webContentsFromLabel, guests } from './browser-window.js'
 import { dialog } from './dialog.js'
 import { configureDownloads, downloadURL } from './downloads.js'
 import { configurePermissions, syncPermissionHandler } from './permissions.js'
@@ -229,6 +230,7 @@ export class Session extends EventEmitter {
   setPermissionRequestHandler(handler) {
     this._handlers.permissionRequest = typeof handler === 'function' ? handler : null
     syncPermissionHandler(this, BrowserWindow.getAllWindows())
+    bus.emit('session-permission-handler', this) // views (./views.js)
   }
 
   /** Stored: Tauri has no hook for permission checks (navigator.permissions.query). */
@@ -343,7 +345,8 @@ configureWebRequest({
   defaultSession,
   webContentsFromLabel: (label) => webContentsFromLabel(label),
   fromPartition: (partition) => session.fromPartition(partition),
-  windows: () => BrowserWindow.getAllWindows(),
+  // Windows, and the hosts of views and <webview> guests (./views.js).
+  windows: () => [...BrowserWindow.getAllWindows(), ...guests.all().map((contents) => contents._win).filter((host) => host?._contentsType)],
 })
 configureTlsAuth({ defaultSession, webContentsFromLabel: (label) => webContentsFromLabel(label) })
 

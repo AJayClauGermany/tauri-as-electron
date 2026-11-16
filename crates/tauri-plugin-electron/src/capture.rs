@@ -26,7 +26,7 @@ use std::{
 };
 
 use serde::Deserialize;
-use tauri::{ipc::Response, webview::PlatformWebview, AppHandle, Manager, Runtime};
+use tauri::{ipc::Response, webview::PlatformWebview, AppHandle, Runtime};
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -105,16 +105,16 @@ impl<T> Done<T> {
     }
 }
 
-/// Start `start` with the window's webview on the main thread and wait (off
-/// the main thread) for the result it sends when the operation completes.
+/// Start `start` with the webview (a window's own, or a view's with
+/// `child-webviews`) on the main thread and wait (off the main thread) for
+/// the result it sends when the operation completes.
 async fn with_platform_webview<R: Runtime, T: Send + 'static>(
     app: &AppHandle<R>,
     label: &str,
     start: impl FnOnce(PlatformWebview, Done<T>) + Send + 'static,
 ) -> Result<T, String> {
-    let window = app
-        .get_webview_window(label)
-        .ok_or_else(|| format!("no window '{label}'"))?;
+    // Not get_webview_window: a window holding views is no longer one to Tauri.
+    let window = crate::views::find(app, label).ok_or_else(|| format!("no webview '{label}'"))?;
     let (sender, wait) = mpsc::channel();
     let done = Done(Arc::new(Mutex::new(Some(sender))));
     window

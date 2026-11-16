@@ -62,8 +62,8 @@ const PAGE = `<!doctype html>
 </html>
 `
 
-/** A local HTTP server serving PAGE; `fn({ port, nextReport })`, then closed. */
-async function withLocalServer(fn) {
+/** A local HTTP server serving PAGE; `fn({ port, nextReport })`, then closed (also used by checks-wave-c-views.js). */
+export async function withLocalServer(fn) {
   const reports = []
   const waiting = []
   const server = http.createServer((req, res) => {

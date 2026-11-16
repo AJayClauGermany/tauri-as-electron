@@ -4,10 +4,11 @@
 //! page it shows; here the bundler puts the renderer bootstrap and the
 //! preload in the app's own HTML, which such pages are not. So:
 //!
-//! - every BrowserWindow gets the renderer script (bootstrap + preloads,
-//!   built by the bundler plugins and handed over by the main process with
-//!   [`set_trusted_renderer`]) as an initialization script that runs it only
-//!   when the page's origin is on the list, checked on every page load;
+//! - every BrowserWindow (and view, with `child-webviews`) gets the
+//!   renderer script (bootstrap + preloads, built by the bundler plugins and
+//!   handed over by the main process with [`set_trusted_renderer`]) as an
+//!   initialization script that runs it only when the page's origin is on
+//!   the list, checked on every page load;
 //! - Tauri grants the renderer permissions (IPC) to the listed origins
 //!   (`remote.urls` of the `electron-trusted-origins` capability), and the
 //!   synchronous bridge answers them (`window-config`, `sync-ipc`), as it
@@ -306,8 +307,9 @@ fn state<R: Runtime>(app: &AppHandle<R>) -> Option<tauri::State<'_, TrustedOrigi
     app.try_state::<TrustedOrigins>()
 }
 
+/// A window's own webview or a view's (`child-webviews`), by label.
 fn page_url<R: Runtime>(app: &AppHandle<R>, label: &str) -> Option<Url> {
-    app.get_webview_window(label).and_then(|w| w.url().ok())
+    crate::views::find(app, label).and_then(|w| w.url().ok())
 }
 
 /// The entry the webview's current page is on, if any.
@@ -333,17 +335,13 @@ fn is_scheme_page(schemes: &[String], url: &Url) -> bool {
 
 /// Whether the webview's page may use the synchronous bridge's IPC
 /// (`window-config`, `sync-ipc`): the app's own pages, its custom schemes'
-/// pages and the trusted origins; the main window always. A webview that is
-/// not a window (a child webview, which only Tauri's `unstable` API creates)
-/// is not looked up here and keeps the bridge, as before trusted origins.
+/// pages and the trusted origins; the main window always. Views and
+/// `<webview>` guests (`child-webviews`) are checked as windows are.
 pub fn ipc_allowed<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
     if label == MAIN_LABEL || crate::is_app_page(app, label) {
         return true;
     }
-    let Some(window) = app.get_webview_window(label) else {
-        return true;
-    };
-    let Ok(url) = window.url() else {
+    let Some(url) = page_url(app, label) else {
         return false;
     };
     state(app).is_some_and(|state| {
@@ -445,15 +443,20 @@ fn wrap(origins: &[TrustedOrigin], dev_origin: Option<&str>, script: &str) -> St
     )
 }
 
+/// The renderer script for the trusted origins, once the main process has
+/// registered it (none when no origins are declared).
+pub fn script<R: Runtime>(app: &AppHandle<R>) -> Option<Arc<str>> {
+    state(app).and_then(|state| state.script.lock().unwrap().clone())
+}
+
 /// Give a new window the renderer script for the trusted origins (see
-/// `windows::create_window`). Nothing when none are declared or the main
-/// process has not registered the script.
+/// `windows::create_window`; views get it in `views.rs`). Nothing when none
+/// are declared or the main process has not registered the script.
 pub fn initialization_script<'a, R: Runtime, M: Manager<R>>(
     app: &AppHandle<R>,
     builder: WebviewWindowBuilder<'a, R, M>,
 ) -> WebviewWindowBuilder<'a, R, M> {
-    let script = state(app).and_then(|state| state.script.lock().unwrap().clone());
-    match script {
+    match script(app) {
         Some(script) => builder.initialization_script(script.to_string()),
         None => builder,
     }

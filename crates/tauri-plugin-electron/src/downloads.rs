@@ -223,8 +223,7 @@ pub fn start_http<R: Runtime>(
         ));
     }
     // The session's cookies for the URL, as a browser download would send them.
-    let cookie = app
-        .get_webview_window(label)
+    let cookie = crate::views::find(app, label)
         .and_then(|w| w.cookies_for_url(parsed.clone()).ok())
         .map(|cookies| {
             cookies

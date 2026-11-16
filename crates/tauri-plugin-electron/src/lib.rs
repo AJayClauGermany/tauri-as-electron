@@ -100,6 +100,7 @@ mod power_monitor;
 mod safe_storage;
 mod tls_auth;
 mod trusted_origins;
+mod views;
 mod web_request;
 mod windows;
 
@@ -546,6 +547,11 @@ fn handle_bridge<R: Runtime>(
             let query = request.uri().query().unwrap_or("").to_string();
             handle_node(&app, &label, p, &query, request.body().clone(), responder);
         }
+        // A `<webview>` element of this page moved (feature child-webviews).
+        "view/bounds" => match views::tag_bounds(&app, &label, request.body()) {
+            Ok(()) => respond(responder, 204, "text/plain", Vec::new()),
+            Err(error) => respond(responder, 404, "text/plain", error.into_bytes()),
+        },
         _ => respond(responder, 404, "text/plain", Vec::new()),
     }
 }
@@ -607,7 +613,7 @@ fn handle_safe_storage<R: Runtime>(
 /// Whether the webview shows the app's own frontend (the dev server in
 /// development, the embedded assets in a build), not a page it navigated to.
 fn is_app_page<R: Runtime>(app: &AppHandle<R>, label: &str) -> bool {
-    let Some(url) = app.get_webview_window(label).and_then(|w| w.url().ok()) else {
+    let Some(url) = views::find(app, label).and_then(|w| w.url().ok()) else {
         return false;
     };
     if url.scheme() == "tauri" || url.host_str() == Some("tauri.localhost") {
@@ -895,7 +901,7 @@ fn set_window_config<R: Runtime>(
 #[tauri::command]
 fn open_devtools<R: Runtime>(app: AppHandle<R>, label: String) -> bool {
     #[cfg(any(debug_assertions, feature = "devtools"))]
-    if let Some(webview) = app.get_webview_window(&label) {
+    if let Some(webview) = views::find(&app, &label) {
         webview.open_devtools();
         return true;
     }
@@ -906,7 +912,7 @@ fn open_devtools<R: Runtime>(app: AppHandle<R>, label: String) -> bool {
 #[tauri::command]
 fn close_devtools<R: Runtime>(app: AppHandle<R>, label: String) {
     #[cfg(any(debug_assertions, feature = "devtools"))]
-    if let Some(webview) = app.get_webview_window(&label) {
+    if let Some(webview) = views::find(&app, &label) {
         webview.close_devtools();
     }
     let _ = (app, label);
@@ -915,7 +921,7 @@ fn close_devtools<R: Runtime>(app: AppHandle<R>, label: String) {
 #[tauri::command]
 fn is_devtools_open<R: Runtime>(app: AppHandle<R>, label: String) -> bool {
     #[cfg(any(debug_assertions, feature = "devtools"))]
-    if let Some(webview) = app.get_webview_window(&label) {
+    if let Some(webview) = views::find(&app, &label) {
         return webview.is_devtools_open();
     }
     let _ = (app, label);
@@ -941,7 +947,7 @@ async fn set_menu_visible<R: Runtime>(
     label: String,
     visible: bool,
 ) -> Result<(), String> {
-    let Some(window) = app.get_webview_window(&label) else {
+    let Some(window) = views::find(&app, &label).map(|w| w.window()) else {
         return Ok(());
     };
     if visible {
@@ -952,12 +958,12 @@ async fn set_menu_visible<R: Runtime>(
     .map_err(|e| e.to_string())
 }
 
-/// The webview whose cookie store a session uses: one of its windows.
+/// The webview whose cookie store a session uses: one of its windows (or views).
 fn cookie_webview<R: Runtime>(
     app: &AppHandle<R>,
     label: &str,
-) -> Result<tauri::WebviewWindow<R>, String> {
-    app.get_webview_window(label)
+) -> Result<tauri::Webview<R>, String> {
+    views::find(app, label)
         .ok_or_else(|| format!("no webview '{label}' to reach the cookie store through"))
 }
 
@@ -1646,6 +1652,11 @@ impl Builder {
                 windows::download_control,
                 windows::download_commit,
                 windows::download_discard,
+                views::view_create,
+                views::view_update,
+                views::view_navigate,
+                views::view_eval,
+                views::view_close,
                 capture::print_to_pdf,
                 capture::capture_page,
                 desktop_capturer::desktop_sources,
@@ -1664,6 +1675,7 @@ impl Builder {
                 app.manage(message_box::Boxes::default());
                 app.manage(node_windows::NodeWindows::default());
                 windows::manage(app);
+                app.manage(views::Views::default());
                 app.manage(web_request::WebRequests::default());
                 app.manage(tls_auth::TlsAuth::default());
                 #[cfg(all(desktop, feature = "power-save-blocker"))]
