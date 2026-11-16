@@ -37,16 +37,21 @@ export function trustedOriginOf(url) {
 
 let registration = null
 let registered = false
+let lastScript = null
 
 /**
- * Hand the renderer script to tauri-plugin-electron, once (later calls share
- * the first one's promise). Resolves to whether windows created from now on
- * run it on the trusted origins.
+ * Hand the renderer script to tauri-plugin-electron. Resolves to whether
+ * windows created from now on run it on the trusted origins. In a build it
+ * is fetched once (later calls share the first one's promise); in
+ * development (the dev server rebuilds it after a source change) it is
+ * fetched again for each window and handed over again when it changed.
  */
 export function registerTrustedRenderer() {
-  if (registration) return registration
+  const app = globalThis.__TAURI_ELECTRON_APP__
+  const dev = Boolean(app?.root)
+  if (registration && !dev) return registration
   if (!hasNativePlugin() || !trustedOrigins().length) return (registration = Promise.resolve(false))
-  const url = globalThis.__TAURI_ELECTRON_APP__?.trustedRenderer
+  const url = app?.trustedRenderer
   if (!url) {
     warnOnce(
       'trusted-renderer',
@@ -56,19 +61,21 @@ export function registerTrustedRenderer() {
     return (registration = Promise.resolve(false))
   }
   const base = globalThis.location?.href
-  registration = fetch(base ? new URL(url, base) : url)
+  registration = fetch(base ? new URL(url, base) : url, dev ? { cache: 'no-store' } : undefined)
     .then((response) => {
       if (!response.ok) throw new Error(`${url}: ${response.status}`)
       return response.text()
     })
-    .then((script) => native('set_trusted_renderer', { script }))
-    .then(
-      (ok) => (registered = Boolean(ok)),
-      (error) => {
-        report('trusted origins: renderer script')(error)
-        return false
-      },
-    )
+    .then(async (script) => {
+      if (script === lastScript) return registered
+      const ok = Boolean(await native('set_trusted_renderer', { script }))
+      lastScript = script
+      return (registered = ok)
+    })
+    .catch((error) => {
+      report('trusted origins: renderer script')(error)
+      return registered
+    })
   return registration
 }
 

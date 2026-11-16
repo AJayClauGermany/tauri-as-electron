@@ -114,6 +114,18 @@ describe('trusted origins in the main process', () => {
     expect(state.commands).toEqual([{ command: 'set_trusted_renderer', args: { script: 'RENDERER_SCRIPT' } }])
   })
 
+  it('in development, hands the script over again when the dev server rebuilt it', async () => {
+    globalThis.__TAURI_ELECTRON_APP__ = { root: '/project', trustedRenderer: '/__tauri-electron/trusted-renderer.js' }
+    const { registerTrustedRenderer } = await freshModules()
+    expect(await registerTrustedRenderer()).toBe(true)
+    expect(await registerTrustedRenderer()).toBe(true)
+    fetchMock.mockImplementation(async () => ({ ok: true, status: 200, text: async () => 'EDITED_SCRIPT' }))
+    expect(await registerTrustedRenderer()).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock.mock.calls[0][1]).toEqual({ cache: 'no-store' })
+    expect(state.commands.map((c) => c.args.script)).toEqual(['RENDERER_SCRIPT', 'EDITED_SCRIPT'])
+  })
+
   it('does nothing without trusted origins, and warns when the bundler built no script', async () => {
     state.origins = []
     let modules = await freshModules()
