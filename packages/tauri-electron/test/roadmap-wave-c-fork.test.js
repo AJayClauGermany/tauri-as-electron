@@ -427,12 +427,14 @@ describe('utilityProcess.fork', () => {
     // The page goes away before the message is sent: the port's other end closes.
     contents._queue = [contents._postWhenAlive.mock.calls[0][0]]
     contents._pending = new Map([[1, { resolve: vi.fn(), reject: vi.fn() }]])
+    contents.isDestroyed = () => true
     const waiting = contents._pending.get(1)
     const peerClosed = once(pair.port2, 'close')
     contents._pageEnded()
     await peerClosed
     // executeJavaScript() calls still waiting fail.
-    expect(waiting.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'The page was unloaded' }))
+    expect(waiting.reject).toHaveBeenCalledWith(expect.objectContaining({ message: 'Object has been destroyed' }))
+    expect(contents._queue).toEqual([])
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })

@@ -148,14 +148,14 @@ describe('MessageChannelMain', () => {
     const closed = new Promise((resolve) => delivered.port1.once('close', resolve))
     closePortsAt('electron-window-gone')
     await closed
-    // On its way when the page ends (unload): closed, not counted as delivered.
+    // On its way when the page ends (a view's window gone): closed, not counted as delivered.
     Object.assign(contents, { _pending: new Map(), _page: 0 })
     let release
     emitTo.mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
     const onTheWay = new MessageChannelMain()
     contents.postMessage('port', null, [onTheWay.port2])
     const closedOnTheWay = new Promise((resolve) => onTheWay.port1.once('close', resolve))
-    contents._onLifecycle('unload')
+    contents._pageEnded('electron-window-gone', { keepQueue: true })
     release()
     await closedOnTheWay
     error.mockRestore()

@@ -366,7 +366,6 @@ class GuestHost {
     if (!this._native) return
     this._native = false
     // Its page ended; what is sent now waits for the page in the next window.
-    this.webContents._alive = false
     this.webContents._pageEnded(this._label, { keepQueue: true })
     guests.forgetLabel(this._label)
     native('set_window_config', { label: this._label, config: null }).catch(() => {})

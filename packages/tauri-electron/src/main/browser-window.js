@@ -274,32 +274,40 @@ export class WebContents extends EventEmitter {
       },
       (error) => {
         report('webContents message')(error)
-        for (const port of transferred) port._destinationGone(label)
+        // Not sent: the page may still be there, so a port it gave us is told too.
+        for (const port of transferred) port._destinationGone(null)
       },
     )
   }
 
   /**
-   * The page at `label` ended: the webContents was destroyed, the page
-   * unloaded, its native window was replaced, or a view's window went away.
-   * The one place that cleans up after a page: ports that lived there or
-   * were on their way close, executeJavaScript() calls waiting for it fail
-   * (and their queued commands go). Other queued messages drop with a
-   * destroyed webContents and otherwise wait for the next page (`keepQueue`).
+   * The page at `label` is gone for good: the webContents was destroyed, or
+   * a view's window went away (the view gets a new page in its next window).
+   * Ports that lived there or were on their way close, executeJavaScript()
+   * calls waiting for it fail and their queued commands go. Other queued
+   * messages drop with a destroyed webContents, and otherwise
+   * (`keepQueue`) wait for the next page. (Navigations and reloads keep
+   * their behaviour: what was sent for the next page waits for it.)
    */
   _pageEnded(label = this._label, { keepQueue = false } = {}) {
     this._page++
+    this._alive = false
+    // Everything this page owned is taken first: listeners of the events
+    // below may send or execute again, for the next page.
+    const dropped = []
     const kept = []
     for (const message of this._queue.splice(0)) {
       const execute = message.type === 'command' && message.name === 'execute'
       if (keepQueue && !execute) kept.push(message)
-      else for (const port of message.transferred ?? []) port._destinationGone(label)
+      else dropped.push(message)
     }
-    this._queue.push(...kept)
-    closePortsAt(label)
-    const reason = this.isDestroyed() ? 'Object has been destroyed' : 'The page was unloaded'
-    for (const { reject } of this._pending.values()) reject(new Error(reason))
+    const pending = [...this._pending.values()]
     this._pending.clear()
+    this._queue.unshift(...kept)
+    const reason = this.isDestroyed() ? 'Object has been destroyed' : 'The page was unloaded'
+    for (const { reject } of pending) reject(new Error(reason))
+    for (const message of dropped) for (const port of message.transferred ?? []) port._destinationGone(label)
+    closePortsAt(label)
   }
 
   _postWhenAlive(message) {
@@ -344,7 +352,6 @@ export class WebContents extends EventEmitter {
       }
       case 'unload':
         this._alive = false
-        this._pageEnded(this._label, { keepQueue: true })
         break
       case 'exec-result': {
         const pending = this._pending.get(data.id)
@@ -1023,8 +1030,6 @@ export class BrowserWindow extends EventEmitter {
   _createNative(url) {
     const generation = ++this._generation
     const label = `electron-window-${this.id}${generation > 1 ? `-${generation}` : ''}`
-    // Replacing the native window (a page without the bootstrap): its page ends.
-    if (this._label) this.webContents._pageEnded(this._label, { keepQueue: true })
     this._label = label
     this._creating = true
     contentsByLabel.set(label, this.webContents)
