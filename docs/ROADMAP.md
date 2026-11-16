@@ -263,6 +263,7 @@ or there is no Tauri equivalent:
 
 ## Already done
 
-Everything [TARGET-APPS.md](TARGET-APPS.md) lists as ✅, and Node layers 1–4
-([NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)). Of the 118 Electron APIs that
-at least 10 of the 30 apps use, 106 work today.
+Everything [TARGET-APPS.md](TARGET-APPS.md) lists as ✅, Node layers 1–4
+([NODE-COMPAT-PLAN.md](NODE-COMPAT-PLAN.md)), and waves A, B and C above
+(C7 in part). Of the 118 Electron APIs that at least 10 of the 30 apps use,
+106 worked before wave C.

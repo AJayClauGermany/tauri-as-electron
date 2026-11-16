@@ -146,11 +146,12 @@ Desktop: [TARGET-APPS.md](docs/TARGET-APPS.md) lists every Electron API on
 their main code path and where it stands. A wider
 [survey of 30 open-source Electron apps](docs/APP-SURVEY.md) ranks what
 comes next in [ROADMAP.md](docs/ROADMAP.md). On Linux the kitchen sink
-currently reports **112 automatic checks passing on Tauri** and 4 reported
-as *unsupported* (`desktopCapturer`, `utilityProcess`, `contentTracing`,
-and a check that asserts those errors say why), plus 30 interactive checks
-(dialogs, notifications, tray, devtools, frameless window dragging and file
-drops) to click through. The same source runs on real Electron for
+currently reports **252 automatic checks passing on Tauri** and 5 reported
+as *unsupported* (`contentTracing`, a check that asserts such errors say
+why, a geolocation request the webview never makes, cancelling a page's own
+request with `webRequest`, and `capturePage` of a hidden window), plus 32
+interactive checks (dialogs, notifications, tray, devtools, frameless window
+dragging and file drops) to click through. The same source runs on real Electron for
 comparison. See [docs/API-COVERAGE.md](docs/API-COVERAGE.md).
 
 ## License
