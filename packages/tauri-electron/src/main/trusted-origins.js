@@ -35,6 +35,17 @@ export function trustedOriginOf(url) {
   return list.find((o) => o.scheme === scheme && o.host === parsed.hostname && (o.port == null || o.port === port)) ?? null
 }
 
+/** How long window creation waits for the renderer script. */
+const FETCH_TIMEOUT_MS = 15_000
+
+/** The script, given up after FETCH_TIMEOUT_MS (window creation waits for it). */
+function fetchScript(url, dev) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(new Error(`${url}: no answer in ${FETCH_TIMEOUT_MS / 1000} s`)), FETCH_TIMEOUT_MS) : null
+  const options = { ...(dev ? { cache: 'no-store' } : {}), ...(controller ? { signal: controller.signal } : {}) }
+  return fetch(url, options).finally(() => clearTimeout(timer))
+}
+
 let registration = null
 let registered = false
 let lastScript = null
@@ -65,7 +76,7 @@ export function registerTrustedRenderer() {
   // One registration at a time (in development each starts after the
   // previous one ended), so an older script never replaces a newer one.
   registration = (registration ?? Promise.resolve())
-    .then(() => fetch(base ? new URL(url, base) : url, dev ? { cache: 'no-store' } : undefined))
+    .then(() => fetchScript(base ? new URL(url, base) : url, dev))
     .then((response) => {
       if (!response.ok) throw new Error(`${url}: ${response.status}`)
       return response.text()

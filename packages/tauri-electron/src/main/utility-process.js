@@ -29,7 +29,7 @@ import { encode, decode } from '../internal/serialize.js'
 import { signalNumber } from '../internal/signals.js'
 import { bootstrapFile, childEnv, nodeArgs, parseLine, resolveModule } from '../internal/fork.js'
 import { startNodeChild } from '../node/child-process.js'
-import { MessagePortMain, onRendererPortMessage, registerPortSink } from './message-ports.js'
+import { checkTransferList, onRendererPortMessage, registerPortSink } from './message-ports.js'
 
 const STDIO = new Set(['pipe', 'ignore', 'inherit'])
 let nextLabel = 1
@@ -49,11 +49,6 @@ function utilityStdio(stdio = 'inherit') {
   throw new TypeError('stdio must be a string or an array')
 }
 
-function cloneError(message) {
-  const error = new Error(message)
-  error.name = 'DataCloneError'
-  return error
-}
 
 export class UtilityProcess extends EventEmitter {
   constructor(modulePath, args = [], options = {}) {
@@ -133,13 +128,7 @@ export class UtilityProcess extends EventEmitter {
   /** Send `message` to `process.parentPort` in the child, transferring `MessagePortMain`s. */
   postMessage(message, transfer = []) {
     if (!Array.isArray(transfer)) throw new TypeError('transfer must be an array of MessagePortMain')
-    for (const [index, port] of transfer.entries()) {
-      if (!(port instanceof MessagePortMain)) throw cloneError('Only MessagePortMain objects can be transferred')
-      // Checked for all ports first, so a bad one leaves the others untouched.
-      if (port._closed || port._transferred || transfer.indexOf(port) !== index) {
-        throw cloneError(`Port at index ${index} is already neutered or closed`)
-      }
-    }
+    checkTransferList(transfer)
     const data = encode(message)
     if (this._exited) return
     // The 'm' line creates the ports in the child, so it goes before their queued messages.

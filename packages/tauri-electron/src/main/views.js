@@ -250,8 +250,15 @@ class GuestHost {
       }
       this._native = true
       // The window closed while the webview was being created (_onWindowGone
-      // had nothing native to forget then): forget it now.
-      if (win.isDestroyed()) return this._onWindowGone()
+      // had nothing native to forget then): forget it now, and create it again
+      // in the window it was moved to meanwhile, if any.
+      if (win.isDestroyed()) {
+        const target = this._window !== win && !this._window?.isDestroyed() ? this._window : null
+        const latest = this._placement
+        this._onWindowGone()
+        if (target) this._recreate = { win: target, placement: latest }
+        return
+      }
       if (this.webContents._zoomFactor !== 1) this._call((n) => n.setZoom(this.webContents._zoomFactor), 'setZoomFactor')
       // A placement that changed while the webview was being created.
       const latest = this._placement
@@ -261,14 +268,20 @@ class GuestHost {
       }
     })()
       .catch((error) => {
-        // No webview for the label: its window config goes too.
-        if (this._label && !this._native) native('set_window_config', { label: this._label, config: null }).catch(() => {})
+        // No webview for the label: its window config and guest entry go too.
+        if (this._label && !this._native) {
+          guests.forgetLabel(this._label)
+          native('set_window_config', { label: this._label, config: null }).catch(() => {})
+        }
         report('create view')(error)
         for (const waiter of this._loadWaiters.splice(0)) waiter.reject(error)
         this.webContents?.emit('did-fail-load', createEvent(), -2, String(error?.message ?? error), url, true, 0, 0)
       })
       .finally(() => {
         this._creating = null
+        const again = this._recreate
+        this._recreate = null
+        if (again && !this._destroyed && !again.win.isDestroyed()) this._create(again.win, again.placement)
       })
     return this._creating
   }

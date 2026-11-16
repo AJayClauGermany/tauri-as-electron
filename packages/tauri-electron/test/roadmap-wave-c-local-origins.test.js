@@ -122,7 +122,8 @@ describe('trusted origins in the main process', () => {
     fetchMock.mockImplementation(async () => ({ ok: true, status: 200, text: async () => 'EDITED_SCRIPT' }))
     expect(await registerTrustedRenderer()).toBe(true)
     expect(fetchMock).toHaveBeenCalledTimes(3)
-    expect(fetchMock.mock.calls[0][1]).toEqual({ cache: 'no-store' })
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ cache: 'no-store' })
+    expect(fetchMock.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
     expect(state.commands.map((c) => c.args.script)).toEqual(['RENDERER_SCRIPT', 'EDITED_SCRIPT'])
   })
 

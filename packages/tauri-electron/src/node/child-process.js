@@ -484,12 +484,14 @@ const NODE_VALUE_OPTIONS = new Set([
   '--inspect-port', '--inspect-publish-uid', '--loader', '--localstorage-file', '--max-http-header-size',
   '--network-family-autoselection-attempt-timeout', '--openssl-config', '--policy-integrity', '--redirect-warnings',
   '--report-dir', '--report-directory', '--report-filename', '--report-signal', '--require', '--secure-heap',
-  '--secure-heap-min', '--snapshot-blob', '--test-concurrency', '--test-coverage-branches', '--test-coverage-exclude',
-  '--test-coverage-functions', '--test-coverage-include', '--test-coverage-lines', '--test-isolation',
+  '--secure-heap-min', '--security-revert', '--snapshot-blob', '--test-concurrency', '--test-coverage-branches', '--test-coverage-exclude',
+  '--test-coverage-functions', '--test-coverage-include', '--test-coverage-lines', '--test-global-setup', '--test-isolation',
   '--test-name-pattern', '--test-reporter', '--test-reporter-destination', '--test-shard', '--test-skip-pattern',
   '--test-timeout', '--title', '--tls-cipher-list', '--tls-keylog', '--trace-event-categories',
   '--trace-event-file-pattern', '--unhandled-rejections', '--use-largepages', '--v8-pool-size', '--watch-kill-signal',
   '--watch-path',
+  // V8 options Node passes on, which also take a separate value.
+  '--max-old-space-size', '--max-semi-space-size', '--stack-size', '--stack-trace-limit',
 ])
 const NODE_SHORT_VALUE_OPTIONS = new Set(['r', 'C'])
 // Options after which there is no script file: code, stdin, a package.json script.

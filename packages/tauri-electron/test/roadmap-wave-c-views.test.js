@@ -199,6 +199,25 @@ describe('WebContentsView', () => {
     win.destroy()
   })
 
+  it('creates the view again in the window it moved to when its first window closed meanwhile', async () => {
+    const first = await makeWindow()
+    const second = await makeWindow()
+    let finishCreate
+    state.onCommand = (command) => (command === 'view_create' && !finishCreate ? new Promise((resolve) => (finishCreate = resolve)) : undefined)
+    const view = new WebContentsView()
+    first.contentView.addChildView(view)
+    await vi.waitFor(() => expect(commands('view_create')).toHaveLength(1))
+    second.contentView.addChildView(view)
+    first.destroy()
+    finishCreate()
+    await vi.waitFor(() => expect(commands('view_create')).toHaveLength(2))
+    expect(commands('view_create')[1].args.window).toBe(second._label)
+    await flush()
+    expect(BrowserWindow.fromWebContents(view.webContents)).toBe(second)
+    state.onCommand = null
+    second.destroy()
+  })
+
   it('drops the window config of a view whose webview could not be created', async () => {
     const win = await makeWindow()
     state.onCommand = (command) => {

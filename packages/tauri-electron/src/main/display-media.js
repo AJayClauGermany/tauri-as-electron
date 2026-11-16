@@ -31,10 +31,12 @@ const intents = new Map()
 /**
  * Source ids desktopCapturer.getSources() returned in this process, with
  * when. As in Electron, a page that names a source needs an id the main
- * process handed it (otherwise any page could skip the display media handler
- * by naming one); without an id it asks for the whole desktop, which Electron
- * also sends to the permission request handler. Ids are forgotten after a
- * while, so the table stays small however often an app lists sources.
+ * process handed it. Without an id a page asks for the whole desktop
+ * (Electron's documented way to capture desktop audio), which Electron
+ * decides with the permission request handler ('media'), not the display
+ * media handler (that one is for getDisplayMedia()), and grants without a
+ * permission handler: the same here. Ids are forgotten after a while, so
+ * the table stays small however often an app lists sources.
  */
 const issuedSources = new Map()
 const SOURCE_ID_MS = 60 * 60_000

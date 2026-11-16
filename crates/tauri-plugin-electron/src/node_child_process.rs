@@ -468,6 +468,9 @@ impl Children {
                     break;
                 }
                 Err(_) => {
+                    if let Some(ipc) = &running.ipc {
+                        ipc.child_exited();
+                    }
                     children.table.lock().unwrap().remove(&id);
                     let _ = events.send(
                         json!({ "type": "exit", "code": Value::Null, "signal": Value::Null }),

@@ -176,11 +176,22 @@ export function onRendererPortMessage(message) {
   else port._deliver(message.data)
 }
 
+/**
+ * Throw if a transfer list cannot be transferred, before any port is: so a
+ * bad entry leaves the others usable.
+ */
+export function checkTransferList(transfer) {
+  for (const [index, port] of transfer.entries()) {
+    if (!(port instanceof MessagePortMain)) throw cloneError('Only MessagePortMain objects can be transferred')
+    if (port._closed || port._transferred || transfer.indexOf(port) !== index) {
+      throw cloneError(`Port at index ${index} is already neutered or closed`)
+    }
+  }
+}
+
 /** Ports in a webContents.postMessage() transfer list → ids for the renderer. */
 export function transferPorts(transfer, label) {
   if (!transfer?.length) return undefined
-  return transfer.map((port) => {
-    if (!(port instanceof MessagePortMain)) throw cloneError('Only MessagePortMain objects can be transferred')
-    return port._transferTo(label)
-  })
+  checkTransferList(transfer)
+  return transfer.map((port) => port._transferTo(label))
 }

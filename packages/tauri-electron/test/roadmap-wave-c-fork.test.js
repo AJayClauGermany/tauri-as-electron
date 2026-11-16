@@ -45,7 +45,7 @@ const { buildForks } = await import('../bundler/fork-vite.js')
 const { forkWebpackConfig, runForkBuild } = require('../bundler/fork-webpack.cjs')
 const cp = await import('../src/node/child-process.js')
 const { utilityProcess } = await import('../src/main/utility-process.js')
-const { MessageChannelMain } = await import('../src/main/message-ports.js')
+const { MessageChannelMain, transferPorts } = await import('../src/main/message-ports.js')
 const electronIndex = await import('../src/index.js')
 
 /** Temporary folders, removed after the tests. */
@@ -405,6 +405,8 @@ describe('utilityProcess.fork', () => {
     closed.close()
     expect(() => child.postMessage(null, [port2, closed])).toThrow(/index 1 is already neutered or closed/)
     expect(() => child.postMessage(null, [port2, port2])).toThrow(/index 1/)
+    // webContents.postMessage's transfer list is checked the same way.
+    expect(() => transferPorts([port2, closed], 'w-any')).toThrow(/index 1 is already neutered or closed/)
     // port2 was left alone and still transfers.
     child.postMessage({ type: 'port' }, [port2])
     expect((await once(child, 'message'))[0]).toEqual({ reply: 'port ready' })

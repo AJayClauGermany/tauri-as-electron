@@ -272,14 +272,17 @@ impl Ipc {
 
     /// Queue bytes (a JSON line) for the child. False once disconnected.
     pub fn send(&self, data: Vec<u8>) -> bool {
-        if self.stream.lock().unwrap().is_none() {
-            self.queued_unconnected.store(true, Ordering::SeqCst);
-        }
-        self.queue
+        let unconnected = self.stream.lock().unwrap().is_none();
+        let queued = self
+            .queue
             .lock()
             .unwrap()
             .as_ref()
-            .is_some_and(|sender| sender.send(data).is_ok())
+            .is_some_and(|sender| sender.send(data).is_ok());
+        if queued && unconnected {
+            self.queued_unconnected.store(true, Ordering::SeqCst);
+        }
+        queued
     }
 
     /// Close the channel after the queued messages (`subprocess.disconnect()`).
@@ -728,6 +731,8 @@ mod tests {
                 channel.child_exited();
             } else {
                 channel.disconnect();
+                // A send() after disconnect() queues nothing, so nothing waits for it.
+                assert!(!channel.send(b"\"late\"\n".to_vec()));
             }
             let started = Instant::now();
             wait_end(&rx);
