@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tauri::{utils::config::WindowConfig, AppHandle, Manager, Runtime, WebviewWindowBuilder};
 
-use crate::{downloads, permissions};
+use crate::{downloads, permissions, tls_auth, web_request};
 
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
@@ -20,6 +20,8 @@ pub struct Extras {
     permission_handler: bool,
     /// The window's session called setProxy (without a proxy: direct).
     proxy_configured: bool,
+    /// The session.webRequest events the window's session listens to.
+    web_request: Vec<String>,
 }
 
 /// `new BrowserWindow()`. Async: WebView2 deadlocks when a webview is
@@ -43,6 +45,8 @@ pub async fn create_window<R: Runtime>(
     ))]
     linux_proxy::before_create(&app, &options, extras.proxy_configured);
     let builder = WebviewWindowBuilder::from_config(&app, &options).map_err(|e| e.to_string())?;
+    // The bootstrap and preload for pages of trusted origins (trusted_origins.rs).
+    let builder = crate::trusted_origins::initialization_script(&app, builder);
     #[cfg(not(any(
         target_os = "linux",
         target_os = "dragonfly",
@@ -54,6 +58,8 @@ pub async fn create_window<R: Runtime>(
         .on_download(downloads::on_download)
         .on_permission_request(permissions::on_permission_request);
     let window = builder.build().map_err(|e| e.to_string())?;
+    web_request::attach(&app, &window, &label, &extras.web_request);
+    tls_auth::attach(&app, &window, &label);
     #[cfg(any(
         target_os = "linux",
         target_os = "dragonfly",

@@ -64,7 +64,14 @@
     "./renderer-node": "./src/renderer/node.js",
     "./remote": "./src/remote/index.js",
     "./remote/renderer": "./src/remote/renderer.js",
-    "./remote/main": "./src/remote/main.js"
+    "./remote/main": "./src/remote/main.js",
+    "./keytar": "./src/native/keytar.js",
+    "./better-sqlite3": "./src/native/better-sqlite3.js",
+    "./sqlite3": "./src/native/sqlite3.js",
+    "./node-pty": "./src/native/node-pty.js"
+  },
+  "bin": {
+    "tauri-electron-node-sidecar": "./bundler/node-sidecar.mjs"
   },
   "files": [
     "src",

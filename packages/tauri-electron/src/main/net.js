@@ -8,6 +8,8 @@
  * `file://` URLs are read through Node `fs` (feature `node-fs` of
  * tauri-plugin-electron), as in Electron, with a content type from the
  * file extension: the usual body of a `protocol.handle()` handler.
+ * `session.webRequest` listeners apply through the hook ./web-request.js
+ * installs (`netFetch`); `fetchDirect` skips them.
  */
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { EventEmitter } from '../internal/emitter.js'
@@ -60,7 +62,29 @@ export function setDefaultProxy(url) {
 /** In `init`: the request is a session's own (session.fetch), which does not take the default session's proxy. */
 export const OWN_PROXY = Symbol('tauri-electron:own-proxy')
 
+/** In `init`: the session whose webRequest listeners apply (session.fetch, net.request({ session })). */
+export const VIA_SESSION = Symbol('tauri-electron:session')
+/** In `init`: the partition whose session's webRequest listeners apply (net.request({ partition })). */
+export const VIA_PARTITION = Symbol('tauri-electron:partition')
+
+/** session.webRequest's pipeline (./web-request.js), around fetchDirect. */
+let requestHook = null
+export function setRequestHook(hook) {
+  requestHook = hook
+}
+
 export function netFetch(input, init) {
+  if (requestHook) return requestHook(input, init, fetchDirect)
+  return fetchDirect(input, init)
+}
+
+/** netFetch without session.webRequest (protocol handlers reading files, the pipeline itself). */
+export function fetchDirect(input, init) {
+  if (init && (VIA_SESSION in init || VIA_PARTITION in init)) {
+    init = { ...init }
+    delete init[VIA_SESSION]
+    delete init[VIA_PARTITION]
+  }
   const url = typeof input === 'string' ? input : input?.url ?? String(input)
   // Local schemes plugin-http cannot fetch are served by the webview itself.
   if (/^(data|blob):/i.test(url)) return fetch(input, init)
@@ -95,6 +119,14 @@ export function toNodeHeaders(headers) {
     }
   }
   return { headers: out, rawHeaders: raw }
+}
+
+/** `Basic realm="x"` → { scheme: 'basic', realm: 'x' } (null without a header). */
+export function parseAuthenticate(header) {
+  const match = /^\s*([A-Za-z0-9!#$%&'*+.^_`|~-]+)(.*)$/.exec(String(header ?? ''))
+  if (!header || !match) return null
+  const realm = /realm\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s,]+))/i.exec(match[2])
+  return { scheme: match[1].toLowerCase(), realm: realm ? (realm[1] ?? realm[2]).replace(/\\(.)/g, '$1') : '' }
 }
 
 /** Electron's request options -> { url, method, headers }. */
@@ -138,6 +170,9 @@ export class ClientRequest extends EventEmitter {
     this._aborted = false
     this._redirect = redirect
     this._controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+    // The session whose webRequest listeners apply (the default one otherwise).
+    this._session = typeof options === 'object' && !(options instanceof URL) ? options.session ?? null : null
+    this._partition = typeof options === 'object' && !(options instanceof URL) ? options.partition : undefined
     this.chunkedEncoding = false
     if (callback) this.once('response', callback)
   }
@@ -189,6 +224,27 @@ export class ClientRequest extends EventEmitter {
     return { active: !this._ended, started: this._ended, current: 0, total: 0 }
   }
 
+  /** A 401 / 407 asking for Basic credentials, with a 'login' listener: the header to retry with, or null. */
+  async _login(response) {
+    if ((response.status !== 401 && response.status !== 407) || this.listenerCount('login') === 0) return null
+    const isProxy = response.status === 407
+    const challenge = parseAuthenticate(response.headers.get(isProxy ? 'proxy-authenticate' : 'www-authenticate'))
+    if (challenge?.scheme !== 'basic') return null
+    const url = new URL(this.url)
+    const authInfo = { isProxy, scheme: 'basic', host: url.hostname, port: Number(url.port) || (url.protocol === 'https:' ? 443 : 80), realm: challenge.realm }
+    const answer = await new Promise((resolve) => {
+      let answered = false
+      this.emit('login', authInfo, (username, password) => {
+        if (answered) return
+        answered = true
+        resolve(username === undefined || username === null ? null : { username: String(username), password: String(password ?? '') })
+      })
+    })
+    if (!answer) return null
+    const token = btoa(String.fromCharCode(...new TextEncoder().encode(`${answer.username}:${answer.password}`)))
+    return { header: isProxy ? 'Proxy-Authorization' : 'Authorization', value: `Basic ${token}` }
+  }
+
   async _send() {
     const length = this._chunks.reduce((n, c) => n + c.length, 0)
     let body
@@ -201,15 +257,25 @@ export class ClientRequest extends EventEmitter {
       }
     }
     const headers = Object.fromEntries([...this._headers.values()].map(([k, v]) => [k, String(v)]))
+    const via = this._session ? { [VIA_SESSION]: this._session } : this._partition !== undefined ? { [VIA_PARTITION]: String(this._partition) } : {}
     try {
-      const response = await netFetch(this.url, {
-        method: this.method,
-        headers,
-        body,
-        redirect: this._redirect === 'manual' ? 'manual' : this._redirect,
-        signal: this._controller?.signal,
-      })
-      if (this._aborted) return
+      let response
+      for (;;) {
+        response = await netFetch(this.url, {
+          method: this.method,
+          headers,
+          body,
+          redirect: this._redirect === 'manual' ? 'manual' : this._redirect,
+          signal: this._controller?.signal,
+          ...via,
+        })
+        if (this._aborted) return
+        // 'login': HTTP Basic authentication, answered by the listener.
+        const credentials = await this._login(response)
+        if (!credentials) break
+        response.body?.cancel().catch(() => {})
+        headers[credentials.header] = credentials.value
+      }
       this.emit('finish')
       const message = new IncomingMessage(response)
       this.emit('response', message)

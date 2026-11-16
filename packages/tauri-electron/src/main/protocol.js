@@ -19,6 +19,7 @@ import { onBridgeRequest, startBridgeListener } from '../internal/native.js'
 import { base64ToBytes, bytesToBase64 } from '../internal/serialize.js'
 import { platform } from '../process.js'
 import { pathToFileURL } from '../url.js'
+import { protocolWithWebRequest } from './web-request.js'
 
 const BUILTIN = new Set(['http', 'https', 'file', 'about', 'data', 'blob', 'ws', 'wss'])
 const handlers = new Map()
@@ -85,7 +86,17 @@ export async function onRequest(payload) {
   const init = { method, headers: payload.headers ?? [] }
   if (method !== 'GET' && method !== 'HEAD' && payload.body) init.body = base64ToBytes(payload.body)
   const request = new Request(fromNativeSchemeUrl(payload.url, payload.scheme), init)
-  return serializeResponse(await handler(request))
+  // session.webRequest of the requesting page's session applies around the handler.
+  const serve = async (req) => toResponse(await handler(req))
+  return serializeResponse(await protocolWithWebRequest(request, payload.from, serve, serveOther))
+}
+
+/** A webRequest redirect to another URL: its scheme's handler, or net.fetch. */
+async function serveOther(request) {
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(request.url)?.[1]?.toLowerCase()
+  if (scheme && handlers.has(scheme)) return toResponse(await handlers.get(scheme)(request))
+  const { fetchDirect } = await import('./net.js')
+  return fetchDirect(request.url, { method: request.method, headers: [...request.headers.entries()] })
 }
 
 let listening = false
@@ -137,8 +148,8 @@ export const protocol = {
 
   registerHttpProtocol(scheme, handler) {
     return adaptCallbackProtocol(scheme, handler, async (result) => {
-      const { netFetch } = await import('./net.js')
-      return netFetch(result.url, { method: result.method ?? 'GET', headers: result.headers, body: result.uploadData?.data })
+      const { fetchDirect } = await import('./net.js')
+      return fetchDirect(result.url, { method: result.method ?? 'GET', headers: result.headers, body: result.uploadData?.data })
     })
   },
 
@@ -147,10 +158,10 @@ export const protocol = {
     return adaptCallbackProtocol(scheme, handler, async (result) => {
       const path = typeof result === 'string' ? result : result?.path
       if (!path || (result?.error !== undefined && result.error !== 0)) return new Response(null, { status: 404 })
-      const { netFetch } = await import('./net.js')
+      const { fetchDirect } = await import('./net.js')
       let file
       try {
-        file = await netFetch(pathToFileURL(path))
+        file = await fetchDirect(pathToFileURL(path))
       } catch (error) {
         if (error?.name === 'NotImplementedError') throw error
         return new Response(null, { status: error?.message === 'net::ERR_ACCESS_DENIED' ? 403 : 404 })

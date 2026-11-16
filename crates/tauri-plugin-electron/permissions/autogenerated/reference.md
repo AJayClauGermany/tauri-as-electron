@@ -33,6 +33,10 @@ Everything tauri-electron needs in the hidden `electron-main` window (Electron's
 - `allow-download-control`
 - `allow-download-commit`
 - `allow-download-discard`
+- `allow-web-request-listeners`
+- `allow-web-request-respond`
+- `allow-tls-auth-respond`
+- `allow-set-trusted-renderer`
 
 ## Permission Table
 
@@ -65,6 +69,32 @@ Enables the bridge_respond command without any pre-configured scope.
 <td>
 
 Denies the bridge_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-child-disconnect`
+
+</td>
+<td>
+
+Enables the child_disconnect command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-disconnect`
+
+</td>
+<td>
+
+Denies the child_disconnect command without any pre-configured scope.
 
 </td>
 </tr>
@@ -117,6 +147,32 @@ Enables the child_kill command without any pre-configured scope.
 <td>
 
 Denies the child_kill command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-child-send`
+
+</td>
+<td>
+
+Enables the child_send command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-child-send`
+
+</td>
+<td>
+
+Denies the child_send command without any pre-configured scope.
 
 </td>
 </tr>
@@ -618,6 +674,32 @@ Denies the is_devtools_open command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-keytar`
+
+</td>
+<td>
+
+Enables the keytar command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-keytar`
+
+</td>
+<td>
+
+Denies the keytar command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-message-box`
 
 </td>
@@ -1112,6 +1194,58 @@ Denies the process_info command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-pty-attach`
+
+</td>
+<td>
+
+Enables the pty_attach command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-pty-attach`
+
+</td>
+<td>
+
+Denies the pty_attach command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-pty-control`
+
+</td>
+<td>
+
+Enables the pty_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-pty-control`
+
+</td>
+<td>
+
+Denies the pty_control command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-safe-storage-decrypt`
 
 </td>
@@ -1216,6 +1350,32 @@ Denies the set_menu_visible command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-set-trusted-renderer`
+
+</td>
+<td>
+
+Enables the set_trusted_renderer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-set-trusted-renderer`
+
+</td>
+<td>
+
+Denies the set_trusted_renderer command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:allow-set-window-config`
 
 </td>
@@ -1235,6 +1395,58 @@ Enables the set_window_config command without any pre-configured scope.
 <td>
 
 Denies the set_window_config command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-sqlite`
+
+</td>
+<td>
+
+Enables the sqlite command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-sqlite`
+
+</td>
+<td>
+
+Denies the sqlite command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-tls-auth-respond`
+
+</td>
+<td>
+
+Enables the tls_auth_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-tls-auth-respond`
+
+</td>
+<td>
+
+Denies the tls_auth_respond command without any pre-configured scope.
 
 </td>
 </tr>
@@ -1372,12 +1584,103 @@ Denies the udp_send command without any pre-configured scope.
 <tr>
 <td>
 
+`electron:allow-web-request-listeners`
+
+</td>
+<td>
+
+Enables the web_request_listeners command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-web-request-listeners`
+
+</td>
+<td>
+
+Denies the web_request_listeners command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:allow-web-request-respond`
+
+</td>
+<td>
+
+Enables the web_request_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:deny-web-request-respond`
+
+</td>
+<td>
+
+Denies the web_request_respond command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:keytar`
+
+</td>
+<td>
+
+The `keytar` npm package (Cargo feature `keytar`): read, write, delete and list passwords of any service in the OS keychain. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:sqlite`
+
+</td>
+<td>
+
+The `better-sqlite3` and `sqlite3` npm packages (Cargo feature `sqlite`): open, read and write SQLite databases at any path the app's user can. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`electron:pty`
+
+</td>
+<td>
+
+The `node-pty` npm package (Cargo feature `pty`): run any program the app's user can in a pseudo-terminal, write to it, resize and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `electron:node-child-process`
 
 </td>
 <td>
 
-Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can, and write to, read from and signal it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
+Node's `child_process` (Cargo feature `node-child-process`): start any program the app's user can (and a Node.js runtime for `child_process.fork` / `utilityProcess.fork`), and write to, read from, signal and message it. Granted to the `electron-main` window when the feature is on, and to windows the main process creates with `nodeIntegration` or `sandbox: false` (as in Electron). Do not grant it to other renderer windows.
 
 </td>
 </tr>

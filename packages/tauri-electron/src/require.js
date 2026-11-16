@@ -17,7 +17,14 @@ import * as nodeUrl from './url.js'
 import processShim from './process.js'
 import * as remoteRenderer from './remote/renderer.js'
 import * as remoteMain from './remote/main.js'
+import keytar from './native/keytar.js'
+import BetterSqlite3 from './native/better-sqlite3.js'
+import sqlite3 from './native/sqlite3.js'
+import nodePty from './native/node-pty.js'
 import { NotImplementedError } from './internal/runtime.js'
+
+/** npm packages with native code, on tauri-plugin-electron's keytar / sqlite / pty features. */
+const NATIVE_MODULES = { keytar, 'better-sqlite3': BetterSqlite3, sqlite3, 'node-pty': nodePty }
 
 const ELECTRON_IDS = new Set(['electron', 'electron/main', 'electron/renderer', 'electron/common'])
 
@@ -134,6 +141,7 @@ export function requireShim(id) {
   if (ELECTRON_IDS.has(name)) return electron
   if (name === '@electron/remote' || name === '@electron/remote/renderer') return remoteRenderer
   if (name === '@electron/remote/main') return remoteMain
+  if (Object.hasOwn(NATIVE_MODULES, name)) return NATIVE_MODULES[name]
   const bare = name.replace(/^node:/, '')
   if (registered.has(bare)) return registered.get(bare)
   if (bare === 'path' || bare === 'path/posix') return nodePath
@@ -144,7 +152,7 @@ export function requireShim(id) {
   if (bare in NODE_BUILTINS) return nodeBuiltin(bare)
   throw new NotImplementedError(`require('${name}')`, {
     reason: 'unsupported',
-    hint: `tauri-electron provides require() only for electron, @electron/remote and the Node built-ins it shims (path, process, events, url, and in the main process ${Object.keys(MAIN_ONLY).join(', ')}). Use import for other modules (Vite bundles them).`,
+    hint: `tauri-electron provides require() only for electron, @electron/remote, keytar, better-sqlite3, sqlite3, node-pty and the Node built-ins it shims (path, process, events, url, and in the main process ${Object.keys(MAIN_ONLY).join(', ')}). Use import for other modules (Vite bundles them).`,
   })
 }
 
